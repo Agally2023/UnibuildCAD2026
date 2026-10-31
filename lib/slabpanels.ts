@@ -26,13 +26,13 @@ export type Punch = { id: string; story?: string; kind: 'interior' | 'edge' | 'c
 export type SlabStorey = { story: string; mode: 'panels' | 'flat' | 'none'; h: number; panels: Panel[]; punching: Punch[]; steelKg: number; concreteM3: number; hNoLinks?: number; notes: string[] };
 
 const bsOf = (m: Mat) => m.code === 'BS8110';
-function flex(M: number, d: number, m: Mat, h: number): number | null {
+export function flex(M: number, d: number, m: Mat, h: number): number | null {
   if (bsOf(m)) { const r = flexBS(M, 1000, d, fcuOf(m.fck), m.fyk, 35); return r.doubly ? null : Math.max(r.As, 0.0013 * 1000 * h); }
   const K = M / (1000 * d * d * m.fck); if (K > 0.167) return null;
   const z = Math.min(0.95 * d, d * (0.5 + Math.sqrt(0.25 - K / 1.134)));
   return Math.max(M / ((m.fyk / 1.15) * z), (0.26 * 0.3 * Math.pow(m.fck, 2 / 3) * 1000 * d) / m.fyk, 0.0013 * 1000 * d);
 }
-const bar = (As: number, h: number) => { for (const phi of [10, 12, 16, 20, 25]) { const s = Math.floor((area(phi) * 1000) / Math.max(As, 1) / 25) * 25; if (s >= 100) { const ss = Math.min(s, 300, Math.floor((3 * h) / 25) * 25); return { txt: `T${phi}@${ss}`, phi, s: ss, As: (area(phi) * 1000) / ss }; } } return { txt: 'T25@100', phi: 25, s: 100, As: (area(25) * 1000) / 100 }; };
+export const bar = (As: number, h: number) => { for (const phi of [10, 12, 16, 20, 25]) { const s = Math.floor((area(phi) * 1000) / Math.max(As, 1) / 25) * 25; if (s >= 100) { const ss = Math.min(s, 300, Math.floor((3 * h) / 25) * 25); return { txt: `T${phi}@${ss}`, phi, s: ss, As: (area(phi) * 1000) / ss }; } } return { txt: 'T25@100', phi: 25, s: 100, As: (area(25) * 1000) / 100 }; };
 const lm = (...a: number[]) => a;
 
 // bays between column grid lines; a bay needs columns at three or more of its corners
@@ -135,7 +135,7 @@ export function designSlabPanels(g: Group, lib: Lib[], m: Mat, o: { imposed: num
   const slabs = g.els.filter(e => e.type === 'slab'), hFixed = slabs.length ? (slabs.reduce((a, s) => a + (s.geometry.z1 - s.geometry.z0), 0) / slabs.length) * 1000 : undefined;
   const key = (i: number, j: number) => `${i},${j}`, have = new Set(cells.map(c => key(c.i, c.j))), bs = bsOf(m), gG = bs ? 1.4 : 1.35, gQ = bs ? 1.6 : 1.5;
   if (!hasBeams) {                                       // flat slab: punching governs the thickness
-    const span = Math.max(...cells.map(c => Math.max(c.w, c.d))), hMin = Math.max(200, Math.ceil(((span * 1000) / 24 + 35) / 25) * 25), notes = ['Flat slab (no beams): bending is not designed here; use an equivalent-frame analysis for the column and middle strips.'];
+    const span = Math.max(...cells.map(c => Math.max(c.w, c.d))), hMin = Math.max(200, Math.ceil(((span * 1000) / 24 + 35) / 25) * 25), notes = ['Flat slab (no beams): punching is checked here; bending comes from the equivalent frame (column and middle strips) shown below.'];
     const specOf = (e: El) => lib.find(l => l.id === e.library_item_id)?.specs ?? {};
     const run = (h: number) => {
       const n = gG * (25 * (h / 1000) + 2.5) + gQ * o.imposed, d = h - 35;

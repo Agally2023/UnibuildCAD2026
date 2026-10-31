@@ -2,6 +2,8 @@
 // Analytical benchmarks and regression checks. Closed-form results are exact textbook values, not approximations.
 import { readFileSync } from 'fs';
 import { envelope } from '../lib/frame';
+import { equivalentFrame } from '../lib/eqframe';
+import { analyseNetwork, dynamicPressure, frictionFactor, frictionPerMetre, hydraulicDiameter } from '../lib/mepfit';
 import { designBeam, designBeamM, designColumn, designAll } from '../lib/design';
 import { designFoundations, designFooting, designSlab } from '../lib/slabfound';
 import { beamChains, groupByStory, tribWidths } from '../lib/model';
@@ -324,6 +326,77 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('fixed bases: pads alone fail, with ground beams every pad passes', alone.footings.some(f => f.status === 'bad') && withGb.footings.every(f => f.status === 'ok'), withGb.footings.map(f => f.status).join());
   ok('ground beams run between all footing columns and are counted in the totals', withGb.groundBeams.length === 7 && withGb.foundConcrete > withGb.footings.reduce((a, f) => a + f.concreteM3, 0));
   ok('the foundation with ground beams uses far less concrete than oversized pads', withGb.foundConcrete < alone.foundConcrete / 3);
+}
+
+// ---- column rotational springs on the continuous-beam solver (w = 10 kN/m, L = 6 m, EI = 1e4) ----
+{
+  const sp = [{ L: 6, EI: 1e4, wMax: 10, wMin: 10 }], k = (2 * 1e4) / 6;
+  const fixed = envelope(sp, [1e9, 1e9])[0], pin = envelope(sp)[0], half = envelope(sp, [k, k])[0];
+  near('a very stiff spring gives a fixed-end beam: hogging wL²/12 = 30', fixed.hogL, 30, 0.002);
+  near('a very stiff spring gives a fixed-end beam: sagging wL²/24 = 15', fixed.sag, 15, 0.002);
+  near('no spring is a pinned beam: sagging wL²/8 = 45', pin.sag, 45, 0.002);
+  near('spring equal to the beam stiffness 2EI/L: hogging = fixed-end moment / 2 = 15', half.hogL, 15, 0.002);
+  near('and sagging = 45 - 15 = 30', half.sag, 30, 0.01);
+  const three = [0, 1, 2].map(() => ({ L: 6, EI: 1e4, wMax: 10, wMin: 10 })), env = envelope(three, [2000, 5000, 5000, 2000]);
+  ok('symmetric middle span: sag + (hog left + hog right)/2 = wL²/8 = 45 exactly', Math.abs(env[1].sag + (env[1].hogL + env[1].hogR) / 2 - 45) < 0.05, JSON.stringify(env[1]));
+  ok('shear in every span adds up to the span load wL = 60 kN', env.every(e => Math.abs(e.VL + e.VR - 60) < 1e-6), JSON.stringify(env));
+}
+
+// ---- equivalent frame for flat slabs (3 x 3 columns at 6 m, 300 mm columns, h = 250 mm) ----
+{
+  const story = { id: 's', name: 'Ground floor', elevation_m: 0, height_m: 3.6 };
+  const cols = [0, 6, 12].flatMap(x => [0, 6, 12].map(y => ({ id: `c${x}-${y}`, type: 'column', library_item_id: null, geometry: { at: [x, y], b: 0.3, h: 0.3, height: 3.6 } })));
+  const g = { story, els: cols as any };
+  const r = equivalentFrame(g, [], { fck: 30, fyk: 500 }, { imposed: 3, h: 250 });
+  ok('one frame line per column line in each direction (3 + 3)', r.lines.length === 6);
+  const mid = r.lines.find(l => l.dir === 'x' && Math.abs(l.at - 6) < 0.1)!, edge = r.lines.find(l => l.dir === 'x' && Math.abs(l.at) < 0.1)!;
+  near('interior line strip width is the full 6 m', mid.width, 6);
+  near('edge line strip width is half, 3 m', edge.width, 3);
+  near('column strip is half the shorter span, 3 m', mid.csWidth, 3);
+  near('strip load = (1.35 × (25 × 0.25 + 2.5) + 1.5 × 3) × 6 = 97.875 kN/m', mid.wMax, 97.875, 0.001);
+  const wl2 = mid.wMax * 36, hog = Math.max(...mid.spans.flatMap(s => [s.hogL, s.hogR])), sag = Math.max(...mid.spans.map(s => s.sag));
+  ok('hogging moment is within the textbook range 0.06 to 0.125 wL²', hog > 0.06 * wl2 && hog < 0.125 * wl2, `${hog} vs ${wl2}`);
+  ok('sagging moment is within the textbook range 0.03 to 0.09 wL²', sag > 0.03 * wl2 && sag < 0.09 * wl2, `${sag} vs ${wl2}`);
+  near('column strip takes 70% of hogging (EC2 Annex I)', (mid.mTopCS * mid.csWidth) / hog, 0.7, 0.001);
+  near('middle strip takes the other 30%', (mid.mTopMS * mid.msWidth) / hog, 0.3, 0.001);
+  near('column strip takes 60% of sagging', (mid.mBotCS * mid.csWidth) / sag, 0.6, 0.001);
+  ok('every strip gets bars and the line passes', mid.status === 'ok' && Object.values(mid.bars).every(b => /^T\d+@\d+$/.test(b)), JSON.stringify(mid.bars));
+  ok('column strip needs more top steel than the middle strip', mid.mTopCS > mid.mTopMS);
+  const bs = equivalentFrame(g, [], { fck: 30, fyk: 460, code: 'BS8110' }, { imposed: 3, h: 250 }).lines.find(l => l.dir === 'x' && Math.abs(l.at - 6) < 0.1)!;
+  const hogBs = Math.max(...bs.spans.flatMap(s => [s.hogL, s.hogR]));
+  near('BS 8110 Table 3.20 gives the column strip 75% of hogging', (bs.mTopCS * bs.csWidth) / hogBs, 0.75, 0.001);
+  const top = equivalentFrame(g, [], { fck: 30, fyk: 500 }, { imposed: 3, h: 250, colsAbove: false }).lines.find(l => l.dir === 'x' && Math.abs(l.at - 6) < 0.1)!;
+  ok('columns only below give a softer end support: less end-support hogging than columns above and below', top.spans[0].hogL < mid.spans[0].hogL);
+  ok('a storey with beams is not an equivalent-frame case', equivalentFrame({ story, els: [...cols, { id: 'b', type: 'beam', library_item_id: null, geometry: { start: [0, 0], end: [6, 0] } }] as any }, [], { fck: 30, fyk: 500 }, { imposed: 3 }).lines.length === 0);
+}
+
+// ---- MEP friction, fittings and pressure drop ----
+{
+  near('laminar friction factor 64/Re', frictionFactor(1000, 0), 0.064);
+  near('Swamee-Jain at Re 1e5, e/D 0.001 matches the Moody chart (0.0223)', frictionFactor(1e5, 0.001), 0.0223, 0.01);
+  near('hydraulic diameter of a 300 × 300 duct is 0.3 m', hydraulicDiameter({ kind: 'duct', size: { w_mm: 300, h_mm: 300 } } as any), 0.3);
+  near('hydraulic diameter of a DN50 pipe (62 mm outside) is 0.05 m', hydraulicDiameter({ kind: 'pipe', size: { dia_mm: 62 } } as any), 0.05);
+  near('air in a 0.3 m duct at 5 m/s loses about 0.98 Pa/m', frictionPerMetre('duct', 5, 0.3), 0.975, 0.05);
+  near('water in DN50 at 1 m/s loses about 248 Pa/m', frictionPerMetre('pipe', 1, 0.05), 248, 0.1);
+  near('dynamic pressure of air at 5.5 m/s = 0.5 × 1.2 × 5.5² = 18.15 Pa', dynamicPressure('duct', 5.5), 18.15, 0.001);
+  const D = (a: number[], b: number[], flow: number, el = 2.7, w = 600): any => ({ start: a, end: b, elevation: el, flow, kind: 'duct', size: { w_mm: w, h_mm: 300 }, velocity: 5.5 });
+  const straight = analyseNetwork([D([0, 0], [10, 0], 1), D([10, 0], [20, 0], 1)]);
+  ok('a straight run has no fittings', straight.fittings.length === 0);
+  near('and its path length is 20 m', straight.critical!.length, 20);
+  const L = analyseNetwork([D([0, 0], [10, 0], 1), D([10, 0], [10, 6], 1)]);
+  ok('an L-shaped run has exactly one 90° elbow', L.counts.elbow === 1 && L.fittings[0].angle === 90);
+  near('elbow loss = 0.30 × 18.15 = 5.445 Pa', L.fittings[0].dp, 5.445, 0.001);
+  near('path = friction + fittings', L.critical!.total, L.critical!.friction + 5.445, 0.001);
+  near('path length is 16 m', L.critical!.length, 16);
+  const T = analyseNetwork([D([0, 0], [10, 0], 2), D([10, 0], [20, 0], 1), D([10, 0], [10, 8], 1)]);
+  ok('a branch is one tee, the straight main takes none', T.counts.tee === 1 && T.counts.elbow === 0);
+  near('the critical path is the longer branch, 20 m', T.critical!.length, 20);
+  ok('collinear segments at different heights make a vertical offset', analyseNetwork([D([0, 0], [10, 0], 1, 2.7), D([10, 0], [20, 0], 1, 2.4)]).counts.offset === 1);
+  ok('collinear segments of different size make a reducer', analyseNetwork([D([0, 0], [10, 0], 1, 2.7, 600), D([10, 0], [20, 0], 0.5, 2.7, 400)]).counts.reducer === 1);
+  const pipe = analyseNetwork([{ start: [0, 0], end: [10, 0], elevation: 2.7, flow: 2, kind: 'pipe', size: { dia_mm: 62 }, velocity: 1 }, { start: [10, 0], end: [10, 5], elevation: 2.7, flow: 2, kind: 'pipe', size: { dia_mm: 62 }, velocity: 1 }] as any);
+  near('pipe elbow loss = 0.75 × 500 = 375 Pa', pipe.fittings[0].dp, 375, 0.001);
+  ok('pipe head is reported in kPa and is positive', pipe.head > 0 && pipe.head < 20);
+  ok('an empty network gives an empty result', analyseNetwork([]).critical === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
