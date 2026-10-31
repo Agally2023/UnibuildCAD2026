@@ -1,7 +1,0 @@
-{
-  "framework": null,
-  "installCommand": "npm install",
-  "buildCommand": "npm run build:web",
-  "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}
