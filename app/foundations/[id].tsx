@@ -9,6 +9,7 @@ import { CLASSES, designAll, Status } from '../../lib/design';
 import { lateralAnalysis } from '../../lib/lateral';
 import { lat, setLat } from '../../lib/settings';
 import { designFoundations } from '../../lib/slabfound';
+import { equivalentFrame } from '../../lib/eqframe';
 
 const IMPOSED = [['Residential', 2], ['Office', 3], ['Laboratory', 4]] as const;
 const COL: Record<Status, string> = { ok: '#1a8f4d', warn: '#c4620a', bad: '#c62828' };
@@ -38,6 +39,12 @@ export default function SlabFoundations() {
   }, [groups, lib, fck, code, use, trib, latOn, vb, ag, base]);
   const r = useMemo(() => designFoundations(groups, lib, mat, { imposed: IMPOSED[use][1], defaultTrib: trib, qAllow: q , lateral, groundBeams: gbOn }), [gbOn, groups, lib, fck, use, trib, q, code, lateral]);
   const sl = r.slab;
+  // flat-slab bending by equivalent frame, one result per flat storey
+  const eq = useMemo(() => {
+    const out: Record<string, ReturnType<typeof equivalentFrame>> = {};
+    groups.forEach((gr, i) => { const st = r.slabs.find(x => x.story === gr.story.name && x.mode === 'flat'); if (st) out[st.story] = equivalentFrame(gr, lib, mat, { imposed: IMPOSED[use][1], h: st.h, colsAbove: i < groups.length - 1 }); });
+    return out;
+  }, [groups, lib, r, use, fck, code]);
 
   const save = async () => {
     const { error } = await supabase.from('snapshots').insert({
@@ -83,7 +90,7 @@ export default function SlabFoundations() {
 
       {r.slabs.map((st, si) => st.mode === 'none' ? null : (
         <View key={st.story} style={{ gap: 8 }}>
-          <Text style={s.t}>{st.mode === 'flat' ? 'Flat slab punching' : 'Slab panels'}: {st.story}</Text>
+          <Text style={s.t}>{st.mode === 'flat' ? 'Flat slab: punching and equivalent frame' : 'Slab panels'}: {st.story}</Text>
           <Text style={s.k}>{st.h} mm slab · {st.mode === 'panels' ? `${st.panels.length} panels · ${Math.round(st.steelKg)} kg of steel` : `${st.punching.length} columns checked${st.hNoLinks ? ` · ${st.hNoLinks} mm needs no punching links` : ''}`}</Text>
           {st.notes.map(n => <Text key={n} style={s.warn}>{n}</Text>)}
           {si === 0 && st.panels.slice(0, 12).map(p => (
@@ -95,6 +102,11 @@ export default function SlabFoundations() {
             <Card key={p.id} title={`Column ${i + 1} (${p.kind}): ${p.c1}×${p.c2} mm`} status={p.status} notes={p.notes}
               rows={[['Shear stress / capacity', `${p.vEd.toFixed(2)} / ${p.vRd.toFixed(2)} N/mm²`], ['Ratio', p.ratio.toFixed(2)], ['Load from the bays', `${Math.round(p.V)} kN`]]} />
           ))}
+          {st.mode === 'flat' && (eq[st.story]?.lines ?? []).map(l => (
+            <Card key={`${l.dir}${l.at}`} title={`Equivalent frame ${l.dir.toUpperCase()}-direction, line at ${l.at.toFixed(1)} m (${l.width.toFixed(1)} m wide)`} status={l.status} notes={l.notes}
+              rows={[['Column / middle strip', `${l.csWidth.toFixed(1)} / ${l.msWidth.toFixed(1)} m`], ['Top bars (column / middle)', `${l.bars.topCS} / ${l.bars.topMS}`], ['Bottom bars (column / middle)', `${l.bars.botCS} / ${l.bars.botMS}`], ['Top moments (column / middle)', `${l.mTopCS.toFixed(0)} / ${l.mTopMS.toFixed(0)} kNm/m`], ['Bottom moments (column / middle)', `${l.mBotCS.toFixed(0)} / ${l.mBotMS.toFixed(0)} kNm/m`], ['Frame sagging / hogging', `${Math.max(...l.spans.map(x => x.sag)).toFixed(0)} / ${Math.max(...l.spans.flatMap(x => [x.hogL, x.hogR])).toFixed(0)} kNm`]]} />
+          ))}
+          {st.mode === 'flat' && eq[st.story]?.notes.map(n => <Text key={n} style={s.k}>{n}</Text>)}
         </View>
       ))}
       {r.strips.length > 0 && <Text style={s.t}>Combined and strip footings ({r.strips.length})</Text>}

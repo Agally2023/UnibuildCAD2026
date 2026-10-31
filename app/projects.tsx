@@ -22,7 +22,7 @@ export default function Projects() {
     const { data, error } = await supabase.from('projects').insert({ name: name.trim() }).select('id').single();
     if (error || !data) return setErr(error?.message ?? 'Could not create project');
     await supabase.from('stories').insert({ project_id: data.id, name: 'Ground floor', elevation_m: 0, height_m: 3.6 });
-    setName(''); router.push(`/project/${data.id}`);
+    setName(''); router.push(`/hub/${data.id}`);
   };
 
   return (
@@ -33,9 +33,9 @@ export default function Projects() {
       </View>
       {!!err && <Text style={{ color: '#c62828' }}>{err}</Text>}
       <FlatList data={items} keyExtractor={p => p.id}
-        ListEmptyComponent={<Text style={{ color: '#5b6b75' }}>No projects yet. Name one above to start drawing.</Text>}
+        ListEmptyComponent={<Text style={{ color: '#5b6b75' }}>No projects yet. Name one above, then tap Create: it opens the project's modules, and from there you draw on the Plan.</Text>}
         renderItem={({ item }) => (
-          <Pressable style={s.card} onPress={() => router.push(`/project/${item.id}`)}><Text style={s.ct}>{item.name}</Text></Pressable>
+          <Pressable style={s.card} onPress={() => router.push(`/hub/${item.id}`)}><Text style={s.ct}>{item.name}</Text></Pressable>
         )} />
       <Pressable onPress={() => supabase.auth.signOut()}><Text style={{ color: '#2f5bea' }}>Sign out</Text></Pressable>
     </View>

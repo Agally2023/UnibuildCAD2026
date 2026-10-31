@@ -4,6 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { useModel } from '../../lib/useModel';
 import { planMep, MepResult, MepSeg } from '../../lib/mep';
+import { analyseNetwork } from '../../lib/mepfit';
 
 const n1 = (x: number) => x.toFixed(1);
 const group = (segs: MepSeg[]) => Object.entries(segs.reduce<Record<string, number>>((a, s) => { const k = s.kind === 'duct' ? `${s.size.w_mm}×${s.size.h_mm} duct` : `DN${(s.size.dia_mm ?? 12) - 12} pipe`; a[k] = (a[k] ?? 0) + Math.hypot(s.end[0] - s.start[0], s.end[1] - s.start[1]); return a; }, {}));
@@ -61,6 +62,7 @@ export default function Mep() {
     <View style={s.step}><Text style={s.k}>{label}</Text><Pressable onPress={dec}><Text style={s.btn}>−</Text></Pressable><Text style={s.v}>{value}</Text><Pressable onPress={inc}><Text style={s.btn}>+</Text></Pressable></View>
   );
   const st = res?.stats;
+  const nets = useMemo(() => (res ? [res.ducts, res.pipes].filter(x => x.length).map(analyseNetwork) : []), [res]);
   return (
     <ScrollView contentContainerStyle={s.wrap}>
       <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>
@@ -78,6 +80,13 @@ export default function Mep() {
             <Text style={s.h}>Result</Text>
             {([['Cooling load', `${n1(st.totalKw)} kW`], ['Supply air', `${st.totalAir.toFixed(2)} m³/s`], ['Duct run', `${n1(st.ductLen)} m`], ['Pipe run', `${n1(st.pipeLen)} m`], ['Highest duct velocity', `${n1(st.maxVelocity)} m/s`], ['Lowest MEP above floor', `${st.lowestBottom.toFixed(2)} m`], ['Clear height', `${st.clear.toFixed(2)} m`], ['Wall penetrations', `${st.penetrations}`], ['Remaining clashes', `${st.clashes}`]] as [string, string][]).map(([k, v]) => <View key={k} style={s.row}><Text style={s.k}>{k}</Text><Text style={s.v}>{v}</Text></View>)}
           </View>
+          {nets.map(n => (
+            <View key={n.kind} style={s.card}>
+              <Text style={s.h}>{n.kind === 'duct' ? 'Ducts: fittings and pressure drop' : 'Pipes: fittings and pressure drop'}</Text>
+              {([['Fittings', `${n.counts.elbow} elbows · ${n.counts.tee} tees · ${n.counts.reducer} reducers · ${n.counts.offset} offsets`], ['Critical path length', n.critical ? `${n1(n.critical.length)} m` : '-'], ['Friction in straight runs', n.critical ? `${n1(n.critical.friction)} Pa` : '-'], ['Fitting losses', n.critical ? `${n1(n.critical.fittings)} Pa` : '-'], ['Total pressure drop', n.critical ? `${n1(n.critical.total)} Pa` : '-'], [n.kind === 'duct' ? 'Fan static pressure (+10%)' : 'Pump pressure (+10%)', n.kind === 'duct' ? `${Math.round(n.head)} Pa` : `${n1(n.head)} kPa`], ['Worst friction rate', `${n1(n.maxPerMetre)} Pa/m`]] as [string, string][]).map(([k, v]) => <View key={k} style={s.row}><Text style={s.k}>{k}</Text><Text style={s.v}>{v}</Text></View>)}
+              {n.notes.map(x => <Text key={x} style={s.warn}>{x}</Text>)}
+            </View>
+          ))}
           <View style={s.card}>
             <Text style={s.h}>Sizes</Text>
             {[...group(res.ducts), ...group(res.pipes)].map(([k, v]) => <View key={k} style={s.row}><Text style={s.k}>{k}</Text><Text style={s.v}>{n1(v)} m</Text></View>)}
