@@ -163,3 +163,8 @@ create policy snapshots_mod on snapshots for all using (is_member(project_id,'ed
 -- Owners can delete their projects (there was no delete policy before).
 drop policy if exists p_del on projects;
 create policy p_del on projects for delete using (is_member(id,'owner'));
+
+-- ===== Migration 002 (function hardening) =====
+alter function public.touch_element() set search_path = public;
+alter function public.add_owner() set search_path = public;
+revoke execute on function public.add_owner() from public, anon, authenticated;

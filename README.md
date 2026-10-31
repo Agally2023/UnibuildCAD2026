@@ -31,5 +31,9 @@ Fittings, pressure drop and fire dampers for MEP, fuller 3D lateral analysis (wa
 
 All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.
 
-## Deploy (web)
-`npm run build:web` writes a static site to `dist/`. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` as GitHub repository secrets (Settings > Secrets and variables > Actions) and as environment variables on the host. In Supabase, add the deployed URL under Authentication > URL Configuration. `.github/workflows/ci.yml` runs tests, type check and the web build on every push.
+## Deploy (web, Netlify)
+`npm run build:web` writes a static site to `dist/`. `netlify.toml` sets the build command, publish folder and single-page-app redirect.
+1. In Netlify choose Add new site > Import an existing project > GitHub > `UnibuildCAD2026`.
+2. Under Site configuration > Environment variables add `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (the public anon key only, never the service role key).
+3. Deploy. In Supabase, add the Netlify URL under Authentication > URL Configuration (Site URL and Redirect URLs), or sign-in links will not redirect correctly.
+`.github/workflows/ci.yml` runs tests, type check and the web build on every push to `main` and on pull requests.
