@@ -1,1 +1,35 @@
-# UnibuildCAD2026
+# Unibuild: cross-platform BIM app
+
+One codebase for Android, iOS, Windows, macOS and web (Expo, React Native, TypeScript) on a Supabase backend.
+
+## Run it
+1. Run `supabase/schema.sql` in your Supabase SQL editor, which now includes everything (`snapshots` table, extra `issues` columns, unique storey index, project delete policy). For a project that already has the older schema, run `supabase/migrations/001_snapshots_and_issue_columns.sql` instead; it is safe to repeat.
+2. `.env` holds your project URL and public anon key (gitignored; never put the service role key in the app).
+3. `npm install`, then `npx expo start` (`a` for Android, `w` for web). `npx expo install --fix` resolves version mismatches.
+4. `npm test` runs the analytical benchmark and regression suite.
+
+## What it does
+- **Multi-storey model:** storeys with elevations and heights, a storey switcher, "+ Storey" and "Copy up". Beams carry their own size and top level, walls their own thickness. Slabs, roofs, stairs and footings are box elements.
+- **Plan:** zoomable 120 m canvas, wall/column/beam/slab/door/window/duct/pipe tools, live sync between devices.
+- **3D:** storeys stacked at their elevations, with real thickness and beam levels.
+- **Clash detection:** per storey, results saved to `issues` with red rings on the plan.
+- **Design code switch (Eurocode 2 or BS 8110):** BS 8110-1 (`lib/bs8110.ts`) uses 1.4Gk + 1.6Qk, cube strength, 0.87 fy, K' = 0.156, vc from Table 3.8, short-column formula 3.8.4.3, span/depth deflection (Tables 3.9, 3.10) and the BS 8110-2 crack width. Pick the code on the Design and Foundations screens; the report states the code used.
+- **EC2 design (`lib/design.ts`):** continuous-beam analysis with load patterns (`lib/frame.ts`), tributary widths from the beam layout, hogging and sagging steel, shear links, columns carrying load from every storey above, slab and pad footings (`lib/slabfound.ts`).
+- **Serviceability (`lib/serviceability.ts`):** EC2 calculated deflection (cracked and uncracked states, creep, shrinkage, hogging at supports) against L/250, span/depth limits, and crack width against 0.3 mm, for beams and slabs; results feed the status colours, the report and the dashboard flags.
+- **Slab panels and punching (`lib/slabpanels.ts`):** the column grid is split into bays; each is classified as interior, edge or corner from its neighbours, designed with Table 3.14 coefficients (other edge arrangements use the conservative simply-supported values), given nominal top steel at discontinuous edges and torsion steel at corners, and checked for shear, span/depth and cracking. Storeys with columns but no beams are treated as flat slabs: punching shear is checked at every interior, edge and corner column (EC2 6.4 or BS 8110 3.7.7) and the thickness that needs no links is reported.
+- **Wind and earthquake (`lib/lateral.ts`):** wind to EN 1991-1-4 (peak velocity pressure by terrain and height, net D + E force coefficients, storey forces) and equivalent-static earthquake to EN 1998-1 (type 1 spectrum, ground types A to E, T1 = 0.075 H^0.75, forces by height and mass). Forces go to the columns by the D-value (Muto) method with a rigid diaphragm and accidental torsion, giving storey shears, drifts, overturning stability, column moments and overturning axial forces. Every column is then checked under the wind and earthquake combinations (EC2 or BS 8110 factors) and its steel increased where needed. The Wind & quake screen exports its own report.
+- **Combined and strip footings (`lib/stripfoot.ts`):** pads that would overlap are grouped. Columns in a line become one footing (combined for two, strip for more), centred on the load resultant for uniform pressure; longitudinal moment and shear come from statics (diagram shown), with bending, beam shear, transverse bending under each column and punching checked and the thickness raised until all pass. Two-dimensional clusters are flagged for a raft or foundation grid.
+- **Lateral loads on the foundations (`lib/footlateral.ts`, `lib/combos.ts`):** the Foundations screen can take the column-base actions from the Wind & quake analysis. Pads are checked for bearing pressure with eccentricity (no tension in service, 25% more allowed for lateral combinations), uplift against 0.9 × footing weight, sliding (friction 0.5, factor 1.5) and re-designed for bending, shear and punching with moment transfer. Strip and combined footings use linear soil pressure with the column moments and shears, are enlarged where the overturning couple needs it, and report uplift and sliding. A fixed or pinned column-base option decides whether the base moment goes to the foundation; if isolated pads cannot resist it, the app says to tie them with ground beams or use a raft or piles.
+- **Ground beams (`lib/groundbeam.ts`):** beams between footing columns in each direction, designed for the sway moment from the column base moments (shared between the beams at a joint), fixed-end gravity moments from their weight and any wall above, and the tie force (the largest of 10% of the larger column load, the EN 1998-5 rule k·α·S·N, and the base shear). With ground beams on, pads and strips take axial load only. Section, bars, links and quantities are reported.
+- **Dashboard:** quantities, cost, structural status and MEP loads across all storeys.
+- **Calculation report:** Markdown with every input, assumption, intermediate value and clause (`lib/report.ts`).
+- **MEP routing and sizing (`lib/mep.ts`):** Plant and Outlet tools (outlets carry a kW load); the MEP screen routes ducts and, optionally, chilled-water pipes on a 0.5 m grid (columns avoided, wall crossings minimised, turns penalised, outlets join the existing tree), sizes every segment from accumulated flow, lowers the network under beams using the clash engine, and reports clear height, penetrations and remaining clashes. Results are written as editable duct and pipe elements.
+- **IFC:** export (multi-storey IFC4 with openings and property sets) and import (IFC2x3/IFC4; extruded solids read exactly, meshes and B-reps fitted with an oriented bounding box; all storeys with elevations, units converted).
+
+## Not built yet
+Fittings, pressure drop and fire dampers for MEP, fuller 3D lateral analysis (walls, cores, P-delta), ductile seismic detailing, raft footings, flat-slab bending (equivalent frame), deflection of slabs by calculation (the span/depth method is used), dimensions/sections/elevations, background-thread parsing and web-ifc for very large IFC files, and testing against real ArchiCAD, Revit and Tekla exports.
+
+All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.
+
+## Deploy (web)
+`npm run build:web` writes a static site to `dist/`. Set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` as GitHub repository secrets (Settings > Secrets and variables > Actions) and as environment variables on the host. In Supabase, add the deployed URL under Authentication > URL Configuration. `.github/workflows/ci.yml` runs tests, type check and the web build on every push.
