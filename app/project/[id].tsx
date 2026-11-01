@@ -5,7 +5,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { newId, useModel } from '../../lib/useModel';
 import { rememberProject } from '../../lib/session';
-import { BoxBtn, Menu, MenuBar, RItem, Sec, Seg, Stepper, Toggle, ToolBar, TItem } from '../../components/ribbon/Ribbon';
+import { Btn, Field, BoxBtn, Menu, MenuBar, RItem, Sec, Seg, Stepper, Toggle, ToolBar, TItem } from '../../components/ribbon/Ribbon';
 import { Icon, IconName } from '../../components/ribbon/Icon';
 import { CLASSES, cname } from '../../lib/rc';
 import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
@@ -18,11 +18,13 @@ const PX = 50;      // pixels per metre at 100% zoom
 const N = 120;      // plan canvas size in metres
 type Pt = [number, number];
 type Cmd = { add: El[]; del: El[]; mod: [El, El][] };      // one undoable step: rows added, rows deleted, rows changed (before, after)
-type Tool = 'select' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
+type Tool = 'select' | 'grid' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
 const DBT: Record<string, string> = { plant: 'equipment', outlet: 'fixture' };
-const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', slab: 'structure', foundation: 'structure', duct: 'mep', pipe: 'mep', equipment: 'mep', fixture: 'mep' };
+const LINE_TOOLS = ['wall', 'beam', 'duct', 'pipe', 'grid', 'slab'];
+const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', grid: 'structure', slab: 'structure', foundation: 'structure', duct: 'mep', pipe: 'mep', equipment: 'mep', fixture: 'mep' };
 const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boolean }> = {
   select: { label: 'Select', hint: 'Tap an element to see its details, change its size or delete it.' },
+  grid: { label: 'Grid line', hint: 'Tap the start and end of a grid line. Numbers go to vertical lines, letters to horizontal ones. Or generate a whole grid below.' },
   column: { label: 'Column', hint: 'Tap to place a column. Use "Next type" to change its size.', lib: l => l.category === 'section' && /column/i.test(l.name) },
   beam: { label: 'Beam', hint: 'Tap the start, then each end point. Beams that meet end to end form one continuous beam. Tap Finish to stop.', lib: l => l.category === 'section' && /beam/i.test(l.name) },
   slab: { label: 'Slab', hint: 'Tap two opposite corners of the slab.' },
@@ -35,8 +37,8 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
   outlet: { label: 'Outlet', hint: 'Tap to place a diffuser or terminal. Set its cooling load below.' },
 };
 const OCC = ['Residential', 'Office', 'Laboratory'];
-const TOOL_ICON: Record<Tool, IconName> = { select: 'select', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
-const NAME: Record<string, string> = { wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
+const TOOL_ICON: Record<Tool, IconName> = { select: 'select', grid: 'grid', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
+const NAME: Record<string, string> = { grid: 'Grid line', wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 function nearestWall(walls: El[], x: number, y: number) {
@@ -87,8 +89,8 @@ function tapPos(ev: any): [number, number] {
 }
 
 const PAL = {
-  light: { bg: '#f7fcf8', minor: '#cfe3d6', major: '#86b79b', node: '#146c43', axis: '#146c43', text: '#146c43', wall: '#146c43', dim: '#0a2e1f', beam: '#c98a00', col: '#c98a00', duct: '#0c9a87', pipe: '#0b6b8a', door: '#1a8f4d', win: '#0c9a87', plant: '#0b6b8a', slab: '#2a6f97', cursor: '#146c43' },
-  blue: { bg: '#0b2447', minor: '#1b4180', major: '#3a6bb5', node: '#7fb2ff', axis: '#7fb2ff', text: '#8fbcff', wall: '#e8f1ff', dim: '#bcd6ff', beam: '#ffcf4a', col: '#ffcf4a', duct: '#3fd6c2', pipe: '#5cc8ff', door: '#6ee7a0', win: '#3fd6c2', plant: '#5cc8ff', slab: '#6aa8ff', cursor: '#ffffff' },
+  light: { bg: '#f7fcf8', minor: '#cfe3d6', major: '#86b79b', node: '#146c43', axis: '#146c43', text: '#146c43', wall: '#146c43', dim: '#0a2e1f', beam: '#c98a00', col: '#c98a00', duct: '#0c9a87', pipe: '#0b6b8a', door: '#1a8f4d', win: '#0c9a87', plant: '#0b6b8a', slab: '#2a6f97', cursor: '#146c43', grid: '#c4620a' },
+  blue: { bg: '#0b2447', minor: '#1b4180', major: '#3a6bb5', node: '#7fb2ff', axis: '#7fb2ff', text: '#8fbcff', wall: '#e8f1ff', dim: '#bcd6ff', beam: '#ffcf4a', col: '#ffcf4a', duct: '#3fd6c2', pipe: '#5cc8ff', door: '#6ee7a0', win: '#3fd6c2', plant: '#5cc8ff', slab: '#6aa8ff', cursor: '#ffffff', grid: '#ff9f6e' },
 };
 type Pal = typeof PAL.light;
 const Grid = memo(function Grid({ c }: { c: Pal }) {
@@ -144,6 +146,37 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
   );
 });
 
+const GridLines = memo(function GridLines({ grids, c }: { grids: El[]; c: Pal }) {
+  return (
+    <>
+      {grids.map(e => {
+        const [a, b] = [e.geometry.start as Pt, e.geometry.end as Pt], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L, r = 15;
+        const bub = (p: Pt, k: number) => <G key={k}><Circle cx={p[0] * PX + ux * k * r} cy={p[1] * PX + uy * k * r} r={r} fill={c.bg} stroke={c.grid} strokeWidth={1.5} /><SvgText x={p[0] * PX + ux * k * r} y={p[1] * PX + uy * k * r + 4} fontSize={12} fontWeight="700" textAnchor="middle" fill={c.grid}>{e.geometry.label ?? ''}</SvgText></G>;
+        return <G key={e.id}><Line x1={a[0] * PX} y1={a[1] * PX} x2={b[0] * PX} y2={b[1] * PX} stroke={c.grid} strokeWidth={1.4} strokeDasharray="22 5 3 5" />{bub(a, -1)}{bub(b, 1)}</G>;
+      })}
+    </>
+  );
+});
+
+type SnapKind = 'end' | 'mid' | 'int' | 'cell';
+// line segments and points of everything drawn, for object snapping
+function snapGeo(all: El[], wallById: Record<string, El>) {
+  const segs: [Pt, Pt][] = [], pts: [Pt, SnapKind][] = [];
+  for (const e of all) {
+    const g = e.geometry;
+    if (g.start && g.end) { segs.push([g.start, g.end]); pts.push([g.start, 'end'], [g.end, 'end'], [[(g.start[0] + g.end[0]) / 2, (g.start[1] + g.end[1]) / 2], 'mid']); }
+    else if (g.at) pts.push([g.at, 'end']);
+    else if (g.rect) { const [x0, y0, x1, y1] = g.rect; segs.push([[x0, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, y0]]); pts.push([[x0, y0], 'end'], [[x1, y0], 'end'], [[x1, y1], 'end'], [[x0, y1], 'end'], [[(x0 + x1) / 2, (y0 + y1) / 2], 'mid']); }
+  }
+  return { segs, pts };
+}
+function segCross(a: [Pt, Pt], b: [Pt, Pt]): Pt | null {
+  const [p, p2] = a, [q, q2] = b, rx = p2[0] - p[0], ry = p2[1] - p[1], sx = q2[0] - q[0], sy = q2[1] - q[1], den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-9) return null;
+  const tt = ((q[0] - p[0]) * sy - (q[1] - p[1]) * sx) / den, u = ((q[0] - p[0]) * ry - (q[1] - p[1]) * rx) / den;
+  return tt >= 0 && tt <= 1 && u >= 0 && u <= 1 ? [p[0] + tt * rx, p[1] + tt * ry] : null;
+}
+
 function Highlight({ e, wallById }: { e: El; wallById: Record<string, El> }) {
   const g = e.geometry, c = '#c62828';
   if (e.type === 'door' || e.type === 'window') { const o = openingSeg(e, wallById); return o ? <Line x1={o.a[0] * PX} y1={o.a[1] * PX} x2={o.b[0] * PX} y2={o.b[1] * PX} stroke={c} strokeWidth={14} opacity={0.35} /> : null; }
@@ -192,6 +225,10 @@ export default function Plan() {
   const [xf, setXf] = useState<{ kind: 'move' | 'copy'; base: Pt | null } | null>(null);
   const [mq, setMq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [multi, setMulti] = useState(false);
+  const [osnap, setOsnap] = useState(true), [ortho, setOrtho] = useState(false);
+  const [curKind, setCurKind] = useState<SnapKind>('cell');
+  const [tf, setTf] = useState({ x: '', y: '', l: '', a: '' });
+  const [gen, setGen] = useState({ nx: 4, sx: 6, ny: 3, sy: 6 });
   const shiftRef = useRef(false), suppress = useRef(0);
   const hist = useRef<{ u: Cmd[]; r: Cmd[] }>({ u: [], r: [] });
   const [hn, setHn] = useState({ u: 0, r: 0 });
@@ -201,14 +238,16 @@ export default function Plan() {
 
   const story = stories.find(s => s.id === cur) ?? stories[0];
   const H = story?.height_m ?? 3.6;
-  const here = useMemo(() => els.filter(e => (e.story_id ?? stories[0]?.id) === story?.id), [els, stories, story]);
+  const here = useMemo(() => els.filter(e => e.type !== 'grid' && (e.story_id ?? stories[0]?.id) === story?.id), [els, stories, story]);
+  const grids = useMemo(() => els.filter(e => e.type === 'grid'), [els]);
+  const all = useMemo(() => [...here, ...grids], [here, grids]);
   const walls = useMemo(() => here.filter(e => e.type === 'wall'), [here]);
   const libById = useMemo(() => Object.fromEntries(lib.map(l => [l.id, l])), [lib]);
   const wallById = useMemo(() => Object.fromEntries(walls.map(w => [w.id, w])), [walls]);
   const def = TOOLS[tool];
   const choices = useMemo(() => (def.lib ? lib.filter(def.lib) : []), [lib, def]);
   const chosen = choices.length ? choices[(pick[tool] ?? 0) % choices.length] : null;
-  const selEls = useMemo(() => here.filter(e => selIds.includes(e.id)), [here, selIds]);
+  const selEls = useMemo(() => all.filter(e => selIds.includes(e.id)), [all, selIds]);
   const sel = selEls.length === 1 ? selEls[0] : null;
 
   const [pname, setPname] = useState('');
@@ -242,20 +281,67 @@ export default function Plan() {
     await run({ add: [row], del: [], mod: [] });
   };
 
+  // the point a tap or the pointer lands on: grid cell, then ortho lock, then object snap (end, middle, crossing)
+  const geo = useMemo(() => snapGeo(all, wallById), [all, wallById]);
+  const fromPt = (): Pt | null => (xf?.base ?? (start && ['wall', 'beam', 'duct', 'pipe', 'grid'].includes(tool) ? start : null));
+  const snapAt = (mx: number, my: number, from: Pt | null): { p: Pt; kind: SnapKind } => {
+    const tol = 12 / (PX * zoom), cell = (v: number) => r2(Math.round(v / snap) * snap), lock = (ortho || shiftRef.current) && !!from;
+    let ax = mx, ay = my, horiz = true;
+    if (lock && from) { horiz = Math.abs(mx - from[0]) >= Math.abs(my - from[1]); if (horiz) ay = from[1]; else ax = from[0]; }
+    let best: { p: Pt; kind: SnapKind } = { p: lock && from ? (horiz ? [cell(ax), from[1]] : [from[0], cell(ay)]) : [cell(ax), cell(ay)], kind: 'cell' };
+    if (!osnap || (tool === 'select' && !xf) || tool === 'door' || tool === 'window') return best;
+    const ok = (q: Pt) => !lock || !from || (horiz ? Math.abs(q[1] - from[1]) < 1e-6 : Math.abs(q[0] - from[0]) < 1e-6);
+    let bs = Infinity;
+    const cand = (q: Pt, kind: SnapKind) => { if (!ok(q)) return; const d = Math.hypot(q[0] - ax, q[1] - ay); if (d > tol) return; const sc = d - (kind === 'int' ? tol * 0.3 : kind === 'end' ? tol * 0.2 : 0); if (sc < bs) { bs = sc; best = { p: [r2(q[0]), r2(q[1])], kind }; } };
+    for (const [q, k] of geo.pts) cand(q, k);
+    const near = geo.segs.filter(([a, b]) => segDist(a, b, ax, ay) < tol * 3).slice(0, 10);
+    for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) { const x = segCross(near[i], near[j]); if (x) cand(x, 'int'); }
+    return best;
+  };
+  const labelsFor = (vertical: boolean, count: number): string[] => {
+    const used = new Set(grids.filter(g2 => (Math.abs(g2.geometry.end[0] - g2.geometry.start[0]) <= Math.abs(g2.geometry.end[1] - g2.geometry.start[1])) === vertical).map(g2 => String(g2.geometry.label)));
+    const name = (i: number) => (vertical ? String(i + 1) : i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(64 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26)));
+    const out: string[] = []; for (let i = 0; out.length < count; i++) if (!used.has(name(i))) out.push(name(i));
+    return out;
+  };
+  const gridRow = (a: Pt, b: Pt, label: string): El => ({ id: newId(), type: 'grid', geometry: { start: a, end: b, label }, library_item_id: null, story_id: null, properties: {} });
+  const addGrid = async (a: Pt, b: Pt) => { const vert = Math.abs(b[0] - a[0]) <= Math.abs(b[1] - a[1]); await run({ add: [gridRow(a, b, labelsFor(vert, 1)[0])], del: [], mod: [] }); };
+  const genGrid = async () => {
+    const o: Pt = start ?? [2, 2], vx = labelsFor(true, gen.nx + 1), hy = labelsFor(false, gen.ny + 1), W = gen.nx * gen.sx, D = gen.ny * gen.sy, rows: El[] = [];
+    for (let i = 0; i <= gen.nx; i++) rows.push(gridRow([r2(o[0] + i * gen.sx), r2(o[1] - 1.5)], [r2(o[0] + i * gen.sx), r2(o[1] + D + 1.5)], vx[i]));
+    for (let j = 0; j <= gen.ny; j++) rows.push(gridRow([r2(o[0] - 1.5), r2(o[1] + j * gen.sy)], [r2(o[0] + W + 1.5), r2(o[1] + j * gen.sy)], hy[j]));
+    setStart(null); await run({ add: rows, del: [], mod: [] });
+  };
+  const num = (v: string) => { const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
+  const typedXY = () => { const x = num(tf.x), y = num(tf.y); if (x == null || y == null) return setErr('Type both X and Y in metres.'); setTf(f => ({ ...f, x: '', y: '' })); place([r2(x), r2(y)], x, y); };
+  const typedPolar = () => {
+    const l = num(tf.l); if (l == null || !start) return setErr('Type a length in metres after the start point.');
+    const a = num(tf.a);
+    let ux = 1, uy = 0;
+    if (a != null) { ux = Math.cos((a * Math.PI) / 180); uy = -Math.sin((a * Math.PI) / 180); }
+    else if (cur2 && (cur2[0] !== start[0] || cur2[1] !== start[1])) { const d = Math.hypot(cur2[0] - start[0], cur2[1] - start[1]); ux = (cur2[0] - start[0]) / d; uy = (cur2[1] - start[1]) / d; }
+    const q: Pt = [r2(start[0] + l * ux), r2(start[1] + l * uy)]; setTf(f => ({ ...f, l: '' })); place(q, q[0], q[1]);
+  };
+
   const tap = async (wx: number, wy: number) => {
     if (Date.now() - suppress.current < 300) return;          // the click that ends a rectangle selection
     const mx = wx / PX, my = wy / PX;
-    const p: Pt = [r2(Math.round(mx / snap) * snap), r2(Math.round(my / snap) * snap)];
+    const { p } = snapAt(mx, my, fromPt());
     if (xf) {
       if (!xf.base) return setXf({ ...xf, base: p });
       const k = xf.kind; setXf(null); return void (await doXf(k, r2(p[0] - xf.base[0]), r2(p[1] - xf.base[1])));
     }
     if (tool === 'select') {
-      const sid = hitTest(here, wallById, mx, my, 14 / (PX * zoom))?.id ?? null;
+      const sid = hitTest(all, wallById, mx, my, 14 / (PX * zoom))?.id ?? null;
       if (shiftRef.current || multi) setSelIds(old => (sid ? (old.includes(sid) ? old.filter(x => x !== sid) : [...old, sid]) : old));
       else setSelIds(sid ? [sid] : []);
       return;
     }
+    return place(p, mx, my);
+  };
+
+  // put a point of the current tool down (from a tap or from typed values)
+  const place = async (p: Pt, mx: number, my: number) => {
     if (tool === 'column') { const sp = chosen?.specs ?? {}; return add({ at: p, b: (sp.b_mm ?? 300) / 1000, h: (sp.h_mm ?? 300) / 1000, height: H }); }
     if (tool === 'plant') return add({ at: p });
     if (tool === 'outlet') return add({ at: p, kw });
@@ -265,12 +351,14 @@ export default function Plan() {
       const width = chosen?.specs?.w ?? (tool === 'door' ? 0.9 : 1.5), off = Math.max(width / 2, Math.min(hit.len - width / 2, hit.off));
       return add({ wall_id: hit.w.id, offset_m: r2(off), width_m: width });
     }
+    if (tool === 'grid') { if (!start) return setStart(p); if (p[0] === start[0] && p[1] === start[1]) return setStart(null); await addGrid(start, p); return setStart(null); }
     if (!start) return setStart(p);
     if (p[0] === start[0] && p[1] === start[1]) return setStart(null);
     if (tool === 'slab') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: r2(H - slabTh), z1: H }); return setStart(null); }
     await add(tool === 'wall' ? { start, end: p, height: H, thickness: wallTh } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
     setStart(p);
   };
+
 
   const isOpen = (e: El) => e.type === 'door' || e.type === 'window';
   // delete elements (and the doors and windows in a deleted wall)
@@ -310,7 +398,7 @@ export default function Plan() {
   // rectangle selection: left to right takes what is fully inside, right to left takes what it touches
   const pickBox = (a: Pt, b: Pt, crossing: boolean) => {
     const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
-    const hit = here.filter(e => { const bb = bbox(e); if (!bb) return false; return crossing ? bb[0] <= x1 && bb[2] >= x0 && bb[1] <= y1 && bb[3] >= y0 : bb[0] >= x0 && bb[2] <= x1 && bb[1] >= y0 && bb[3] <= y1; }).map(e => e.id);
+    const hit = all.filter(e => { const bb = bbox(e); if (!bb) return false; return crossing ? bb[0] <= x1 && bb[2] >= x0 && bb[1] <= y1 && bb[3] >= y0 : bb[0] >= x0 && bb[2] <= x1 && bb[1] >= y0 && bb[3] <= y1; }).map(e => e.id);
     setSelIds(old => (shiftRef.current || multi ? [...new Set([...old, ...hit])] : hit));
   };
   const live = useRef<any>({});
@@ -369,7 +457,8 @@ export default function Plan() {
     } else if (e.type === 'door' || e.type === 'window') {
       info = `${r2(g.width_m)} m wide, ${r2(g.offset_m)} m along its wall`;
       steps.push(['Width', `${r2(g.width_m)} m`, () => edit(e, { ...g, width_m: Math.max(0.5, r2(g.width_m - 0.1)) }), () => edit(e, { ...g, width_m: Math.min(3, r2(g.width_m + 0.1)) })]);
-    } else if (e.type === 'equipment') info = `Plant at ${g.at[0]}, ${g.at[1]} m`;
+    } else if (e.type === 'grid') info = `Grid line ${g.label ?? ''} · ${len.toFixed(2)} m long`;
+    else if (e.type === 'equipment') info = `Plant at ${g.at[0]}, ${g.at[1]} m`;
     return { info, steps };
   };
 
@@ -402,19 +491,37 @@ export default function Plan() {
       {tool === 'slab' && <Stepper label="Slab thickness" value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
       {(tool === 'duct' || tool === 'pipe') && <Stepper label="Centreline height" value={`${elev.toFixed(2)} m`} dec={() => setElev(v => Math.max(0.1, r2(v - 0.1)))} inc={() => setElev(v => Math.min(H, r2(v + 0.1)))} />}
       {tool === 'outlet' && <Stepper label="Cooling load" value={`${kw} kW`} dec={() => setKw(v => Math.max(1, v - 1))} inc={() => setKw(v => Math.min(50, v + 1))} />}
-      {['beam', 'column', 'door', 'window', 'plant'].includes(tool) && choices.length === 0 && <Text style={s.rhint}>No settings for this tool.</Text>}
+      {tool === 'grid' && <>
+        <Stepper label="Bays across" value={`${gen.nx}`} dec={() => setGen(g2 => ({ ...g2, nx: Math.max(1, g2.nx - 1) }))} inc={() => setGen(g2 => ({ ...g2, nx: Math.min(20, g2.nx + 1) }))} />
+        <Stepper label="Bay width" value={`${gen.sx} m`} dec={() => setGen(g2 => ({ ...g2, sx: Math.max(2, r2(g2.sx - 0.5)) }))} inc={() => setGen(g2 => ({ ...g2, sx: Math.min(15, r2(g2.sx + 0.5)) }))} />
+        <Stepper label="Bays down" value={`${gen.ny}`} dec={() => setGen(g2 => ({ ...g2, ny: Math.max(1, g2.ny - 1) }))} inc={() => setGen(g2 => ({ ...g2, ny: Math.min(20, g2.ny + 1) }))} />
+        <Stepper label="Bay depth" value={`${gen.sy} m`} dec={() => setGen(g2 => ({ ...g2, sy: Math.max(2, r2(g2.sy - 0.5)) }))} inc={() => setGen(g2 => ({ ...g2, sy: Math.min(15, r2(g2.sy + 0.5)) }))} />
+        <Btn label={start ? 'Generate from start' : 'Generate at 2, 2'} onPress={genGrid} />
+      </>}
+      {!['select', 'door', 'window'].includes(tool) && <>
+        <View style={s.qsep} />
+        <Field label="X (m)" value={tf.x} onChange={v => setTf(f => ({ ...f, x: v }))} onSubmit={typedXY} placeholder="x" />
+        <Field label="Y (m)" value={tf.y} onChange={v => setTf(f => ({ ...f, y: v }))} onSubmit={typedXY} placeholder="y" />
+        <Btn label="Place" onPress={typedXY} />
+        {start && tool !== 'slab' && <>
+          <Field label="Length (m)" value={tf.l} onChange={v => setTf(f => ({ ...f, l: v }))} onSubmit={typedPolar} placeholder="len" />
+          <Field label="Angle (°)" value={tf.a} onChange={v => setTf(f => ({ ...f, a: v }))} onSubmit={typedPolar} placeholder="toward cursor" />
+          <Btn label="Place" onPress={typedPolar} />
+        </>}
+      </>}
+      {['beam', 'column', 'door', 'window', 'plant'].includes(tool) && choices.length === 0 && tool !== 'column' && tool !== 'beam' && tool !== 'plant' && <Text style={s.rhint}>No settings for this tool.</Text>}
     </>
   );
   const mi = (label: string, onPress?: () => void, extra: Partial<{ checked: boolean; disabled: boolean }> = {}) => ({ label, onPress, ...extra });
   const SEP = { label: '', sep: true };
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
-    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(here.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
+    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
-    { key: 'design', label: 'Design', items: [...(['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
+    { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Dashboard', go('dashboard'))] },
     { key: 'options', label: 'Options', items: [
-      ...[0.1, 0.25, 0.5, 1].map(v => mi(`Snap ${v} m`, () => setSnap(v), { checked: snap === v })), SEP,
+      ...[0.1, 0.25, 0.5, 1].map(v => mi(`Snap ${v} m`, () => setSnap(v), { checked: snap === v })), mi('Object snap (ends, middles, crossings)', () => setOsnap(!osnap), { checked: osnap }), mi('Ortho lock (or hold Shift)', () => setOrtho(!ortho), { checked: ortho }), SEP,
       mi('Code: Eurocode 2', () => basis({ code: 'EC2' }), { checked: dsn.code === 'EC2' }), mi('Code: BS 8110', () => basis({ code: 'BS8110' }), { checked: dsn.code === 'BS8110' }), SEP,
       ...CLASSES.map((c, i) => mi(`Concrete ${cname(c)}`, () => basis({ cls: i }), { checked: dsn.cls === i })), SEP,
       ...OCC.map((o, i) => mi(`Occupancy: ${o}`, () => basis({ use: i }), { checked: dsn.use === i })), SEP,
@@ -446,7 +553,7 @@ export default function Plan() {
   ];
 
   // tool box: Select, Design (drawing tools), Viewpoint, Document, Analyze
-  const designTools: Tool[] = ['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'];
+  const designTools: Tool[] = ['grid', 'column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'];
   const boxSecs: { key: string; title: string; items: RItem[] }[] = [
     { key: 'design', title: 'Design', items: designTools.map(ti) },
     { key: 'view', title: 'Viewpoint', items: [{ key: 'fp', label: 'Floor plan', icon: 'storey', active: true, onPress: () => {} }, { key: 'v3', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
@@ -459,7 +566,7 @@ export default function Plan() {
   keyRef.current = (k: KeyboardEvent) => {
     shiftRef.current = k.shiftKey;
     const tg = k.target as HTMLElement | null; if (tg && /INPUT|TEXTAREA/.test(tg.tagName)) return;
-    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
+    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', g: 'grid', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
     const arrows: Record<string, Pt> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
     if (ctrl && key === 'z' && !k.shiftKey) { k.preventDefault(); undo(); }
     else if (ctrl && (key === 'y' || (key === 'z' && k.shiftKey))) { k.preventDefault(); redo(); }
@@ -475,7 +582,8 @@ export default function Plan() {
     const el: HTMLElement | null = canvasRef.current; if (!el?.getBoundingClientRect) return;
     const r = el.getBoundingClientRect(), mx = (cx - r.left) / zoom / PX, my = (cy - r.top) / zoom / PX;
     if (mx < 0 || my < 0 || mx > N || my > N) return setCur2(null);
-    const q: Pt = [r2(Math.round(mx / snap) * snap), r2(Math.round(my / snap) * snap)];
+    const { p: q, kind } = snapAt(mx, my, fromPt());
+    setCurKind(kind);
     setCur2(c => (c && c[0] === q[0] && c[1] === q[1] ? c : q));
   };
   useEffect(() => {
@@ -521,7 +629,7 @@ export default function Plan() {
       <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
     </View>
   ) : null);
-  const rows: [string, number][] = ([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number]);
+  const rows: [string, number][] = [...(grids.length ? [['Grid lines', grids.length] as [string, number]] : []), ...([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number] as [string, number])];
 
   const quick = (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.quick} contentContainerStyle={s.quickIn}>
@@ -529,6 +637,8 @@ export default function Plan() {
       <Toggle label="Grid" on={grid} onChange={setGrid} />
       <Toggle label="Lengths" on={dims} onChange={setDims} />
       <Toggle label="Blue canvas" on={blue} onChange={setBlue} />
+      <Toggle label="Object snap" on={osnap} onChange={setOsnap} />
+      <Toggle label="Ortho (Shift)" on={ortho} onChange={setOrtho} />
       <View style={s.qsep} />
       <Seg label="Design code" options={[['EC2', 'EC2'], ['BS8110', 'BS 8110']]} value={dsn.code} onChange={v => basis({ code: v as 'EC2' | 'BS8110' })} />
       <Stepper label="Concrete" value={cname(CLASSES[dsn.cls])} dec={() => basis({ cls: Math.max(0, dsn.cls - 1) })} inc={() => basis({ cls: Math.min(CLASSES.length - 1, dsn.cls + 1) })} />
@@ -580,12 +690,13 @@ export default function Plan() {
               <Pressable ref={canvasRef} style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
                 <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
                   {grid ? <Grid c={pal} /> : <Rect x={0} y={0} width={S} height={S} fill={pal.bg} />}
+                  <GridLines grids={grids} c={pal} />
                   <Layer here={here} libById={libById} wallById={wallById} dims={dims} c={pal} />
                   {selEls.map(e => <Highlight key={e.id} e={e} wallById={wallById} />)}
                   {mq && <Rect x={Math.min(mq.x0, mq.x1) * PX} y={Math.min(mq.y0, mq.y1) * PX} width={Math.abs(mq.x1 - mq.x0) * PX} height={Math.abs(mq.y1 - mq.y0) * PX} fill={pal.cursor} fillOpacity={0.08} stroke={pal.cursor} strokeWidth={1.5} strokeDasharray={mq.x1 < mq.x0 ? '6 4' : undefined} />}
                   {xf?.base && cur2 && <Line x1={xf.base[0] * PX} y1={xf.base[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke="#c62828" strokeWidth={2} strokeDasharray="8 6" />}
-                  {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke={pal.cursor} strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={4} fill="none" stroke={pal.cursor} strokeWidth={1.5} /></G>}
-                  {start && cur2 && (tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={curKind === 'cell' ? 4 : 9} fill="none" stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={2} /></G>}
+                  {start && cur2 && (tool === 'grid' || tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
                 </Svg>
@@ -628,7 +739,7 @@ export default function Plan() {
       {quick}
       <View style={s.status}>
         <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{xf ? (xf.base ? `Tap the target point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}. Esc cancels.` : `Tap the base point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}.`) : def.hint}</Text>
-        <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{xf?.base && cur2 ? `  ·  Δ ${r2(cur2[0] - xf.base[0])}, ${r2(cur2[1] - xf.base[1])} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
+        <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{cur2 && curKind !== 'cell' ? `  ·  ${{ end: 'Endpoint', mid: 'Middle', int: 'Crossing', cell: '' }[curKind]}` : ''}{xf?.base && cur2 ? `  ·  Δ ${r2(cur2[0] - xf.base[0])}, ${r2(cur2[1] - xf.base[1])} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
       </View>
     </View>
   );

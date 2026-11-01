@@ -1,5 +1,5 @@
 import { ReactNode, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { Icon, IconName } from './Icon';
 
 // ArchiCAD-style workspace parts: menu bar with drop-down menus, tool bar, tool box buttons and collapsible panel sections.
@@ -90,7 +90,21 @@ export function Toggle({ label, on, onChange }: { label: string; on: boolean; on
   );
 }
 
+export function Field({ label, value, onChange, onSubmit, placeholder }: { label: string; value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string }) {
+  return (
+    <View style={s.stp}>
+      <Text style={s.sl}>{label}</Text>
+      <TextInput value={value} onChangeText={onChange} onSubmitEditing={onSubmit} placeholder={placeholder} placeholderTextColor="#9db5a5" keyboardType="numeric" style={s.fld} />
+    </View>
+  );
+}
+export function Btn({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return <Pressable onPress={onPress} disabled={disabled} style={[s.act, disabled && { opacity: 0.4 }]}><Text style={s.actT}>{label}</Text></Pressable>;
+}
+
 const s = StyleSheet.create({
+  fld: { width: 62, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#9db5a5', backgroundColor: '#fff', paddingHorizontal: 6, fontSize: 12, fontWeight: '700', color: '#0a2e1f', textAlign: 'center' },
+  act: { height: 26, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#146c43', alignItems: 'center', justifyContent: 'center', marginHorizontal: 4, marginTop: 14 }, actT: { color: '#fff', fontWeight: '700', fontSize: 12 },
   mbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0a2e1f', zIndex: 60, position: 'relative', paddingHorizontal: 4 },
   mi: { paddingHorizontal: 13, paddingVertical: 8 }, miOn: { backgroundColor: '#1d5a3d' }, mt: { color: '#e4f1e9', fontSize: 13, fontWeight: '600' },
   mr: { flex: 1, textAlign: 'right', color: '#a8c5b4', fontSize: 12, paddingRight: 10 },
