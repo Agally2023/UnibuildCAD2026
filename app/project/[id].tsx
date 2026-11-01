@@ -1,12 +1,12 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions, Platform } from 'react-native';
 import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { newId, useModel } from '../../lib/useModel';
 import { rememberProject } from '../../lib/session';
-import { Ribbon, RItem, RTab, Seg, Stepper, Toggle } from '../../components/ribbon/Ribbon';
-import type { IconName } from '../../components/ribbon/Icon';
+import { BoxBtn, Menu, MenuBar, RItem, Sec, Seg, Stepper, Toggle, ToolBar, TItem } from '../../components/ribbon/Ribbon';
+import { Icon, IconName } from '../../components/ribbon/Icon';
 import { CLASSES, cname } from '../../lib/rc';
 import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
 import { saveFile } from '../../components/saveFile';
@@ -155,7 +155,9 @@ export default function Plan() {
   const [elev, setElev] = useState(3.15);
   const [zoom, setZoom] = useState(0.6);
   const [kw, setKw] = useState(5);
-  const [tab, setTab] = useState('draw');
+  const [menu, setMenu] = useState<string | null>(null);
+  const [open, setOpenS] = useState<Record<string, boolean>>({ design: true, view: true, doc: true, more: true, stories: true, here: true, tools: true, props: true });
+  const tog = (k: string) => setOpenS(o => ({ ...o, [k]: !o[k] }));
   const [snap, setSnapS] = useState(plan.snap);
   const [grid, setGridS] = useState(plan.grid);
   const [dims, setDimsS] = useState(plan.dims);
@@ -325,50 +327,67 @@ export default function Plan() {
       {['beam', 'column', 'door', 'window', 'plant'].includes(tool) && choices.length === 0 && <Text style={s.rhint}>No settings for this tool.</Text>}
     </>
   );
-  const tabs: RTab[] = [
-    { key: 'home', label: 'Home', groups: [
-      { name: 'Select', items: [ti('select'), { key: 'del', label: 'Delete', icon: 'delete', disabled: !sel, onPress: () => sel && remove(sel) }] },
-      { name: 'Edit', items: [{ key: 'undo', label: 'Undo', icon: 'undo', onPress: undo }, { key: 'fin', label: 'Finish', icon: 'finish', disabled: !start, onPress: () => setStart(null) }] },
-      { name: 'Storey', items: [{ key: 'ns', label: 'Add storey', icon: 'plus', onPress: () => addStorey(false) }, { key: 'cu', label: 'Copy up', icon: 'copy', onPress: () => addStorey(true) }] },
-      { name: 'Project', items: [{ key: 'mod', label: 'Modules', icon: 'modules', onPress: () => router.push(`/hub/${id}` as any) }, { key: 'prj', label: 'Projects', icon: 'projects', onPress: () => router.replace('/projects') }] },
-    ] },
-    { key: 'draw', label: 'Draw', groups: [
-      { name: 'Select', items: [ti('select')] },
-      { name: 'Structure', items: [ti('column'), ti('beam'), ti('slab')] },
-      { name: 'Architecture', items: [ti('wall'), ti('door'), ti('window')] },
-      { name: 'Services', items: [ti('duct'), ti('pipe'), ti('plant'), ti('outlet')] },
-      { name: 'Edit', items: [{ key: 'undo', label: 'Undo', icon: 'undo', onPress: undo }, { key: 'fin', label: 'Finish', icon: 'finish', disabled: !start, onPress: () => setStart(null) }] },
-    ] },
-    { key: 'settings', label: 'Settings', groups: [
-      { name: `Tool: ${def.label}`, custom: toolSettings },
-      { name: 'Snap and display', custom: (
-        <>
-          <Seg label="Snap step" options={[['0.1', '0.1'], ['0.25', '0.25'], ['0.5', '0.5'], ['1', '1 m']]} value={String(snap)} onChange={v => setSnap(Number(v))} />
-          <Toggle label="Grid" on={grid} onChange={setGrid} />
-          <Toggle label="Wall lengths" on={dims} onChange={setDims} />
-        </>
-      ) },
-      { name: 'Design basis', custom: (
-        <>
-          <Seg label="Design code" options={[['EC2', 'EC2'], ['BS8110', 'BS 8110']]} value={dsn.code} onChange={v => basis({ code: v as 'EC2' | 'BS8110' })} />
-          <Stepper label="Concrete" value={`${cname(CLASSES[dsn.cls])}`} dec={() => basis({ cls: Math.max(0, dsn.cls - 1) })} inc={() => basis({ cls: Math.min(CLASSES.length - 1, dsn.cls + 1) })} />
-          <Stepper label="Occupancy" value={OCC[dsn.use]} dec={() => basis({ use: Math.max(0, dsn.use - 1) })} inc={() => basis({ use: Math.min(OCC.length - 1, dsn.use + 1) })} />
-          <Stepper label="Soil bearing" value={`${dsn.q} kPa`} dec={() => basis({ q: Math.max(50, dsn.q - 25) })} inc={() => basis({ q: Math.min(600, dsn.q + 25) })} />
-        </>
-      ) },
-    ] },
-    { key: 'analyze', label: 'Analyze', groups: [
-      { name: 'Structural design', items: [{ key: 'md', label: 'Members', icon: 'design', onPress: go('design') }, { key: 'sf', label: 'Slab & found.', icon: 'foundation', onPress: go('foundations') }, { key: 'wq', label: 'Wind & quake', icon: 'wind', onPress: go('lateral') }] },
-      { name: 'Services', items: [{ key: 'mep', label: 'MEP', icon: 'mep', onPress: go('mep') }] },
-      { name: 'Check', items: [{ key: 'cl', label: nHere.length ? `Clashes (${nHere.length})` : 'Clashes', icon: 'clash', onPress: go('clashes') }, { key: 'db', label: 'Dashboard', icon: 'dashboard', onPress: go('dashboard') }] },
-      { name: 'Model', items: [{ key: '3d', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'imp', label: 'Import IFC', icon: 'ifc', onPress: go('import') }, { key: 'exp', label: 'Export IFC', icon: 'ifc', onPress: exportIfc }] },
-    ] },
-    { key: 'view', label: 'View', groups: [
-      { name: 'Zoom', items: [{ key: 'zi', label: 'Zoom in', icon: 'zoomin', onPress: () => setZoom(z => Math.min(3, z * 1.25)) }, { key: 'zo', label: 'Zoom out', icon: 'zoomout', onPress: () => setZoom(z => Math.max(0.15, z / 1.25)) }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
-      { name: 'Display', items: [{ key: 'g', label: 'Grid', icon: 'grid', active: grid, onPress: () => setGrid(!grid) }, { key: 'd', label: 'Lengths', icon: 'dims', active: dims, onPress: () => setDims(!dims) }] },
-      { name: 'Storey', items: [{ key: 'su', label: 'Up', icon: 'storey', onPress: () => stepStorey(1) }, { key: 'sd', label: 'Down', icon: 'storey', onPress: () => stepStorey(-1) }] },
+  const mi = (label: string, onPress?: () => void, extra: Partial<{ checked: boolean; disabled: boolean }> = {}) => ({ label, onPress, ...extra });
+  const SEP = { label: '', sep: true };
+  const menus: Menu[] = [
+    { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
+    { key: 'edit', label: 'Edit', items: [mi('Undo last element', undo), mi('Select (V)', () => setT('select')), mi('Delete selected', () => sel && remove(sel), { disabled: !sel }), mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
+    { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
+    { key: 'design', label: 'Design', items: [...(['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
+    { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Dashboard', go('dashboard'))] },
+    { key: 'options', label: 'Options', items: [
+      ...[0.1, 0.25, 0.5, 1].map(v => mi(`Snap ${v} m`, () => setSnap(v), { checked: snap === v })), SEP,
+      mi('Code: Eurocode 2', () => basis({ code: 'EC2' }), { checked: dsn.code === 'EC2' }), mi('Code: BS 8110', () => basis({ code: 'BS8110' }), { checked: dsn.code === 'BS8110' }), SEP,
+      ...CLASSES.map((c, i) => mi(`Concrete ${cname(c)}`, () => basis({ cls: i }), { checked: dsn.cls === i })), SEP,
+      ...OCC.map((o, i) => mi(`Occupancy: ${o}`, () => basis({ use: i }), { checked: dsn.use === i })), SEP,
+      ...[100, 150, 200, 300, 400].map(q => mi(`Soil bearing ${q} kPa`, () => basis({ q }), { checked: dsn.q === q })),
     ] },
   ];
+
+  const tbItems: TItem[] = [
+    { key: 'sel', label: 'Select', icon: 'select', active: tool === 'select', onPress: () => setT('select') },
+    { key: 's1', label: '', icon: 'select', sep: true, onPress: () => {} },
+    { key: 'undo', label: 'Undo last element', icon: 'undo', onPress: undo },
+    { key: 'del', label: 'Delete selected', icon: 'delete', disabled: !sel, onPress: () => sel && remove(sel) },
+    { key: 'fin', label: 'Finish chain', icon: 'finish', disabled: !start, onPress: () => setStart(null) },
+    { key: 's2', label: '', icon: 'select', sep: true, onPress: () => {} },
+    { key: 'zi', label: 'Zoom in', icon: 'zoomin', onPress: () => setZoom(z => Math.min(3, z * 1.25)) },
+    { key: 'zo', label: 'Zoom out', icon: 'zoomout', onPress: () => setZoom(z => Math.max(0.15, z / 1.25)) },
+    { key: 'fit', label: 'Fit to window', icon: 'fit', onPress: fit },
+    { key: 's3', label: '', icon: 'select', sep: true, onPress: () => {} },
+    { key: 'g', label: 'Grid', icon: 'grid', active: grid, onPress: () => setGrid(!grid) },
+    { key: 'd', label: 'Wall lengths', icon: 'dims', active: dims, onPress: () => setDims(!dims) },
+    { key: 's4', label: '', icon: 'select', sep: true, onPress: () => {} },
+    { key: 'su', label: 'Storey up', icon: 'storey', onPress: () => stepStorey(1) },
+    { key: '3d', label: '3D view', icon: 'cube', onPress: go('view3d') },
+    { key: 's5', label: '', icon: 'select', sep: true, onPress: () => {} },
+    { key: 'mod', label: 'Modules', icon: 'modules', onPress: () => router.push(`/hub/${id}` as any) },
+  ];
+
+  // tool box: Select, Design (drawing tools), Viewpoint, Document, Analyze
+  const designTools: Tool[] = ['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'];
+  const boxSecs: { key: string; title: string; items: RItem[] }[] = [
+    { key: 'design', title: 'Design', items: designTools.map(ti) },
+    { key: 'view', title: 'Viewpoint', items: [{ key: 'fp', label: 'Floor plan', icon: 'storey', active: true, onPress: () => {} }, { key: 'v3', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
+    { key: 'doc', title: 'Document', items: [{ key: 'dm', label: 'Lengths', icon: 'dims', active: dims, onPress: () => setDims(!dims) }, { key: 'cl', label: nHere.length ? `Clashes ${nHere.length}` : 'Clashes', icon: 'clash', onPress: go('clashes') }, { key: 'db', label: 'Dashboard', icon: 'dashboard', onPress: go('dashboard') }, { key: 'imp', label: 'Import IFC', icon: 'ifc', onPress: go('import') }, { key: 'exp', label: 'Export IFC', icon: 'ifc', onPress: exportIfc }] },
+    { key: 'more', title: 'Analyze', items: [{ key: 'md', label: 'Members', icon: 'design', onPress: go('design') }, { key: 'sf', label: 'Slab, found.', icon: 'foundation', onPress: go('foundations') }, { key: 'wq', label: 'Wind, quake', icon: 'wind', onPress: go('lateral') }, { key: 'mep', label: 'MEP', icon: 'mep', onPress: go('mep') }] },
+  ];
+
+  // keyboard on the web: V select, tool letters, Esc, Delete, Ctrl+Z
+  const keyRef = useRef<(k: KeyboardEvent) => void>(() => {});
+  keyRef.current = (k: KeyboardEvent) => {
+    const tg = k.target as HTMLElement | null; if (tg && /INPUT|TEXTAREA/.test(tg.tagName)) return;
+    const key = k.key.toLowerCase(), map: Record<string, Tool> = { v: 'select', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
+    if ((k.ctrlKey || k.metaKey) && key === 'z') { k.preventDefault(); undo(); }
+    else if (key === 'escape') { setStart(null); setSelId(null); setMenu(null); }
+    else if ((key === 'delete' || key === 'backspace') && sel) { k.preventDefault(); remove(sel); }
+    else if (!k.ctrlKey && !k.metaKey && !k.altKey && map[key]) setT(map[key]);
+  };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const h = (k: KeyboardEvent) => keyRef.current(k);
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
+  }, []);
 
   const insp = sel ? inspector(sel) : null;
   const Inspector = insp && sel ? (
@@ -383,34 +402,54 @@ export default function Plan() {
   ) : null;
   const rows: [string, number][] = ([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number]);
 
+  const quick = (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.quick} contentContainerStyle={s.quickIn}>
+      <Seg label="Snap" options={[['0.1', '0.1'], ['0.25', '0.25'], ['0.5', '0.5'], ['1', '1 m']]} value={String(snap)} onChange={v => setSnap(Number(v))} />
+      <Toggle label="Grid" on={grid} onChange={setGrid} />
+      <Toggle label="Lengths" on={dims} onChange={setDims} />
+      <View style={s.qsep} />
+      <Seg label="Design code" options={[['EC2', 'EC2'], ['BS8110', 'BS 8110']]} value={dsn.code} onChange={v => basis({ code: v as 'EC2' | 'BS8110' })} />
+      <Stepper label="Concrete" value={cname(CLASSES[dsn.cls])} dec={() => basis({ cls: Math.max(0, dsn.cls - 1) })} inc={() => basis({ cls: Math.min(CLASSES.length - 1, dsn.cls + 1) })} />
+      <Stepper label="Occupancy" value={OCC[dsn.use]} dec={() => basis({ use: Math.max(0, dsn.use - 1) })} inc={() => basis({ use: Math.min(OCC.length - 1, dsn.use + 1) })} />
+      <Stepper label="Soil bearing" value={`${dsn.q} kPa`} dec={() => basis({ q: Math.max(50, dsn.q - 25) })} inc={() => basis({ q: Math.min(600, dsn.q + 25) })} />
+    </ScrollView>
+  );
+
   return (
     <View style={s.wrap}>
-      <Ribbon tabs={tabs} active={tab} onTab={setTab} />
+      <MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />
+      {menu && <Pressable style={s.backdrop} onPress={() => setMenu(null)} />}
+      <ToolBar items={tbItems} />
+      <View style={s.info}>
+        <View style={s.infoT}><Icon name={TOOL_ICON[tool]} size={20} /><Text style={s.infoN}>{def.label}</Text></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.infoIn}>{toolSettings}</ScrollView>
+      </View>
+      {!wide && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.strip} contentContainerStyle={{ padding: 4, gap: 2 }}>
+          {[ti('select'), ...designTools.map(ti)].map(it => <BoxBtn key={it.key} it={it} strip />)}
+        </ScrollView>
+      )}
       <View style={s.body}>
         {wide && (
-          <View style={s.nav}>
-            <Text style={s.ph}>Storeys</Text>
-            <ScrollView style={{ maxHeight: 260 }}>
-              {[...stories].reverse().map(st => (
-                <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.st, story?.id === st.id && s.stOn]}>
-                  <Text style={[s.stn, story?.id === st.id && { color: '#fff' }]}>{st.name}</Text>
-                  <Text style={[s.sts, story?.id === st.id && { color: '#dbe6ff' }]}>level {st.elevation_m.toFixed(2)} m · {st.height_m.toFixed(2)} m high</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <View style={s.navBtns}><Pressable onPress={() => addStorey(false)}><Text style={s.l}>+ Storey</Text></Pressable><Pressable onPress={() => addStorey(true)}><Text style={s.l}>Copy up</Text></Pressable></View>
-            <Text style={[s.ph, { marginTop: 14 }]}>On {story?.name ?? 'this storey'}</Text>
-            {rows.length ? rows.map(([k, v]) => <View key={k} style={s.cr}><Text style={s.k}>{k}</Text><Text style={s.cv}>{v}</Text></View>) : <Text style={s.k}>Nothing drawn yet.</Text>}
-            {wallLen > 0 && <View style={s.cr}><Text style={s.k}>Wall length</Text><Text style={s.cv}>{wallLen.toFixed(1)} m</Text></View>}
-            {nHere.length > 0 && <Pressable onPress={go('clashes')}><Text style={[s.del, { marginTop: 8 }]}>{nHere.length} open clash{nHere.length > 1 ? 'es' : ''}</Text></Pressable>}
-          </View>
+          <ScrollView style={s.box}>
+            <View style={{ padding: 6 }}><BoxBtnRow items={[ti('select')]} /></View>
+            {boxSecs.map(sc => (
+              <Sec key={sc.key} title={sc.title} open={open[sc.key]} onToggle={() => tog(sc.key)}>
+                <View style={s.grid2}>{sc.items.map(it => <BoxBtn key={it.key} it={it} />)}</View>
+              </Sec>
+            ))}
+          </ScrollView>
         )}
         <View style={s.center}>
-          {!wide && (
-            <ScrollView horizontal style={s.chips} contentContainerStyle={s.chipsIn} showsHorizontalScrollIndicator={false}>
-              {stories.map(st => <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.chip, story?.id === st.id && s.chipOn]}><Text style={[s.chipT, story?.id === st.id && s.on]}>{st.name}</Text></Pressable>)}
-            </ScrollView>
-          )}
+          <ScrollView horizontal style={s.tabsbar} contentContainerStyle={s.tabsIn} showsHorizontalScrollIndicator={false}>
+            {stories.map(st => (
+              <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.vtab, story?.id === st.id && s.vtabOn]}>
+                <Icon name="storey" size={14} color={story?.id === st.id ? '#16232b' : '#5b6b75'} /><Text style={[s.vtabT, story?.id === st.id && { color: '#16232b' }]}>{st.name}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => addStorey(false)} style={s.vtab}><Text style={[s.vtabT, { color: '#2f5bea', fontSize: 15 }]}>＋</Text></Pressable>
+            <Pressable onPress={go('view3d')} style={s.vtab}><Icon name="cube" size={14} color="#5b6b75" /><Text style={s.vtabT}>3D</Text></Pressable>
+          </ScrollView>
           {!wide && Inspector}
           {!!err && <Text style={s.err}>{err}</Text>}
           {!loaded && !els.length && <Text style={s.sum}>Loading the model…</Text>}
@@ -429,36 +468,63 @@ export default function Plan() {
           </View>
         </View>
         {wide && (
-          <View style={s.props}>
-            <Text style={s.ph}>Properties</Text>
-            {Inspector ?? (
-              <View style={{ gap: 6 }}>
-                <Text style={s.it}>{def.label} tool</Text>
-                <Text style={s.k}>{def.hint}</Text>
-                {chosen && <View style={s.cr}><Text style={s.k}>Type</Text><Text style={s.cv}>{short(chosen.name, 22)}</Text></View>}
-                {tool === 'wall' && <View style={s.cr}><Text style={s.k}>Thickness</Text><Text style={s.cv}>{Math.round(wallTh * 1000)} mm</Text></View>}
-                {tool === 'slab' && <View style={s.cr}><Text style={s.k}>Thickness</Text><Text style={s.cv}>{Math.round(slabTh * 1000)} mm</Text></View>}
-                {(tool === 'duct' || tool === 'pipe') && <View style={s.cr}><Text style={s.k}>Height</Text><Text style={s.cv}>{elev.toFixed(2)} m</Text></View>}
-                {tool === 'outlet' && <View style={s.cr}><Text style={s.k}>Cooling load</Text><Text style={s.cv}>{kw} kW</Text></View>}
-                <Text style={[s.k, { marginTop: 8 }]}>Change these on the Settings tab of the ribbon.</Text>
-              </View>
-            )}
-          </View>
+          <ScrollView style={s.props}>
+            <Sec title="Navigator · Project map" open={open.stories} onToggle={() => tog('stories')}>
+              <Text style={s.proj}>{pname || 'Project'}</Text>
+              {[...stories].reverse().map(st => {
+                const n = els.filter(e => (e.story_id ?? stories[0]?.id) === st.id).length;
+                return (
+                  <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.tr, story?.id === st.id && s.trOn]}>
+                    <Text style={[s.trn, story?.id === st.id && { color: '#fff' }]}>▪ {st.name}</Text>
+                    <Text style={[s.trs, story?.id === st.id && { color: '#dbe6ff' }]}>{st.elevation_m.toFixed(2)} m · {n} el.</Text>
+                  </Pressable>
+                );
+              })}
+              <View style={s.navBtns}><Pressable onPress={() => addStorey(false)}><Text style={s.l}>+ Storey</Text></Pressable><Pressable onPress={() => addStorey(true)}><Text style={s.l}>Copy up</Text></Pressable></View>
+            </Sec>
+            <Sec title={`On ${story?.name ?? 'this storey'}`} open={open.here} onToggle={() => tog('here')}>
+              {rows.length ? rows.map(([k, v]) => <View key={k} style={s.cr}><Text style={s.k}>{k}</Text><Text style={s.cv}>{v}</Text></View>) : <Text style={s.k}>Nothing drawn yet.</Text>}
+              {wallLen > 0 && <View style={s.cr}><Text style={s.k}>Wall length</Text><Text style={s.cv}>{wallLen.toFixed(1)} m</Text></View>}
+              {nHere.length > 0 && <Pressable onPress={go('clashes')}><Text style={[s.del, { marginTop: 6 }]}>{nHere.length} open clash{nHere.length > 1 ? 'es' : ''}</Text></Pressable>}
+            </Sec>
+            <Sec title="Properties" open={open.props} onToggle={() => tog('props')}>
+              {Inspector ?? (
+                <View style={{ gap: 6 }}>
+                  <Text style={s.it}>{def.label} tool</Text>
+                  <Text style={s.k}>{def.hint}</Text>
+                  <Text style={[s.k, { marginTop: 6 }]}>Keys: V select, W wall, C column, B beam, S slab, D door, N window, U duct, P pipe, Esc finish, Delete remove, Ctrl+Z undo.</Text>
+                </View>
+              )}
+            </Sec>
+          </ScrollView>
         )}
       </View>
+      {quick}
       <View style={s.status}>
         <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{def.hint}</Text>
-        <Text style={s.stR}>{pname ? `${pname} · ` : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
+        <Text style={s.stR}>{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
       </View>
     </View>
   );
 }
+function BoxBtnRow({ items }: { items: RItem[] }) { return <View style={{ flexDirection: 'row', gap: 4 }}>{items.map(it => <BoxBtn key={it.key} it={it} />)}</View>; }
 const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#fff' },
   body: { flex: 1, flexDirection: 'row' },
   center: { flex: 1 },
-  nav: { width: 210, padding: 10, borderRightWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
-  props: { width: 270, padding: 10, borderLeftWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
+  box: { width: 200, flexGrow: 0, borderRightWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' }, grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' },
+  props: { width: 262, flexGrow: 0, borderLeftWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
+  backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
+  info: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef3f7', borderBottomWidth: 1, borderColor: '#c5ced4', minHeight: 54 },
+  infoT: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRightWidth: 1, borderColor: '#c5ced4', alignSelf: 'stretch' }, infoN: { fontWeight: '700', color: '#16232b' },
+  infoIn: { paddingHorizontal: 6, alignItems: 'center' },
+  strip: { flexGrow: 0, backgroundColor: '#f7f9fb', borderBottomWidth: 1, borderColor: '#d5dce1' },
+  tabsbar: { flexGrow: 0, backgroundColor: '#dfe6ec', borderBottomWidth: 1, borderColor: '#c5ced4' }, tabsIn: { paddingHorizontal: 4, paddingTop: 4, gap: 2, alignItems: 'flex-end' },
+  vtab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
+  vtabOn: { backgroundColor: '#fff', borderTopWidth: 2, borderColor: '#2f5bea' }, vtabT: { color: '#5b6b75', fontWeight: '600', fontSize: 13 },
+  quick: { flexGrow: 0, backgroundColor: '#eef3f7', borderTopWidth: 1, borderColor: '#c5ced4' }, quickIn: { paddingHorizontal: 6, paddingVertical: 4, alignItems: 'center' }, qsep: { width: 1, height: 34, backgroundColor: '#c5ced4', marginHorizontal: 8 },
+  proj: { fontWeight: '700', paddingBottom: 4, color: '#16232b' },
+  tr: { paddingVertical: 5, paddingHorizontal: 8, borderRadius: 5, marginBottom: 2 }, trOn: { backgroundColor: '#2f5bea' }, trn: { fontWeight: '700', fontSize: 13, color: '#16232b' }, trs: { fontSize: 11, color: '#5b6b75' },
   ph: { fontSize: 11, color: '#5b6b75', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, fontWeight: '700' },
   st: { paddingVertical: 7, paddingHorizontal: 9, borderRadius: 6, marginBottom: 3, borderWidth: 1, borderColor: '#d5dce1', backgroundColor: '#fff' }, stOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' },
   stn: { fontWeight: '700' }, sts: { fontSize: 11, color: '#5b6b75' },
