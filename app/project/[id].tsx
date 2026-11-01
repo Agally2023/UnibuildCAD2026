@@ -35,7 +35,7 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
 };
 const OCC = ['Residential', 'Office', 'Laboratory'];
 const TOOL_ICON: Record<Tool, IconName> = { select: 'select', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
-const BOXC: Record<string, string> = { slab: '#2f5bea', roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
+const BOXC: Record<string, string> = { slab: '#2a6f97', roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
 const NAME: Record<string, string> = { wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -87,14 +87,18 @@ function tapPos(ev: any): [number, number] {
 }
 
 const Grid = memo(function Grid() {
-  const S = N * PX;
+  const S = N * PX, M = PX * 5;
   return (
     <>
       <Defs>
-        <Pattern id="g1" width={PX} height={PX} patternUnits="userSpaceOnUse"><Path d={`M ${PX} 0 L 0 0 0 ${PX}`} fill="none" stroke="#d5dce1" strokeWidth={0.5} /></Pattern>
-        <Pattern id="g10" width={PX * 10} height={PX * 10} patternUnits="userSpaceOnUse"><Path d={`M ${PX * 10} 0 L 0 0 0 ${PX * 10}`} fill="none" stroke="#aab6bd" strokeWidth={1.5} /></Pattern>
+        <Pattern id="g1" width={PX} height={PX} patternUnits="userSpaceOnUse"><Path d={`M ${PX} 0 L 0 0 0 ${PX}`} fill="none" stroke="#cfe3d6" strokeWidth={0.6} /></Pattern>
+        <Pattern id="g5" width={M} height={M} patternUnits="userSpaceOnUse"><Path d={`M ${M} 0 L 0 0 0 ${M}`} fill="none" stroke="#86b79b" strokeWidth={1} /><Circle cx={0} cy={0} r={2.6} fill="#146c43" /></Pattern>
       </Defs>
-      <Rect x={0} y={0} width={S} height={S} fill="url(#g1)" /><Rect x={0} y={0} width={S} height={S} fill="url(#g10)" />
+      <Rect x={0} y={0} width={S} height={S} fill="#f7fcf8" /><Rect x={0} y={0} width={S} height={S} fill="url(#g1)" /><Rect x={0} y={0} width={S} height={S} fill="url(#g5)" />
+      <Line x1={0} y1={0} x2={S} y2={0} stroke="#146c43" strokeWidth={3} /><Line x1={0} y1={0} x2={0} y2={S} stroke="#146c43" strokeWidth={3} />
+      {Array.from({ length: N / 5 + 1 }, (_, i) => i * 5).filter(v => v > 0).map(v => (
+        <G key={v}><SvgText x={v * PX + 4} y={16} fontSize={12} fill="#146c43">{v}</SvgText><SvgText x={4} y={v * PX - 4} fontSize={12} fill="#146c43">{v}</SvgText></G>
+      ))}
     </>
   );
 });
@@ -103,14 +107,14 @@ const Grid = memo(function Grid() {
 const Layer = memo(function Layer({ here, libById, wallById, dims }: { here: El[]; libById: Record<string, Lib>; wallById: Record<string, El>; dims: boolean }) {
   return (
     <>
-      {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BOXC[e.type] ?? '#2f5bea'} fillOpacity={0.1} stroke={BOXC[e.type] ?? '#2f5bea'} strokeWidth={1.5} />; })}
+      {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BOXC[e.type] ?? '#146c43'} fillOpacity={0.1} stroke={BOXC[e.type] ?? '#146c43'} strokeWidth={1.5} />; })}
       {here.map(e => {
         const g = e.geometry;
         if (e.type === 'wall') {
           const l = Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]);
           return <G key={e.id}>
-            <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#2f5bea" strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
-            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill="#16232b">{l.toFixed(1)} m</SvgText>}
+            <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#146c43" strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
+            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill="#0a2e1f">{l.toFixed(1)} m</SvgText>}
           </G>;
         }
         if (e.type === 'beam') return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#c98a00" strokeWidth={3} strokeDasharray="10 6" />;
@@ -127,7 +131,7 @@ const Layer = memo(function Layer({ here, libById, wallById, dims }: { here: El[
           return <Line key={e.id} x1={o.a[0] * PX} y1={o.a[1] * PX} x2={o.b[0] * PX} y2={o.b[1] * PX} stroke={e.type === 'door' ? '#1a8f4d' : '#0c9a87'} strokeWidth={e.type === 'door' ? 9 : 4} />;
         }
         if (e.type === 'equipment') return <Rect key={e.id} x={g.at[0] * PX - 14} y={g.at[1] * PX - 14} width={28} height={28} fill="#0b6b8a" />;
-        if (e.type === 'fixture') return <G key={e.id}><Circle cx={g.at[0] * PX} cy={g.at[1] * PX} r={8} fill="#0c9a87" /><SvgText x={g.at[0] * PX + 11} y={g.at[1] * PX + 4} fontSize={11} fill="#16232b">{g.kw ?? 5} kW</SvgText></G>;
+        if (e.type === 'fixture') return <G key={e.id}><Circle cx={g.at[0] * PX} cy={g.at[1] * PX} r={8} fill="#0c9a87" /><SvgText x={g.at[0] * PX + 11} y={g.at[1] * PX + 4} fontSize={11} fill="#0a2e1f">{g.kw ?? 5} kW</SvgText></G>;
         return null;
       })}
     </>
@@ -175,6 +179,8 @@ export default function Plan() {
   const setSlabTh = (v: number) => { setPlan({ slabTh: v }); setSlabThS(v); };
   const basis = (p: Partial<typeof dsn>) => { setDsn(p); bump(n => n + 1); };
   const [selId, setSelId] = useState<string | null>(null);
+  const [cur2, setCur2] = useState<Pt | null>(null);       // snapped pointer position in metres (web)
+  const canvasRef = useRef<any>(null);
   const [issues, setIssues] = useState<{ id: string; location: any; story_id: string | null }[]>([]);
 
   const story = stories.find(s => s.id === cur) ?? stories[0];
@@ -383,6 +389,20 @@ export default function Plan() {
     else if ((key === 'delete' || key === 'backspace') && sel) { k.preventDefault(); remove(sel); }
     else if (!k.ctrlKey && !k.metaKey && !k.altKey && map[key]) setT(map[key]);
   };
+  const ptrRef = useRef<(x: number, y: number) => void>(() => {});
+  ptrRef.current = (cx: number, cy: number) => {
+    const el: HTMLElement | null = canvasRef.current; if (!el?.getBoundingClientRect) return;
+    const r = el.getBoundingClientRect(), mx = (cx - r.left) / zoom / PX, my = (cy - r.top) / zoom / PX;
+    if (mx < 0 || my < 0 || mx > N || my > N) return setCur2(null);
+    const q: Pt = [r2(Math.round(mx / snap) * snap), r2(Math.round(my / snap) * snap)];
+    setCur2(c => (c && c[0] === q[0] && c[1] === q[1] ? c : q));
+  };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let raf = 0, last: [number, number] = [0, 0];
+    const mv = (e: MouseEvent) => { last = [e.clientX, e.clientY]; if (!raf) raf = requestAnimationFrame(() => { raf = 0; ptrRef.current(last[0], last[1]); }); };
+    window.addEventListener('mousemove', mv); return () => { window.removeEventListener('mousemove', mv); if (raf) cancelAnimationFrame(raf); };
+  }, []);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const h = (k: KeyboardEvent) => keyRef.current(k);
@@ -444,22 +464,24 @@ export default function Plan() {
           <ScrollView horizontal style={s.tabsbar} contentContainerStyle={s.tabsIn} showsHorizontalScrollIndicator={false}>
             {stories.map(st => (
               <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.vtab, story?.id === st.id && s.vtabOn]}>
-                <Icon name="storey" size={14} color={story?.id === st.id ? '#16232b' : '#5b6b75'} /><Text style={[s.vtabT, story?.id === st.id && { color: '#16232b' }]}>{st.name}</Text>
+                <Icon name="storey" size={14} color={story?.id === st.id ? '#0a2e1f' : '#4f6a5b'} /><Text style={[s.vtabT, story?.id === st.id && { color: '#0a2e1f' }]}>{st.name}</Text>
               </Pressable>
             ))}
-            <Pressable onPress={() => addStorey(false)} style={s.vtab}><Text style={[s.vtabT, { color: '#2f5bea', fontSize: 15 }]}>＋</Text></Pressable>
-            <Pressable onPress={go('view3d')} style={s.vtab}><Icon name="cube" size={14} color="#5b6b75" /><Text style={s.vtabT}>3D</Text></Pressable>
+            <Pressable onPress={() => addStorey(false)} style={s.vtab}><Text style={[s.vtabT, { color: '#146c43', fontSize: 15 }]}>＋</Text></Pressable>
+            <Pressable onPress={go('view3d')} style={s.vtab}><Icon name="cube" size={14} color="#4f6a5b" /><Text style={s.vtabT}>3D</Text></Pressable>
           </ScrollView>
           {!wide && Inspector}
           {!!err && <Text style={s.err}>{err}</Text>}
           {!loaded && !els.length && <Text style={s.sum}>Loading the model…</Text>}
           <View style={{ flex: 1 }} onLayout={e => setVp({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
             <ScrollView horizontal ref={hRef}><ScrollView ref={vRef}>
-              <Pressable style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
+              <Pressable ref={canvasRef} style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
                 <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
                   {grid ? <Grid /> : <Rect x={0} y={0} width={S} height={S} fill="#fff" />}
                   <Layer here={here} libById={libById} wallById={wallById} dims={dims} />
                   {sel && <Highlight e={sel} wallById={wallById} />}
+                  {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke="#146c43" strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke="#146c43" strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={4} fill="none" stroke="#146c43" strokeWidth={1.5} /></G>}
+                  {start && cur2 && (tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke="#146c43" strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
                 </Svg>
@@ -476,7 +498,7 @@ export default function Plan() {
                 return (
                   <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.tr, story?.id === st.id && s.trOn]}>
                     <Text style={[s.trn, story?.id === st.id && { color: '#fff' }]}>▪ {st.name}</Text>
-                    <Text style={[s.trs, story?.id === st.id && { color: '#dbe6ff' }]}>{st.elevation_m.toFixed(2)} m · {n} el.</Text>
+                    <Text style={[s.trs, story?.id === st.id && { color: '#d3ecdd' }]}>{st.elevation_m.toFixed(2)} m · {n} el.</Text>
                   </Pressable>
                 );
               })}
@@ -502,7 +524,7 @@ export default function Plan() {
       {quick}
       <View style={s.status}>
         <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{def.hint}</Text>
-        <Text style={s.stR}>{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
+        <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
       </View>
     </View>
   );
@@ -512,34 +534,34 @@ const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#fff' },
   body: { flex: 1, flexDirection: 'row' },
   center: { flex: 1 },
-  box: { width: 200, flexGrow: 0, borderRightWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' }, grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' },
-  props: { width: 262, flexGrow: 0, borderLeftWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
+  box: { width: 200, flexGrow: 0, borderRightWidth: 1, borderColor: '#cfdcd4', backgroundColor: '#f4f9f6' }, grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' },
+  props: { width: 262, flexGrow: 0, borderLeftWidth: 1, borderColor: '#cfdcd4', backgroundColor: '#f4f9f6' },
   backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 40 },
-  info: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eef3f7', borderBottomWidth: 1, borderColor: '#c5ced4', minHeight: 54 },
-  infoT: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRightWidth: 1, borderColor: '#c5ced4', alignSelf: 'stretch' }, infoN: { fontWeight: '700', color: '#16232b' },
+  info: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#edf5ef', borderBottomWidth: 1, borderColor: '#bccfc3', minHeight: 54 },
+  infoT: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRightWidth: 1, borderColor: '#bccfc3', alignSelf: 'stretch' }, infoN: { fontWeight: '700', color: '#0a2e1f' },
   infoIn: { paddingHorizontal: 6, alignItems: 'center' },
-  strip: { flexGrow: 0, backgroundColor: '#f7f9fb', borderBottomWidth: 1, borderColor: '#d5dce1' },
-  tabsbar: { flexGrow: 0, backgroundColor: '#dfe6ec', borderBottomWidth: 1, borderColor: '#c5ced4' }, tabsIn: { paddingHorizontal: 4, paddingTop: 4, gap: 2, alignItems: 'flex-end' },
+  strip: { flexGrow: 0, backgroundColor: '#f4f9f6', borderBottomWidth: 1, borderColor: '#cfdcd4' },
+  tabsbar: { flexGrow: 0, backgroundColor: '#dbe8e0', borderBottomWidth: 1, borderColor: '#bccfc3' }, tabsIn: { paddingHorizontal: 4, paddingTop: 4, gap: 2, alignItems: 'flex-end' },
   vtab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
-  vtabOn: { backgroundColor: '#fff', borderTopWidth: 2, borderColor: '#2f5bea' }, vtabT: { color: '#5b6b75', fontWeight: '600', fontSize: 13 },
-  quick: { flexGrow: 0, backgroundColor: '#eef3f7', borderTopWidth: 1, borderColor: '#c5ced4' }, quickIn: { paddingHorizontal: 6, paddingVertical: 4, alignItems: 'center' }, qsep: { width: 1, height: 34, backgroundColor: '#c5ced4', marginHorizontal: 8 },
-  proj: { fontWeight: '700', paddingBottom: 4, color: '#16232b' },
-  tr: { paddingVertical: 5, paddingHorizontal: 8, borderRadius: 5, marginBottom: 2 }, trOn: { backgroundColor: '#2f5bea' }, trn: { fontWeight: '700', fontSize: 13, color: '#16232b' }, trs: { fontSize: 11, color: '#5b6b75' },
-  ph: { fontSize: 11, color: '#5b6b75', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, fontWeight: '700' },
-  st: { paddingVertical: 7, paddingHorizontal: 9, borderRadius: 6, marginBottom: 3, borderWidth: 1, borderColor: '#d5dce1', backgroundColor: '#fff' }, stOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' },
-  stn: { fontWeight: '700' }, sts: { fontSize: 11, color: '#5b6b75' },
+  vtabOn: { backgroundColor: '#fff', borderTopWidth: 2, borderColor: '#146c43' }, vtabT: { color: '#4f6a5b', fontWeight: '600', fontSize: 13 },
+  quick: { flexGrow: 0, backgroundColor: '#edf5ef', borderTopWidth: 1, borderColor: '#bccfc3' }, quickIn: { paddingHorizontal: 6, paddingVertical: 4, alignItems: 'center' }, qsep: { width: 1, height: 34, backgroundColor: '#bccfc3', marginHorizontal: 8 },
+  proj: { fontWeight: '700', paddingBottom: 4, color: '#0a2e1f' },
+  tr: { paddingVertical: 5, paddingHorizontal: 8, borderRadius: 5, marginBottom: 2 }, trOn: { backgroundColor: '#146c43' }, trn: { fontWeight: '700', fontSize: 13, color: '#0a2e1f' }, trs: { fontSize: 11, color: '#4f6a5b' },
+  ph: { fontSize: 11, color: '#4f6a5b', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, fontWeight: '700' },
+  st: { paddingVertical: 7, paddingHorizontal: 9, borderRadius: 6, marginBottom: 3, borderWidth: 1, borderColor: '#cfdcd4', backgroundColor: '#fff' }, stOn: { backgroundColor: '#146c43', borderColor: '#146c43' },
+  stn: { fontWeight: '700' }, sts: { fontSize: 11, color: '#4f6a5b' },
   navBtns: { flexDirection: 'row', gap: 16, marginTop: 6 },
   cr: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, gap: 8 }, cv: { fontWeight: '700' },
-  chips: { flexGrow: 0, borderBottomWidth: 1, borderColor: '#d5dce1' }, chipsIn: { gap: 8, padding: 8, alignItems: 'center' },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' },
-  chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' }, on: { color: '#fff' },
-  l: { color: '#2f5bea', fontWeight: '600' }, k: { color: '#5b6b75' }, rhint: { color: '#5b6b75', maxWidth: 220, fontSize: 12, paddingTop: 6 },
-  sum: { paddingHorizontal: 12, paddingBottom: 6, color: '#5b6b75', fontSize: 13 },
+  chips: { flexGrow: 0, borderBottomWidth: 1, borderColor: '#cfdcd4' }, chipsIn: { gap: 8, padding: 8, alignItems: 'center' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' },
+  chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' }, on: { color: '#fff' },
+  l: { color: '#146c43', fontWeight: '600' }, k: { color: '#4f6a5b' }, rhint: { color: '#4f6a5b', maxWidth: 220, fontSize: 12, paddingTop: 6 },
+  sum: { paddingHorizontal: 12, paddingBottom: 6, color: '#4f6a5b', fontSize: 13 },
   err: { color: '#c62828', paddingHorizontal: 12, paddingVertical: 4 },
   insp: { margin: 8, padding: 12, gap: 8, borderWidth: 1, borderColor: '#c62828', borderRadius: 10, backgroundColor: '#fff' },
   ir: { flexDirection: 'row', alignItems: 'center', gap: 6 }, it: { flex: 1, fontWeight: '700', fontSize: 15 },
-  step: { fontSize: 22, color: '#2f5bea', paddingHorizontal: 4 }, sv: { fontWeight: '600', minWidth: 54, textAlign: 'center' },
+  step: { fontSize: 22, color: '#146c43', paddingHorizontal: 4 }, sv: { fontWeight: '600', minWidth: 54, textAlign: 'center' },
   del: { color: '#c62828', fontWeight: '700' },
-  status: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#16232b' },
-  stT: { flex: 1, color: '#e6edf2', fontSize: 12 }, stR: { color: '#9fb2bf', fontSize: 12 },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#0a2e1f' },
+  stT: { flex: 1, color: '#e4f1e9', fontSize: 12 }, stR: { color: '#a8c5b4', fontSize: 12 },
 });

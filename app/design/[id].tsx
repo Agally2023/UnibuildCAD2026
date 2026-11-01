@@ -76,7 +76,7 @@ export default function Design() {
           rows={[['Axial load / moment', `${n0(c.NEd)} kN / ${n0(c.MEd)} kNm`], ['Steel required / provided', `${n0(c.AsReq)} / ${n0(c.AsProv)} mm²`], ['Vertical bars', c.bars], ['Links', c.links]]} />
       ))}
       <Pressable style={s.save} onPress={report}><Text style={s.sb}>Export calculation report (Markdown)</Text></Pressable>
-      <Pressable style={[s.save, s.alt]} onPress={save}><Text style={[s.sb, { color: '#2f5bea' }]}>Save design summary to project</Text></Pressable>
+      <Pressable style={[s.save, s.alt]} onPress={save}><Text style={[s.sb, { color: '#146c43' }]}>Save design summary to project</Text></Pressable>
       {!!msg && <Text style={s.k}>{msg}</Text>}
       <Text style={s.note}>{code === 'BS8110' ? 'BS 8110-1 preliminary design (1.4Gk + 1.6Qk, cube strength, fy 460 MPa, deflection by span/depth).' : 'Eurocode 2 preliminary design.'} Beams use continuous-beam analysis with load patterns; columns carry load from every storey above. Frame action on columns, lateral loads, deflection, crack width and detailing rules are not included. Not for construction without a registered engineer's review.</Text>
     </ScrollView>
@@ -84,10 +84,10 @@ export default function Design() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' }, btn: { fontSize: 24, color: '#2f5bea', paddingHorizontal: 10 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' }, btn: { fontSize: 24, color: '#146c43', paddingHorizontal: 10 },
   t: { fontSize: 20, fontWeight: '700', marginTop: 8 },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderLeftWidth: 5, borderRadius: 8, padding: 12 }, h: { fontWeight: '700', fontSize: 16, marginBottom: 4 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#5b6b75', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
-  save: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#2f5bea' }, sb: { color: '#fff', fontWeight: '600' },
-  note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderLeftWidth: 5, borderRadius: 8, padding: 12 }, h: { fontWeight: '700', fontSize: 16, marginBottom: 4 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#4f6a5b', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  save: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#146c43' }, sb: { color: '#fff', fontWeight: '600' },
+  note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
 });

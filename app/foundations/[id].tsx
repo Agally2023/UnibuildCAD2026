@@ -119,11 +119,11 @@ export default function SlabFoundations() {
             <Card title={`${st.kind === 'combined' ? 'Combined footing' : 'Strip footing'} ${st.id}: ${st.columns.length} columns, ${st.L.toFixed(1)} × ${st.B.toFixed(1)} × ${Math.round(st.h * 1000)} mm`} status={st.status} notes={st.notes}
               rows={[['Column loads (ULS)', st.columns.map(k => Math.round(k.N)).join(', ') + ' kN'], ['ULS / service pressure', `${Math.round(st.pULS)} / ${Math.round(st.pSLS)} kPa`], ['Max sagging / hogging moment', `${Math.round(st.Msag)} / ${Math.round(st.Mhog)} kNm`], ['Max shear', `${Math.round(st.Vmax)} kN`], ['Bottom / top steel (lengthwise)', `${st.barsBottom} / ${st.barsTop}`], ['Transverse steel', st.barsTransverse], ['Punching utilisation', `${(st.punchRatio * 100).toFixed(0)}%`], ...(st.lat ? [['Worst service pressure', `${Math.round(st.lat.pmax)} / ${st.lat.allow} kPa`], ['Uplift / sliding factor', `${st.lat.uplift > 0 ? Math.round(st.lat.uplift) + ' kN' : 'none'} / ${isFinite(st.lat.sliding) ? st.lat.sliding.toFixed(2) : 'n/a'}`]] as [string, string][] : [])]} />
             <Svg width={W + 20} height={130}>
-              <SRect x={10} y={10} width={W} height={110} fill="none" stroke="#d5dce1" />
+              <SRect x={10} y={10} width={W} height={110} fill="none" stroke="#cfdcd4" />
               <SLine x1={10} y1={65} x2={10 + W} y2={65} stroke="#9aa8b1" />
               {st.columns.map(k => <SLine key={k.id} x1={10 + (k.s - s0) * sx} y1={10} x2={10 + (k.s - s0) * sx} y2={120} stroke="#c98a00" strokeDasharray="4 3" />)}
-              <Polyline points={st.diagram.map(p => `${10 + p.s * sx},${65 - (p.M / mx) * 50}`).join(' ')} fill="none" stroke="#2f5bea" strokeWidth={2} />
-              <SText x={14} y={22} fontSize={10} fill="#5b6b75">bending moment (up = tension at the bottom), peak {Math.round(mx)} kNm</SText>
+              <Polyline points={st.diagram.map(p => `${10 + p.s * sx},${65 - (p.M / mx) * 50}`).join(' ')} fill="none" stroke="#146c43" strokeWidth={2} />
+              <SText x={14} y={22} fontSize={10} fill="#4f6a5b">bending moment (up = tension at the bottom), peak {Math.round(mx)} kNm</SText>
             </Svg>
           </View>
         );
@@ -155,15 +155,15 @@ export default function SlabFoundations() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' },
-  btn: { fontSize: 24, color: '#2f5bea', paddingHorizontal: 10 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' },
+  btn: { fontSize: 24, color: '#146c43', paddingHorizontal: 10 },
   t: { fontSize: 20, fontWeight: '700', marginTop: 8 },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderLeftWidth: 5, borderRadius: 8, padding: 12 },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderLeftWidth: 5, borderRadius: 8, padding: 12 },
   h: { fontWeight: '700', fontSize: 16, marginBottom: 4 },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 },
-  k: { color: '#5b6b75', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  k: { color: '#4f6a5b', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
   warn: { color: '#c4620a' },
-  save: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' },
-  note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  save: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' },
+  note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
   l: { fontSize: 14, color: '#1b2a33', paddingVertical: 4 },
 });

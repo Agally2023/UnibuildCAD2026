@@ -101,7 +101,7 @@ export default function Lateral() {
         ))}
         {r.notes.map(n => <Text key={n} style={s.k}>{n}</Text>)}
         <Pressable style={s.save} onPress={report}><Text style={s.sb}>Export lateral-load report (Markdown)</Text></Pressable>
-        <Pressable style={[s.save, s.alt]} onPress={save}><Text style={[s.sb, { color: '#2f5bea' }]}>Save results to project</Text></Pressable>
+        <Pressable style={[s.save, s.alt]} onPress={save}><Text style={[s.sb, { color: '#146c43' }]}>Save results to project</Text></Pressable>
       </>}
       {!!msg && <Text style={s.k}>{msg}</Text>}
       <Text style={s.note}>Shear-building model: rigid floors, D-value (Muto) column stiffness with cracked sections (0.5 EI), inflection at mid-height (0.65 h at the base), ±5% accidental torsion, overturning axial forces from the column group. Walls and cores are not counted as lateral elements. Wind uses EN 1991-1-4 pressures and net D + E coefficients; earthquake uses the EN 1998-1 type 1 spectrum with T1 = 0.075 H^0.75. Preliminary only: run a full 3D frame analysis for design.</Text>
@@ -110,12 +110,12 @@ export default function Lateral() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }, btn: { fontSize: 24, color: '#2f5bea', paddingHorizontal: 10 },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }, btn: { fontSize: 24, color: '#146c43', paddingHorizontal: 10 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' },
   t: { fontSize: 20, fontWeight: '700', marginTop: 8 },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderLeftWidth: 5, borderRadius: 8, padding: 12, gap: 2 }, h: { fontWeight: '700', fontSize: 16, marginBottom: 4 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#5b6b75', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
-  l: { color: '#2f5bea', fontWeight: '600' }, warn: { color: '#c4620a' },
-  save: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#2f5bea' }, sb: { color: '#fff', fontWeight: '600' },
-  note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderLeftWidth: 5, borderRadius: 8, padding: 12, gap: 2 }, h: { fontWeight: '700', fontSize: 16, marginBottom: 4 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#4f6a5b', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  l: { color: '#146c43', fontWeight: '600' }, warn: { color: '#c4620a' },
+  save: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#146c43' }, sb: { color: '#fff', fontWeight: '600' },
+  note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
 });

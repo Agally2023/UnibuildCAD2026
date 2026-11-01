@@ -42,13 +42,13 @@ export default function Dashboard() {
       <Text style={s.k}>{a.storeys} storey{a.storeys > 1 ? 's' : ''} · {els.length} elements. Add storeys on the plan with "+ Storey" or "Copy up".</Text>
       <Text style={s.total}>KES {M(a.cost.total)}</Text>
       <View style={s.bar}>
-        <View style={{ flex: a.cost.struct / t, backgroundColor: '#c98a00' }} /><View style={{ flex: a.cost.arch / t, backgroundColor: '#2f5bea' }} /><View style={{ flex: a.cost.mep / t, backgroundColor: '#0c9a87' }} />
+        <View style={{ flex: a.cost.struct / t, backgroundColor: '#c98a00' }} /><View style={{ flex: a.cost.arch / t, backgroundColor: '#146c43' }} /><View style={{ flex: a.cost.mep / t, backgroundColor: '#0c9a87' }} />
       </View>
       <Text style={s.k}>Structure {M(a.cost.struct)} · Architecture {M(a.cost.arch)} · MEP {M(a.cost.mep)}{a.arch.GFA ? ` · KES ${n0(a.cost.total / a.arch.GFA)}/m²` : ''}</Text>
-      <Card title="Architecture" c="#2f5bea" rows={[['Gross floor area', n0(a.arch.GFA) + ' m²'], ['Wall length', n1(a.arch.wallLen) + ' m'], ['Wall area (net)', n0(a.arch.wallArea) + ' m²'], ['Doors / windows', `${a.arch.doors} / ${a.arch.windows}`], ['Glazing', n1(a.arch.winArea) + ' m²']]} />
+      <Card title="Architecture" c="#146c43" rows={[['Gross floor area', n0(a.arch.GFA) + ' m²'], ['Wall length', n1(a.arch.wallLen) + ' m'], ['Wall area (net)', n0(a.arch.wallArea) + ' m²'], ['Doors / windows', `${a.arch.doors} / ${a.arch.windows}`], ['Glazing', n1(a.arch.winArea) + ' m²']]} />
       <Card title="Structure" c="#c98a00" rows={[['Columns / beams', `${a.struct.cols} / ${a.struct.beams}`], ['Concrete', n1(a.struct.conc) + ' m³'], ['Reinforcement (estimate)', n1(a.struct.steel) + ' t'], ['Reinforcement (from design)', n1(a.struct.designSteelT) + ' t'], ['Heaviest column load', n0(a.struct.axial) + ' kN']]} />
       <Card title="MEP" c="#0c9a87" rows={[['Cooling load', `${n0(a.mep.cool)} kW (${n0(a.mep.tr)} TR)`], ['Supply air', n1(a.mep.air) + ' m³/s'], ['Electrical demand', n0(a.mep.kva) + ' kVA'], ['Transformer', a.mep.trafo + ' kVA'], ['Water demand', n1(a.mep.water) + ' m³/day']]} />
-      <View style={[s.card, { borderTopColor: '#16232b' }]}>
+      <View style={[s.card, { borderTopColor: '#0a2e1f' }]}>
         <Text style={s.h}>Cross-discipline checks</Text>
         {a.checks.map((c, i) => <View key={i} style={s.chk}><View style={[s.dot, { backgroundColor: COL[c.level] }]} /><Text style={{ flex: 1 }}>{c.text}</Text></View>)}
       </View>
@@ -61,10 +61,10 @@ export default function Dashboard() {
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 12, maxWidth: 720, width: '100%', alignSelf: 'center' },
   ctl: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' },
   total: { fontSize: 32, fontWeight: '700' }, bar: { flexDirection: 'row', height: 20, borderRadius: 5, overflow: 'hidden' },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderTopWidth: 4, borderRadius: 10, padding: 14 }, h: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }, k: { color: '#5b6b75' }, v: { fontWeight: '600' },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderTopWidth: 4, borderRadius: 10, padding: 14 }, h: { fontSize: 18, fontWeight: '700', marginBottom: 6 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }, k: { color: '#4f6a5b' }, v: { fontWeight: '600' },
   chk: { flexDirection: 'row', gap: 10, paddingVertical: 5 }, dot: { width: 11, height: 11, borderRadius: 6, marginTop: 5 },
-  save: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  save: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
 });

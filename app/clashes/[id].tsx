@@ -74,8 +74,8 @@ export default function Clashes() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  btn: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, bt: { color: '#fff', fontWeight: '600' },
+  btn: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, bt: { color: '#fff', fontWeight: '600' },
   h: { fontSize: 18, fontWeight: '700', marginTop: 8 },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderLeftWidth: 5, borderRadius: 8, padding: 12, gap: 4 },
-  t: { fontWeight: '600' }, k: { color: '#5b6b75' }, acts: { flexDirection: 'row', gap: 16 }, l: { color: '#2f5bea', fontWeight: '600' },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderLeftWidth: 5, borderRadius: 8, padding: 12, gap: 4 },
+  t: { fontWeight: '600' }, k: { color: '#4f6a5b' }, acts: { flexDirection: 'row', gap: 16 }, l: { color: '#146c43', fontWeight: '600' },
 });

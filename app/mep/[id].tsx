@@ -102,11 +102,11 @@ export default function Mep() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, btn: { fontSize: 24, color: '#2f5bea', paddingHorizontal: 10 },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderTopWidth: 4, borderTopColor: '#0c9a87', borderRadius: 10, padding: 14 }, h: { fontSize: 18, fontWeight: '700', marginBottom: 6, color: '#0c9a87' },
-  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#5b6b75', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
-  l: { color: '#2f5bea', fontWeight: '600' }, warn: { color: '#c4620a' },
-  save: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, sb: { color: '#fff', fontWeight: '600' }, off: { opacity: 0.4 },
-  note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10 }, btn: { fontSize: 24, color: '#146c43', paddingHorizontal: 10 },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderTopWidth: 4, borderTopColor: '#0c9a87', borderRadius: 10, padding: 14 }, h: { fontSize: 18, fontWeight: '700', marginBottom: 6, color: '#0c9a87' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, gap: 8 }, k: { color: '#4f6a5b', flexShrink: 1 }, v: { fontWeight: '600', textAlign: 'right', flexShrink: 1 },
+  l: { color: '#146c43', fontWeight: '600' }, warn: { color: '#c4620a' },
+  save: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, sb: { color: '#fff', fontWeight: '600' }, off: { opacity: 0.4 },
+  note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
 });

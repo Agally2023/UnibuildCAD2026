@@ -37,7 +37,7 @@ export function ToolBar({ items }: { items: TItem[] }) {
       {items.map(it => it.sep ? <View key={it.key} style={s.tsep} /> : (
         <Pressable key={it.key} disabled={it.disabled} onPress={it.onPress} accessibilityLabel={it.label} {...({ title: it.label } as any)}
           style={({ hovered }: any) => [s.tb, it.active && s.tbOn, hovered && !it.active && s.btnHover, it.disabled && { opacity: 0.35 }]}>
-          <Icon name={it.icon} size={20} color={it.active ? '#fff' : '#16232b'} accent={it.active ? '#cfe0ff' : '#2f5bea'} />
+          <Icon name={it.icon} size={20} color={it.active ? '#fff' : '#0a2e1f'} accent={it.active ? '#c4e6d2' : '#146c43'} />
         </Pressable>
       ))}
     </ScrollView>
@@ -49,7 +49,7 @@ export function BoxBtn({ it, strip }: { it: RItem; strip?: boolean }) {
   return (
     <Pressable disabled={it.disabled} onPress={it.onPress} accessibilityLabel={it.label}
       style={({ hovered }: any) => [strip ? s.bs : s.bb, it.active && s.btnOn, hovered && !it.active && s.btnHover, it.disabled && { opacity: 0.35 }]}>
-      <Icon name={it.icon} size={strip ? 24 : 18} color={it.active ? '#fff' : '#16232b'} accent={it.active ? '#cfe0ff' : '#2f5bea'} />
+      <Icon name={it.icon} size={strip ? 24 : 18} color={it.active ? '#fff' : '#0a2e1f'} accent={it.active ? '#c4e6d2' : '#146c43'} />
       <Text style={[s.bbl, it.active && { color: '#fff' }]} numberOfLines={1}>{it.label}</Text>
     </Pressable>
   );
@@ -91,34 +91,34 @@ export function Toggle({ label, on, onChange }: { label: string; on: boolean; on
 }
 
 const s = StyleSheet.create({
-  mbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#16232b', zIndex: 60, position: 'relative', paddingHorizontal: 4 },
-  mi: { paddingHorizontal: 13, paddingVertical: 8 }, miOn: { backgroundColor: '#2c4352' }, mt: { color: '#e6edf2', fontSize: 13, fontWeight: '600' },
-  mr: { flex: 1, textAlign: 'right', color: '#9fb2bf', fontSize: 12, paddingRight: 10 },
-  drop: { position: 'absolute', top: '100%', minWidth: 230, backgroundColor: '#fff', borderWidth: 1, borderColor: '#aab6bd', borderRadius: 6, paddingVertical: 4, zIndex: 70, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  di: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingRight: 16 }, diHover: { backgroundColor: '#e3ebf7' },
-  dchk: { width: 26, textAlign: 'center', color: '#2f5bea', fontWeight: '700' }, dt: { color: '#16232b', fontSize: 13 }, dsep: { height: 1, backgroundColor: '#d5dce1', marginVertical: 4 },
-  tbar: { flexGrow: 0, backgroundColor: '#f3f6f9', borderBottomWidth: 1, borderColor: '#c5ced4' }, tbarIn: { paddingHorizontal: 6, paddingVertical: 4, alignItems: 'center', gap: 2 },
-  tb: { width: 34, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1, borderColor: 'transparent' }, tbOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' },
-  tsep: { width: 1, height: 22, backgroundColor: '#c5ced4', marginHorizontal: 5 },
+  mbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0a2e1f', zIndex: 60, position: 'relative', paddingHorizontal: 4 },
+  mi: { paddingHorizontal: 13, paddingVertical: 8 }, miOn: { backgroundColor: '#1d5a3d' }, mt: { color: '#e4f1e9', fontSize: 13, fontWeight: '600' },
+  mr: { flex: 1, textAlign: 'right', color: '#a8c5b4', fontSize: 12, paddingRight: 10 },
+  drop: { position: 'absolute', top: '100%', minWidth: 230, backgroundColor: '#fff', borderWidth: 1, borderColor: '#9db5a5', borderRadius: 6, paddingVertical: 4, zIndex: 70, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+  di: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingRight: 16 }, diHover: { backgroundColor: '#e0f0e6' },
+  dchk: { width: 26, textAlign: 'center', color: '#146c43', fontWeight: '700' }, dt: { color: '#0a2e1f', fontSize: 13 }, dsep: { height: 1, backgroundColor: '#cfdcd4', marginVertical: 4 },
+  tbar: { flexGrow: 0, backgroundColor: '#f1f7f3', borderBottomWidth: 1, borderColor: '#bccfc3' }, tbarIn: { paddingHorizontal: 6, paddingVertical: 4, alignItems: 'center', gap: 2 },
+  tb: { width: 34, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 5, borderWidth: 1, borderColor: 'transparent' }, tbOn: { backgroundColor: '#146c43', borderColor: '#146c43' },
+  tsep: { width: 1, height: 22, backgroundColor: '#bccfc3', marginHorizontal: 5 },
   bb: { width: '48%', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 6, borderRadius: 5, borderWidth: 1, borderColor: 'transparent' },
   bs: { width: 58, alignItems: 'center', gap: 2, paddingVertical: 5, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
-  bbl: { fontSize: 12, color: '#16232b', fontWeight: '600', flexShrink: 1 },
-  sec: { borderBottomWidth: 1, borderColor: '#dde3e8' }, sech: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 8, backgroundColor: '#e8eef2' },
-  secc: { color: '#5b6b75', width: 10, fontSize: 11 }, sect: { fontSize: 11, color: '#33434d', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700' }, secb: { padding: 6 },
-  wrap: { backgroundColor: '#f3f6f9', borderBottomWidth: 1, borderColor: '#c5ced4' },
-  tabs: { flexGrow: 0, backgroundColor: '#16232b' },
+  bbl: { fontSize: 12, color: '#0a2e1f', fontWeight: '600', flexShrink: 1 },
+  sec: { borderBottomWidth: 1, borderColor: '#dde3e8' }, sech: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 8, backgroundColor: '#e2eee7' },
+  secc: { color: '#4f6a5b', width: 10, fontSize: 11 }, sect: { fontSize: 11, color: '#33434d', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700' }, secb: { padding: 6 },
+  wrap: { backgroundColor: '#f1f7f3', borderBottomWidth: 1, borderColor: '#bccfc3' },
+  tabs: { flexGrow: 0, backgroundColor: '#0a2e1f' },
   tab: { paddingHorizontal: 16, paddingVertical: 8, marginTop: 4, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
-  tabOn: { backgroundColor: '#f3f6f9' }, tabT: { color: '#cdd8df', fontWeight: '600' }, tabTOn: { color: '#16232b' },
+  tabOn: { backgroundColor: '#f1f7f3' }, tabT: { color: '#c9ddd1', fontWeight: '600' }, tabTOn: { color: '#0a2e1f' },
   panel: { flexGrow: 0 }, panelIn: { paddingHorizontal: 6, paddingVertical: 6 },
-  group: { paddingHorizontal: 8, justifyContent: 'space-between' }, sep: { borderLeftWidth: 1, borderColor: '#d5dce1' },
+  group: { paddingHorizontal: 8, justifyContent: 'space-between' }, sep: { borderLeftWidth: 1, borderColor: '#cfdcd4' },
   items: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
-  gn: { textAlign: 'center', fontSize: 11, color: '#5b6b75', marginTop: 4 },
+  gn: { textAlign: 'center', fontSize: 11, color: '#4f6a5b', marginTop: 4 },
   btn: { width: 62, paddingVertical: 6, alignItems: 'center', gap: 3, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
-  btnOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' }, btnHover: { backgroundColor: '#e3ebf7', borderColor: '#c9d8f0' },
-  bl: { fontSize: 11, color: '#16232b', fontWeight: '600' },
-  stp: { alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingTop: 4, minWidth: 84 }, sl: { fontSize: 11, color: '#5b6b75' },
+  btnOn: { backgroundColor: '#146c43', borderColor: '#146c43' }, btnHover: { backgroundColor: '#e0f0e6', borderColor: '#b9d8c6' },
+  bl: { fontSize: 11, color: '#0a2e1f', fontWeight: '600' },
+  stp: { alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingTop: 4, minWidth: 84 }, sl: { fontSize: 11, color: '#4f6a5b' },
   sr: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  sb: { width: 26, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#aab6bd', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }, sbt: { fontSize: 17, color: '#2f5bea', fontWeight: '700', lineHeight: 20 },
+  sb: { width: 26, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#9db5a5', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }, sbt: { fontSize: 17, color: '#146c43', fontWeight: '700', lineHeight: 20 },
   sv: { minWidth: 52, textAlign: 'center', fontWeight: '700', fontSize: 13 },
-  seg: { paddingHorizontal: 9, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#aab6bd', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }, segOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' }, segT: { fontSize: 12, fontWeight: '700', color: '#16232b' },
+  seg: { paddingHorizontal: 9, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#9db5a5', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }, segOn: { backgroundColor: '#146c43', borderColor: '#146c43' }, segT: { fontSize: 12, fontWeight: '700', color: '#0a2e1f' },
 });
