@@ -17,6 +17,7 @@ import type { El, Lib } from '../../lib/engineering';
 const PX = 50;      // pixels per metre at 100% zoom
 const N = 120;      // plan canvas size in metres
 type Pt = [number, number];
+type Cmd = { add: El[]; del: El[]; mod: [El, El][] };      // one undoable step: rows added, rows deleted, rows changed (before, after)
 type Tool = 'select' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
 const DBT: Record<string, string> = { plant: 'equipment', outlet: 'fixture' };
 const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', slab: 'structure', foundation: 'structure', duct: 'mep', pipe: 'mep', equipment: 'mep', fixture: 'mep' };
@@ -186,7 +187,14 @@ export default function Plan() {
   const setWallTh = (v: number) => { setPlan({ wallTh: v }); setWallThS(v); };
   const setSlabTh = (v: number) => { setPlan({ slabTh: v }); setSlabThS(v); };
   const basis = (p: Partial<typeof dsn>) => { setDsn(p); bump(n => n + 1); };
-  const [selId, setSelId] = useState<string | null>(null);
+  const [selIds, setSelIds] = useState<string[]>([]);
+  const setSelId = (sid: string | null) => setSelIds(sid ? [sid] : []);
+  const [xf, setXf] = useState<{ kind: 'move' | 'copy'; base: Pt | null } | null>(null);
+  const [mq, setMq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [multi, setMulti] = useState(false);
+  const shiftRef = useRef(false), suppress = useRef(0);
+  const hist = useRef<{ u: Cmd[]; r: Cmd[] }>({ u: [], r: [] });
+  const [hn, setHn] = useState({ u: 0, r: 0 });
   const [cur2, setCur2] = useState<Pt | null>(null);       // snapped pointer position in metres (web)
   const canvasRef = useRef<any>(null);
   const [issues, setIssues] = useState<{ id: string; location: any; story_id: string | null }[]>([]);
@@ -200,7 +208,8 @@ export default function Plan() {
   const def = TOOLS[tool];
   const choices = useMemo(() => (def.lib ? lib.filter(def.lib) : []), [lib, def]);
   const chosen = choices.length ? choices[(pick[tool] ?? 0) % choices.length] : null;
-  const sel = selId ? here.find(e => e.id === selId) ?? null : null;
+  const selEls = useMemo(() => here.filter(e => selIds.includes(e.id)), [here, selIds]);
+  const sel = selEls.length === 1 ? selEls[0] : null;
 
   const [pname, setPname] = useState('');
   useFocusEffect(useCallback(() => { rememberProject(id); supabase.from('projects').select('name').eq('id', id).single().then(({ data }) => setPname(data?.name ?? '')); }, [id]));
@@ -210,19 +219,43 @@ export default function Plan() {
     supabase.from('issues').select('id,location,story_id').eq('project_id', id).eq('status', 'open').then(({ data }) => setIssues(((data as any[]) ?? []).filter(i => i.location)));
   }, [id]));
 
-  // new elements appear at once; the server write follows, and the element is taken back if it fails
+  // every edit is one undoable step. The model changes at once; the server write follows, and the model is reloaded if it fails.
+  const dbRow = (r: El) => ({ id: r.id, project_id: id, story_id: r.story_id, type: r.type, discipline: DISC[r.type] ?? 'architecture', library_item_id: r.library_item_id, geometry: r.geometry, properties: r.properties ?? {} });
+  const sync = () => setHn({ u: hist.current.u.length, r: hist.current.r.length });
+  const apply = async (c: Cmd, rev: boolean) => {
+    const ad = rev ? c.del : c.add, dl = rev ? c.add : c.del, md = c.mod.map(([x, y]) => (rev ? [y, x] : [x, y]) as [El, El]), errs: string[] = [];
+    if (dl.length) removeEls(dl.map(x => x.id));
+    if (ad.length) addEls(ad);
+    md.forEach(([, to]) => updateEl(to));
+    if (dl.length) { const r = await supabase.from('elements').delete().in('id', dl.map(x => x.id)); if (r.error) errs.push(r.error.message); }
+    if (ad.length) { const r = await supabase.from('elements').insert(ad.map(dbRow)); if (r.error) errs.push(r.error.message); }
+    for (const [, to] of md) { const r = await supabase.from('elements').update({ geometry: to.geometry }).eq('id', to.id); if (r.error) errs.push(r.error.message); }
+    if (errs.length) { setErr(errs[0]); reload(); }
+  };
+  const run = async (c: Cmd) => { hist.current.u.push(c); if (hist.current.u.length > 200) hist.current.u.shift(); hist.current.r = []; sync(); await apply(c, false); };
+  const undo = async () => { const c = hist.current.u.pop(); if (!c) return; hist.current.r.push(c); sync(); setSelIds([]); await apply(c, true); };
+  const redo = async () => { const c = hist.current.r.pop(); if (!c) return; hist.current.u.push(c); sync(); setSelIds([]); await apply(c, false); };
+
   const add = async (geometry: object) => {
     setErr('');
     const type = DBT[tool] ?? tool, row: El = { id: newId(), type, geometry, library_item_id: chosen?.id ?? null, story_id: story?.id ?? null, properties: {} };
-    addEls([row]);
-    const { error } = await supabase.from('elements').insert({ id: row.id, project_id: id, story_id: row.story_id, type, discipline: DISC[type], library_item_id: row.library_item_id, geometry });
-    if (error) { removeEls([row.id]); setErr(error.message); }
+    await run({ add: [row], del: [], mod: [] });
   };
 
   const tap = async (wx: number, wy: number) => {
+    if (Date.now() - suppress.current < 300) return;          // the click that ends a rectangle selection
     const mx = wx / PX, my = wy / PX;
-    if (tool === 'select') { setSelId(hitTest(here, wallById, mx, my, 14 / (PX * zoom))?.id ?? null); return; }
     const p: Pt = [r2(Math.round(mx / snap) * snap), r2(Math.round(my / snap) * snap)];
+    if (xf) {
+      if (!xf.base) return setXf({ ...xf, base: p });
+      const k = xf.kind; setXf(null); return void (await doXf(k, r2(p[0] - xf.base[0]), r2(p[1] - xf.base[1])));
+    }
+    if (tool === 'select') {
+      const sid = hitTest(here, wallById, mx, my, 14 / (PX * zoom))?.id ?? null;
+      if (shiftRef.current || multi) setSelIds(old => (sid ? (old.includes(sid) ? old.filter(x => x !== sid) : [...old, sid]) : old));
+      else setSelIds(sid ? [sid] : []);
+      return;
+    }
     if (tool === 'column') { const sp = chosen?.specs ?? {}; return add({ at: p, b: (sp.b_mm ?? 300) / 1000, h: (sp.h_mm ?? 300) / 1000, height: H }); }
     if (tool === 'plant') return add({ at: p });
     if (tool === 'outlet') return add({ at: p, kw });
@@ -239,19 +272,49 @@ export default function Plan() {
     setStart(p);
   };
 
-  // delete an element (and the doors and windows in a wall)
-  const remove = async (e: El) => {
-    const gone = [e, ...(e.type === 'wall' ? here.filter(o => (o.type === 'door' || o.type === 'window') && o.geometry.wall_id === e.id) : [])];
-    removeEls(gone.map(x => x.id)); setSelId(null);
-    const { error } = await supabase.from('elements').delete().in('id', gone.map(x => x.id));
-    if (error) { addEls(gone); setErr(error.message); }
+  const isOpen = (e: El) => e.type === 'door' || e.type === 'window';
+  // delete elements (and the doors and windows in a deleted wall)
+  const removeMany = async (list: El[]) => {
+    const ids = new Set(list.map(x => x.id)), gone = [...list, ...here.filter(o => isOpen(o) && !ids.has(o.id) && ids.has(o.geometry.wall_id))];
+    if (!gone.length) return;
+    setSelIds([]); await run({ add: [], del: gone, mod: [] });
   };
-  const undo = async () => { const last = here[here.length - 1]; if (last) await remove(last); };
-  const edit = async (e: El, geometry: any) => {
-    const prev = e; updateEl({ ...e, geometry });
-    const { error } = await supabase.from('elements').update({ geometry }).eq('id', e.id);
-    if (error) { updateEl(prev); setErr(error.message); }
+  const remove = (e: El) => removeMany([e]);
+  const edit = async (e: El, geometry: any) => { await run({ add: [], del: [], mod: [[e, { ...e, geometry }]] }); };
+
+  // move or copy the selection by (dx, dy) metres; doors and windows follow their wall
+  const shiftG = (g: any, dx: number, dy: number) => {
+    const o = { ...g };
+    if (g.start) { o.start = [r2(g.start[0] + dx), r2(g.start[1] + dy)]; o.end = [r2(g.end[0] + dx), r2(g.end[1] + dy)]; }
+    if (g.at) o.at = [r2(g.at[0] + dx), r2(g.at[1] + dy)];
+    if (g.rect) o.rect = [r2(g.rect[0] + dx), r2(g.rect[1] + dy), r2(g.rect[2] + dx), r2(g.rect[3] + dy)];
+    return o;
   };
+  const doXf = async (kind: 'move' | 'copy', dx: number, dy: number) => {
+    if (!selEls.length || (!dx && !dy)) return;
+    const ids = new Set(selIds), body = selEls.filter(e => !isOpen(e));
+    if (!body.length) return setErr('Select the wall: its doors and windows move and copy with it.');
+    if (kind === 'move') return void (await run({ add: [], del: [], mod: body.map(e => [e, { ...e, geometry: shiftG(e.geometry, dx, dy) }] as [El, El]) }));
+    const map: Record<string, string> = {}, rows: El[] = body.map(e => { map[e.id] = newId(); return { ...e, id: map[e.id], geometry: shiftG(e.geometry, dx, dy) }; });
+    here.filter(o => isOpen(o) && (ids.has(o.id) || ids.has(o.geometry.wall_id)) && map[o.geometry.wall_id]).forEach(o => rows.push({ ...o, id: newId(), geometry: { ...o.geometry, wall_id: map[o.geometry.wall_id] } }));
+    setSelIds(rows.map(r => r.id)); await run({ add: rows, del: [], mod: [] });
+  };
+  const bbox = (e: El): [number, number, number, number] | null => {
+    const g = e.geometry;
+    if (g.start) return [Math.min(g.start[0], g.end[0]), Math.min(g.start[1], g.end[1]), Math.max(g.start[0], g.end[0]), Math.max(g.start[1], g.end[1])];
+    if (g.at) return [g.at[0] - 0.15, g.at[1] - 0.15, g.at[0] + 0.15, g.at[1] + 0.15];
+    if (g.rect) return [g.rect[0], g.rect[1], g.rect[2], g.rect[3]];
+    if (isOpen(e)) { const o = openingSeg(e, wallById); return o ? [Math.min(o.a[0], o.b[0]), Math.min(o.a[1], o.b[1]), Math.max(o.a[0], o.b[0]), Math.max(o.a[1], o.b[1])] : null; }
+    return null;
+  };
+  // rectangle selection: left to right takes what is fully inside, right to left takes what it touches
+  const pickBox = (a: Pt, b: Pt, crossing: boolean) => {
+    const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+    const hit = here.filter(e => { const bb = bbox(e); if (!bb) return false; return crossing ? bb[0] <= x1 && bb[2] >= x0 && bb[1] <= y1 && bb[3] >= y0 : bb[0] >= x0 && bb[2] <= x1 && bb[1] >= y0 && bb[3] <= y1; }).map(e => e.id);
+    setSelIds(old => (shiftRef.current || multi ? [...new Set([...old, ...hit])] : hit));
+  };
+  const live = useRef<any>({});
+  live.current = { tool, zoom, xf, pickBox };
 
   const addStorey = async (copy: boolean) => {
     if (!story) return;
@@ -310,7 +373,8 @@ export default function Plan() {
     return { info, steps };
   };
 
-  const setT = (k: Tool) => { setTool(k); setStart(null); setErr(''); if (k !== 'select') setSelId(null); };
+  const startXf = (kind: 'move' | 'copy') => { if (!selEls.length) return setErr('Select something first, then choose Move or Copy.'); setTool('select'); setStart(null); setXf({ kind, base: null }); setErr(''); };
+  const setT = (k: Tool) => { setTool(k); setStart(null); setXf(null); setErr(''); if (k !== 'select') setSelId(null); };
   const ti = (k: Tool): RItem => ({ key: k, label: TOOLS[k].label, icon: TOOL_ICON[k], active: tool === k, onPress: () => setT(k) });
   const go = (route: string): RItem['onPress'] => () => router.push(`/${route}/${id}` as any);
   const exportIfc = async () => {
@@ -332,7 +396,7 @@ export default function Plan() {
 
   const toolSettings = (
     <>
-      {tool === 'select' && <Text style={s.rhint}>Select has no settings. Tap an element, then change it in the Properties panel.</Text>}
+      {tool === 'select' && <><Toggle label="Add to selection" on={multi} onChange={setMulti} /><Text style={s.rhint}>Tap an element, or drag a box (left to right: inside; right to left: touching). Shift adds. Then Move (M), Copy (K), arrows to nudge.</Text></>}
       {choices.length > 0 && <Stepper label={`${def.label} type`} value={chosen ? short(chosen.name, 16) : '-'} dec={() => cycle(-1)} inc={() => cycle(1)} />}
       {tool === 'wall' && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
       {tool === 'slab' && <Stepper label="Slab thickness" value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
@@ -345,7 +409,7 @@ export default function Plan() {
   const SEP = { label: '', sep: true };
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
-    { key: 'edit', label: 'Edit', items: [mi('Undo last element', undo), mi('Select (V)', () => setT('select')), mi('Delete selected', () => sel && remove(sel), { disabled: !sel }), mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
+    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(here.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
     { key: 'design', label: 'Design', items: [...(['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Dashboard', go('dashboard'))] },
@@ -361,8 +425,11 @@ export default function Plan() {
   const tbItems: TItem[] = [
     { key: 'sel', label: 'Select', icon: 'select', active: tool === 'select', onPress: () => setT('select') },
     { key: 's1', label: '', icon: 'select', sep: true, onPress: () => {} },
-    { key: 'undo', label: 'Undo last element', icon: 'undo', onPress: undo },
-    { key: 'del', label: 'Delete selected', icon: 'delete', disabled: !sel, onPress: () => sel && remove(sel) },
+    { key: 'undo', label: 'Undo (Ctrl+Z)', icon: 'undo', disabled: !hn.u, onPress: undo },
+    { key: 'redo', label: 'Redo (Ctrl+Y)', icon: 'redo', disabled: !hn.r, onPress: redo },
+    { key: 'mv', label: 'Move selection (M)', icon: 'move', active: xf?.kind === 'move', disabled: !selEls.length, onPress: () => startXf('move') },
+    { key: 'cp', label: 'Copy selection (K)', icon: 'copy', active: xf?.kind === 'copy', disabled: !selEls.length, onPress: () => startXf('copy') },
+    { key: 'del', label: 'Delete selected', icon: 'delete', disabled: !selEls.length, onPress: () => removeMany(selEls) },
     { key: 'fin', label: 'Finish chain', icon: 'finish', disabled: !start, onPress: () => setStart(null) },
     { key: 's2', label: '', icon: 'select', sep: true, onPress: () => {} },
     { key: 'zi', label: 'Zoom in', icon: 'zoomin', onPress: () => setZoom(z => Math.min(3, z * 1.25)) },
@@ -390,12 +457,18 @@ export default function Plan() {
   // keyboard on the web: V select, tool letters, Esc, Delete, Ctrl+Z
   const keyRef = useRef<(k: KeyboardEvent) => void>(() => {});
   keyRef.current = (k: KeyboardEvent) => {
+    shiftRef.current = k.shiftKey;
     const tg = k.target as HTMLElement | null; if (tg && /INPUT|TEXTAREA/.test(tg.tagName)) return;
-    const key = k.key.toLowerCase(), map: Record<string, Tool> = { v: 'select', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
-    if ((k.ctrlKey || k.metaKey) && key === 'z') { k.preventDefault(); undo(); }
-    else if (key === 'escape') { setStart(null); setSelId(null); setMenu(null); }
-    else if ((key === 'delete' || key === 'backspace') && sel) { k.preventDefault(); remove(sel); }
-    else if (!k.ctrlKey && !k.metaKey && !k.altKey && map[key]) setT(map[key]);
+    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
+    const arrows: Record<string, Pt> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
+    if (ctrl && key === 'z' && !k.shiftKey) { k.preventDefault(); undo(); }
+    else if (ctrl && (key === 'y' || (key === 'z' && k.shiftKey))) { k.preventDefault(); redo(); }
+    else if (ctrl && key === 'a') { k.preventDefault(); setT('select'); setSelIds(here.map(e => e.id)); }
+    else if (key === 'escape') { setStart(null); setXf(null); setSelIds([]); setMenu(null); }
+    else if ((key === 'delete' || key === 'backspace') && selEls.length) { k.preventDefault(); removeMany(selEls); }
+    else if (arrows[key] && selEls.length && tool === 'select') { k.preventDefault(); doXf('move', r2(arrows[key][0] * snap), r2(arrows[key][1] * snap)); }
+    else if ((key === 'm' || key === 'k') && !ctrl) startXf(key === 'm' ? 'move' : 'copy');
+    else if (!ctrl && !k.altKey && map[key]) setT(map[key]);
   };
   const ptrRef = useRef<(x: number, y: number) => void>(() => {});
   ptrRef.current = (cx: number, cy: number) => {
@@ -413,21 +486,41 @@ export default function Plan() {
   }, []);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const h = (k: KeyboardEvent) => keyRef.current(k);
-    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
+    const h = (k: KeyboardEvent) => keyRef.current(k), up = (k: KeyboardEvent) => { shiftRef.current = k.shiftKey; };
+    window.addEventListener('keydown', h); window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', h); window.removeEventListener('keyup', up); };
+  }, []);
+  // drag a rectangle in the Select tool to pick several elements
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    let d: { cx: number; cy: number; on: boolean } | null = null;
+    const toM = (cx: number, cy: number): Pt | null => { const el = canvasRef.current; if (!el?.getBoundingClientRect) return null; const r = el.getBoundingClientRect(), z = live.current.zoom; return [(cx - r.left) / z / PX, (cy - r.top) / z / PX]; };
+    const down = (e: MouseEvent) => { const L = live.current, el = canvasRef.current; if (e.button !== 0 || L.tool !== 'select' || L.xf || !el?.contains?.(e.target as Node)) return; d = { cx: e.clientX, cy: e.clientY, on: false }; };
+    const move = (e: MouseEvent) => { if (!d || (!d.on && Math.hypot(e.clientX - d.cx, e.clientY - d.cy) < 6)) return; d.on = true; const a = toM(d.cx, d.cy), b = toM(e.clientX, e.clientY); if (a && b) setMq({ x0: a[0], y0: a[1], x1: b[0], y1: b[1] }); };
+    const end = (e: MouseEvent) => { if (!d) return; const w = d; d = null; if (!w.on) return; suppress.current = Date.now(); setMq(null); const a = toM(w.cx, w.cy), b = toM(e.clientX, e.clientY); if (a && b) live.current.pickBox(a, b, b[0] < a[0]); };
+    window.addEventListener('mousedown', down); window.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+    return () => { window.removeEventListener('mousedown', down); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', end); };
   }, []);
 
   const insp = sel ? inspector(sel) : null;
-  const Inspector = insp && sel ? (
+  const Multi = selEls.length > 1 ? (
+    <View style={s.insp}>
+      <View style={s.ir}><Text style={s.it}>{selEls.length} elements selected</Text><Pressable onPress={() => setSelIds([])}><Text style={s.l}>Done</Text></Pressable></View>
+      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable></View>
+      <Pressable onPress={() => removeMany(selEls)}><Text style={s.del}>Delete {selEls.length} elements</Text></Pressable>
+    </View>
+  ) : null;
+  const Inspector = Multi ?? (insp && sel ? (
     <View style={s.insp}>
       <View style={s.ir}><Text style={s.it}>{NAME[sel.type] ?? sel.type}{libById[sel.library_item_id ?? ''] ? ` · ${libById[sel.library_item_id ?? ''].name}` : ''}</Text><Pressable onPress={() => setSelId(null)}><Text style={s.l}>Done</Text></Pressable></View>
       <Text style={s.k}>{insp.info}</Text>
       {insp.steps.map(([label, val, dec, inc]) => (
         <View key={label} style={s.ir}><Text style={[s.k, { flex: 1 }]}>{label}</Text><Pressable onPress={dec}><Text style={s.step}>−</Text></Pressable><Text style={s.sv}>{val}</Text><Pressable onPress={inc}><Text style={s.step}>+</Text></Pressable></View>
       ))}
+      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable></View>
       <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
     </View>
-  ) : null;
+  ) : null);
   const rows: [string, number][] = ([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number]);
 
   const quick = (
@@ -488,7 +581,9 @@ export default function Plan() {
                 <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
                   {grid ? <Grid c={pal} /> : <Rect x={0} y={0} width={S} height={S} fill={pal.bg} />}
                   <Layer here={here} libById={libById} wallById={wallById} dims={dims} c={pal} />
-                  {sel && <Highlight e={sel} wallById={wallById} />}
+                  {selEls.map(e => <Highlight key={e.id} e={e} wallById={wallById} />)}
+                  {mq && <Rect x={Math.min(mq.x0, mq.x1) * PX} y={Math.min(mq.y0, mq.y1) * PX} width={Math.abs(mq.x1 - mq.x0) * PX} height={Math.abs(mq.y1 - mq.y0) * PX} fill={pal.cursor} fillOpacity={0.08} stroke={pal.cursor} strokeWidth={1.5} strokeDasharray={mq.x1 < mq.x0 ? '6 4' : undefined} />}
+                  {xf?.base && cur2 && <Line x1={xf.base[0] * PX} y1={xf.base[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke="#c62828" strokeWidth={2} strokeDasharray="8 6" />}
                   {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke={pal.cursor} strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={4} fill="none" stroke={pal.cursor} strokeWidth={1.5} /></G>}
                   {start && cur2 && (tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
@@ -532,8 +627,8 @@ export default function Plan() {
       </View>
       {quick}
       <View style={s.status}>
-        <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{def.hint}</Text>
-        <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
+        <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{xf ? (xf.base ? `Tap the target point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}. Esc cancels.` : `Tap the base point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}.`) : def.hint}</Text>
+        <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{xf?.base && cur2 ? `  ·  Δ ${r2(cur2[0] - xf.base[0])}, ${r2(cur2[1] - xf.base[1])} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
       </View>
     </View>
   );
