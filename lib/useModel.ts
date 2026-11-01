@@ -46,7 +46,8 @@ export function useModel(id: string) {
     if (libCache) setLib(libCache);
     supabase.from('library_items').select('id,category,name,specs,unit_cost').then(({ data }) => { libCache = (data as Lib[]) ?? []; setLib(libCache); });
     reload();
-    const ch = supabase.channel(`model-${id}`)
+    // one channel per mounted screen: the Plan stays mounted under other screens, and a shared name would be reused after subscribe()
+    const ch = supabase.channel(`model-${id}-${newId().slice(0, 8)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'elements', filter: `project_id=eq.${id}` }, (p: any) => {
         if (p.eventType === 'DELETE') { if (p.old?.id) removeEls([p.old.id]); return; }
         if (p.new?.id) commit(s => { const row = pick(p.new), has = s.els.some(e => e.id === row.id); return { ...s, els: has ? s.els.map(e => (e.id === row.id ? row : e)) : [...s.els, row] }; });

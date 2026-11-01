@@ -6,7 +6,7 @@ import { useModel } from '../../lib/useModel';
 import { toIfc } from '../../lib/ifc';
 import { saveFile } from '../../components/saveFile';
 
-type Mod = { route?: string; title: string; what: string; use: string; badge?: string; action?: () => void };
+type Mod = { route?: string; title: string; what: string; badge?: string; action?: () => void };
 
 export default function Hub() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -27,33 +27,24 @@ export default function Hub() {
     catch (e: any) { setMsg('IFC export failed: ' + (e?.message ?? e)); }
   };
 
-  const steps: [string, boolean | null, string][] = [
-    ['Set up storeys', stories.length > 0, 'In Plan, use + Storey (or Copy up) for each floor. Each storey has an elevation and a height.'],
-    ['Draw the architecture', (c.wall ?? 0) > 0, 'Walls, then doors and windows tapped onto them.'],
-    ['Place the structure', (c.column ?? 0) > 0 && ((c.beam ?? 0) > 0 || (c.slab ?? 0) > 0), 'Columns on a grid, beams between them (or none for a flat slab), and slabs.'],
-    ['Place the services', (c.equipment ?? 0) > 0 && (c.fixture ?? 0) > 0, 'A plant and outlets with cooling loads; the MEP module routes and sizes the rest.'],
-    ['Check for clashes', null, 'Run clash detection after the services are placed; fix what it finds.'],
-    ['Design and verify', null, 'Member design, then slab and foundations, then wind and earthquake. Read every red or amber card.'],
-    ['Report and share', null, 'Export the calculation report from Member design, the IFC from below, and save snapshots on the Dashboard.'],
-  ];
   const sections: { title: string; color: string; mods: Mod[] }[] = [
     { title: 'Model', color: '#2f5bea', mods: [
-      { route: 'project', title: 'Plan', what: 'Draw and edit one storey at a time: walls, columns, beams, slabs, doors, windows, ducts, pipes. Select any element to resize or delete it.', use: 'Start here. Every other module reads this model.', badge: `${els.length} elements` },
-      { route: 'view3d', title: '3D view', what: 'All storeys stacked at their real levels, with true thicknesses and beam levels.', use: 'Check the model looks right before you analyse it.' },
-      { route: 'import', title: 'Import IFC', what: 'Bring in a building exported from Revit, ArchiCAD or Tekla (IFC2x3 or IFC4).', use: 'When the architecture already exists in another program.' },
-      { title: 'Export IFC', what: 'Save the whole model as an IFC4 file with openings and property sets.', use: 'To open it in Revit, ArchiCAD, BIM viewers or share it with the team.', action: exportIfc },
+      { route: 'project', title: 'Plan', what: 'Draw and edit one storey at a time: walls, columns, beams, slabs, doors, windows, ducts, pipes. Select any element to resize or delete it.', badge: `${els.length} elements` },
+      { route: 'view3d', title: '3D view', what: 'All storeys stacked at their real levels, with true thicknesses and beam levels.' },
+      { route: 'import', title: 'Import IFC', what: 'Bring in a building exported from Revit, ArchiCAD or Tekla (IFC2x3 or IFC4).' },
+      { title: 'Export IFC', what: 'Save the whole model as an IFC4 file with openings and property sets.', action: exportIfc },
     ] },
     { title: 'Structural design', color: '#c98a00', mods: [
-      { route: 'design', title: 'Member design', what: 'Continuous beams with load patterns, columns carrying every storey above, shear links, deflection and crack width. Eurocode 2 or BS 8110. Exports the calculation report.', use: 'After the structure is drawn. Start with the load and concrete class.', badge: `${c.beam ?? 0} beams · ${c.column ?? 0} columns` },
-      { route: 'foundations', title: 'Slab and foundations', what: 'Slab panels, flat slabs (punching shear and equivalent-frame bending), pad, strip and combined footings, ground beams, lateral loads at the base.', use: 'Needs columns. Enter the soil bearing pressure from your site investigation.', badge: `${c.slab ?? 0} slabs` },
-      { route: 'lateral', title: 'Wind and earthquake', what: 'Wind to EN 1991-1-4 and equivalent-static earthquake to EN 1998-1, shared among columns, with drift, overturning and column checks.', use: 'For anything taller than a couple of storeys, or in a seismic zone.' },
+      { route: 'design', title: 'Member design', what: 'Continuous beams with load patterns, columns carrying every storey above, shear links, deflection and crack width. Eurocode 2 or BS 8110. Exports the calculation report.', badge: `${c.beam ?? 0} beams · ${c.column ?? 0} columns` },
+      { route: 'foundations', title: 'Slab and foundations', what: 'Slab panels, flat slabs (punching shear and equivalent-frame bending), pad, strip and combined footings, ground beams, lateral loads at the base.', badge: `${c.slab ?? 0} slabs` },
+      { route: 'lateral', title: 'Wind and earthquake', what: 'Wind to EN 1991-1-4 and equivalent-static earthquake to EN 1998-1, shared among columns, with drift, overturning and column checks.' },
     ] },
     { title: 'Services (MEP)', color: '#0c9a87', mods: [
-      { route: 'mep', title: 'MEP routing and sizing', what: 'Routes ducts and chilled-water pipes from a plant to the outlets, sizes every segment, lowers them under beams, and reports fittings and pressure drop for fan and pump selection.', use: 'After placing one plant and the outlets (with kW loads) on the plan.', badge: `${c.equipment ?? 0} plant · ${c.fixture ?? 0} outlets` },
+      { route: 'mep', title: 'MEP routing and sizing', what: 'Routes ducts and chilled-water pipes from a plant to the outlets, sizes every segment, lowers them under beams, and reports fittings and pressure drop for fan and pump selection.', badge: `${c.equipment ?? 0} plant · ${c.fixture ?? 0} outlets` },
     ] },
     { title: 'Coordination and output', color: '#8a3ffc', mods: [
-      { route: 'clashes', title: 'Clash detection', what: 'Finds elements that collide between disciplines and marks them on the plan; results are saved as issues.', use: 'Run it after every round of changes.', badge: open === null ? undefined : `${open} open` },
-      { route: 'dashboard', title: 'Dashboard', what: 'Quantities, cost, structural status and MEP loads for the whole building, with saved snapshots.', use: 'To see where the building stands and compare options.' },
+      { route: 'clashes', title: 'Clash detection', what: 'Finds elements that collide between disciplines and marks them on the plan; results are saved as issues.', badge: open === null ? undefined : `${open} open` },
+      { route: 'dashboard', title: 'Dashboard', what: 'Quantities, cost, structural status and MEP loads for the whole building, with saved snapshots.' },
     ] },
   ];
   const go = (m: Mod) => (m.action ? m.action() : router.push(`/${m.route}/${id}` as any));
@@ -63,16 +54,6 @@ export default function Hub() {
       <Text style={s.h1}>{name || 'Project'}</Text>
       <Text style={s.k}>{loaded || els.length ? `${stories.length} storey${stories.length === 1 ? '' : 's'} · ${els.length} elements · ${c.wall ?? 0} walls · ${c.column ?? 0} columns · ${c.beam ?? 0} beams · ${c.slab ?? 0} slabs` : 'Loading…'}</Text>
 
-      <View style={s.panel}>
-        <Text style={s.h2}>How to work through a project</Text>
-        {steps.map(([t, done, d], i) => (
-          <View key={t} style={s.step}>
-            <Text style={[s.num, done && s.numOn]}>{done ? '✓' : i + 1}</Text>
-            <View style={{ flex: 1 }}><Text style={s.st}>{t}</Text><Text style={s.k}>{d}</Text></View>
-          </View>
-        ))}
-      </View>
-
       {sections.map(sec => (
         <View key={sec.title} style={{ gap: 8 }}>
           <Text style={[s.h2, { color: sec.color }]}>{sec.title}</Text>
@@ -81,7 +62,6 @@ export default function Hub() {
               <Pressable key={m.title} style={[s.card, { borderLeftColor: sec.color }]} onPress={() => go(m)}>
                 <View style={s.row}><Text style={s.ct}>{m.title}</Text>{!!m.badge && <Text style={s.badge}>{m.badge}</Text>}</View>
                 <Text style={s.cd}>{m.what}</Text>
-                <Text style={s.cu}>{m.use}</Text>
                 <Text style={[s.open, { color: sec.color }]}>{m.action ? 'Export' : 'Open'} →</Text>
               </Pressable>
             ))}
@@ -90,14 +70,6 @@ export default function Hub() {
       ))}
       {!!msg && <Text style={s.k}>{msg}</Text>}
 
-      <View style={s.panel}>
-        <Text style={s.h2}>Good to know</Text>
-        <Text style={s.k}>• Everything is in metres and millimetres. The plan snaps to a 0.5 m grid. Storeys stack by elevation; a column or wall belongs to the storey it was drawn on.</Text>
-        <Text style={s.k}>• A storey with columns and slabs but no beams is treated as a flat slab; with beams it is designed as beams and slab panels.</Text>
-        <Text style={s.k}>• Changes sync between devices within a few seconds. Opening a screen again shows the last model at once while it refreshes.</Text>
-        <Text style={s.k}>• Choose Eurocode 2 or BS 8110 on the design screens; the report states the code used.</Text>
-        <Text style={s.k}>• All results are preliminary and must be checked by a registered engineer before construction. Soil pressure must come from a site investigation.</Text>
-      </View>
       <Pressable onPress={() => router.replace('/projects')}><Text style={s.link}>← All projects</Text></Pressable>
     </ScrollView>
   );

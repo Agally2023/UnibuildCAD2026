@@ -10,7 +10,7 @@ One codebase for Android, iOS, Windows, macOS and web (Expo, React Native, TypeS
 
 ## What it does
 - **Multi-storey model:** storeys with elevations and heights, a storey switcher, "+ Storey" and "Copy up". Beams carry their own size and top level, walls their own thickness. Slabs, roofs, stairs and footings are box elements.
-- **Project hub (`app/hub`):** every module in one place, grouped, with what it does, when to use it, live counts and a seven-step workflow checklist. Every screen has a Modules link back to it.
+- **Opening and navigation:** after sign-in the app opens straight into the Plan of the last project used (or the newest). **Modules** (`app/hub`) lists every module with what it does and live counts; **Projects** on the Plan returns to the project list. The old opening guidance is kept in `docs/manual-seed.md` as the start of the manual.
 - **Plan:** zoomable 120 m canvas, tools grouped as Structure, Architecture and Services, and a **Select** tool that opens an inspector to resize (wall thickness and height, beam width and depth, slab thickness, duct and pipe height, outlet load, door and window width) or delete any element. Edits show instantly and are saved in the background; changes sync between devices.
 - **3D:** storeys stacked at their elevations, with real thickness and beam levels.
 - **Clash detection:** per storey, results saved to `issues` with red rings on the plan.

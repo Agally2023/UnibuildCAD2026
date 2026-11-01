@@ -4,6 +4,7 @@ import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Text as SvgText } from
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { newId, useModel } from '../../lib/useModel';
+import { rememberProject } from '../../lib/session';
 import { beamSec, wallT } from '../../lib/model';
 import type { El, Lib } from '../../lib/engineering';
 
@@ -167,6 +168,8 @@ export default function Plan() {
   const chosen = choices.length ? choices[(pick[tool] ?? 0) % choices.length] : null;
   const sel = selId ? here.find(e => e.id === selId) ?? null : null;
 
+  useFocusEffect(useCallback(() => { rememberProject(id); }, [id]));
+
   // open clashes are fetched when the screen is shown, not on every edit
   useFocusEffect(useCallback(() => {
     supabase.from('issues').select('id,location,story_id').eq('project_id', id).eq('status', 'open').then(({ data }) => setIssues(((data as any[]) ?? []).filter(i => i.location)));
@@ -276,6 +279,7 @@ export default function Plan() {
     <View style={s.wrap}>
       <View style={s.top}>
         <Pressable style={s.modules} onPress={() => router.push(`/hub/${id}`)}><Text style={s.modulesT}>☰ Modules</Text></Pressable>
+        <Pressable onPress={() => router.replace('/projects')} style={{ paddingHorizontal: 10 }}><Text style={s.l}>Projects</Text></Pressable>
         <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={s.rowIn} showsHorizontalScrollIndicator={false}>
           {stories.map(st => (
             <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.chip, story?.id === st.id && s.chipOn]}><Text style={[s.chipT, story?.id === st.id && s.on]}>{st.name}</Text></Pressable>
