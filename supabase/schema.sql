@@ -168,3 +168,6 @@ create policy p_del on projects for delete using (is_member(id,'owner'));
 alter function public.touch_element() set search_path = public;
 alter function public.add_owner() set search_path = public;
 revoke execute on function public.add_owner() from public, anon, authenticated;
+
+-- ===== Migration 003 (structural grid lines) =====
+alter type element_type add value if not exists 'grid';
