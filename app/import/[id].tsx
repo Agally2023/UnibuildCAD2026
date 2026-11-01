@@ -144,12 +144,12 @@ export default function ImportIfc() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 10, maxWidth: 720, width: '100%', alignSelf: 'center' },
-  btn: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' }, bt: { color: '#fff', fontWeight: '600', textAlign: 'center' },
+  btn: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' }, bt: { color: '#fff', fontWeight: '600', textAlign: 'center' },
   danger: { backgroundColor: '#c62828' }, off: { opacity: 0.4 },
   h: { fontSize: 18, fontWeight: '700' }, h2: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  k: { color: '#5b6b75' }, warn: { color: '#c4620a', marginTop: 4 }, l: { color: '#2f5bea', fontWeight: '600' },
-  card: { borderWidth: 1, borderColor: '#d5dce1', borderRadius: 8, padding: 12 },
+  k: { color: '#4f6a5b' }, warn: { color: '#c4620a', marginTop: 4 }, l: { color: '#146c43', fontWeight: '600' },
+  card: { borderWidth: 1, borderColor: '#cfdcd4', borderRadius: 8, padding: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' }, chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' },
-  note: { color: '#5b6b75', fontSize: 12, marginTop: 8 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#146c43' }, chipOn: { backgroundColor: '#146c43' }, chipT: { color: '#146c43', fontWeight: '600' },
+  note: { color: '#4f6a5b', fontSize: 12, marginTop: 8 },
 });

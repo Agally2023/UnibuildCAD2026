@@ -6,7 +6,7 @@ export type IconName =
   | 'undo' | 'finish' | 'delete' | 'zoomin' | 'zoomout' | 'fit' | 'grid' | 'dims' | 'modules' | 'projects' | 'cube'
   | 'design' | 'foundation' | 'wind' | 'mep' | 'clash' | 'dashboard' | 'storey' | 'plus' | 'copy' | 'ifc' | 'next' | 'code' | 'snap';
 
-export function Icon({ name, size = 26, color = '#16232b', accent = '#2f5bea' }: { name: IconName; size?: number; color?: string; accent?: string }) {
+export function Icon({ name, size = 26, color = '#0a2e1f', accent = '#146c43' }: { name: IconName; size?: number; color?: string; accent?: string }) {
   const p = { stroke: color, strokeWidth: 1.7, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   const a = { ...p, stroke: accent };
   const g = (() => {

@@ -28,7 +28,7 @@ export default function Hub() {
   };
 
   const sections: { title: string; color: string; mods: Mod[] }[] = [
-    { title: 'Model', color: '#2f5bea', mods: [
+    { title: 'Model', color: '#146c43', mods: [
       { route: 'project', title: 'Plan', what: 'Draw and edit one storey at a time: walls, columns, beams, slabs, doors, windows, ducts, pipes. Select any element to resize or delete it.', badge: `${els.length} elements` },
       { route: 'view3d', title: '3D view', what: 'All storeys stacked at their real levels, with true thicknesses and beam levels.' },
       { route: 'import', title: 'Import IFC', what: 'Bring in a building exported from Revit, ArchiCAD or Tekla (IFC2x3 or IFC4).' },
@@ -76,15 +76,15 @@ export default function Hub() {
 }
 const s = StyleSheet.create({
   wrap: { padding: 16, gap: 14, maxWidth: 980, width: '100%', alignSelf: 'center' },
-  h1: { fontSize: 26, fontWeight: '800' }, h2: { fontSize: 18, fontWeight: '700' }, k: { color: '#5b6b75', lineHeight: 20 },
-  panel: { borderWidth: 1, borderColor: '#d5dce1', borderRadius: 12, padding: 14, gap: 10, backgroundColor: '#f7f9fb' },
+  h1: { fontSize: 26, fontWeight: '800' }, h2: { fontSize: 18, fontWeight: '700' }, k: { color: '#4f6a5b', lineHeight: 20 },
+  panel: { borderWidth: 1, borderColor: '#cfdcd4', borderRadius: 12, padding: 14, gap: 10, backgroundColor: '#f4f9f6' },
   step: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' }, st: { fontWeight: '700' },
-  num: { width: 26, height: 26, borderRadius: 13, borderWidth: 1, borderColor: '#9aa7b0', textAlign: 'center', lineHeight: 24, color: '#5b6b75', fontWeight: '700', overflow: 'hidden' },
+  num: { width: 26, height: 26, borderRadius: 13, borderWidth: 1, borderColor: '#9aa7b0', textAlign: 'center', lineHeight: 24, color: '#4f6a5b', fontWeight: '700', overflow: 'hidden' },
   numOn: { backgroundColor: '#1a8f4d', borderColor: '#1a8f4d', color: '#fff' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  card: { flexGrow: 1, flexBasis: 280, borderWidth: 1, borderColor: '#d5dce1', borderLeftWidth: 5, borderRadius: 10, padding: 14, gap: 6 },
+  card: { flexGrow: 1, flexBasis: 280, borderWidth: 1, borderColor: '#cfdcd4', borderLeftWidth: 5, borderRadius: 10, padding: 14, gap: 6 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  ct: { fontSize: 17, fontWeight: '700', flexShrink: 1 }, badge: { fontSize: 12, color: '#5b6b75', backgroundColor: '#eef2f5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
-  cd: { lineHeight: 20 }, cu: { color: '#5b6b75', fontStyle: 'italic', lineHeight: 19 }, open: { fontWeight: '700', marginTop: 4 },
-  link: { color: '#2f5bea', fontWeight: '600', paddingVertical: 8 },
+  ct: { fontSize: 17, fontWeight: '700', flexShrink: 1 }, badge: { fontSize: 12, color: '#4f6a5b', backgroundColor: '#eef2f5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, overflow: 'hidden' },
+  cd: { lineHeight: 20 }, cu: { color: '#4f6a5b', fontStyle: 'italic', lineHeight: 19 }, open: { fontWeight: '700', marginTop: 4 },
+  link: { color: '#146c43', fontWeight: '600', paddingVertical: 8 },
 });

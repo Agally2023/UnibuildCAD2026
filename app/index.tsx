@@ -21,7 +21,7 @@ export default function Login() {
       <TextInput style={s.in} placeholder="Email" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
       <TextInput style={s.in} placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
       <Pressable style={s.btn} onPress={() => go(false)}><Text style={s.bt}>Sign in</Text></Pressable>
-      <Pressable style={[s.btn, s.alt]} onPress={() => go(true)}><Text style={[s.bt, { color: '#2f5bea' }]}>Create account</Text></Pressable>
+      <Pressable style={[s.btn, s.alt]} onPress={() => go(true)}><Text style={[s.bt, { color: '#146c43' }]}>Create account</Text></Pressable>
       {!!msg && <Text style={s.msg}>{msg}</Text>}
     </View>
   );
@@ -29,9 +29,9 @@ export default function Login() {
 const s = StyleSheet.create({
   wrap: { flex: 1, padding: 24, justifyContent: 'center', gap: 12, maxWidth: 440, width: '100%', alignSelf: 'center' },
   h1: { fontSize: 24, fontWeight: '700', marginBottom: 8 },
-  in: { borderWidth: 1, borderColor: '#c5ced4', borderRadius: 8, padding: 12, fontSize: 16 },
-  btn: { backgroundColor: '#2f5bea', padding: 14, borderRadius: 8, alignItems: 'center' },
-  alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#2f5bea' },
+  in: { borderWidth: 1, borderColor: '#bccfc3', borderRadius: 8, padding: 12, fontSize: 16 },
+  btn: { backgroundColor: '#146c43', padding: 14, borderRadius: 8, alignItems: 'center' },
+  alt: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#146c43' },
   bt: { color: '#fff', fontWeight: '600', fontSize: 16 },
   msg: { color: '#c62828' },
 });

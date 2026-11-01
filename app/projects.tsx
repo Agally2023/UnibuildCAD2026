@@ -41,20 +41,20 @@ export default function Projects() {
       </View>
       {!!err && <Text style={{ color: '#c62828' }}>{err}</Text>}
       <FlatList data={items} keyExtractor={p => p.id}
-        ListEmptyComponent={<Text style={{ color: '#5b6b75' }}>No projects yet. Name one above and tap Create: it opens the Plan, ready to draw.</Text>}
+        ListEmptyComponent={<Text style={{ color: '#4f6a5b' }}>No projects yet. Name one above and tap Create: it opens the Plan, ready to draw.</Text>}
         renderItem={({ item }) => (
           <Pressable style={s.card} onPress={() => router.push(`/project/${item.id}` as any)}><Text style={s.ct}>{item.name}</Text></Pressable>
         )} />
-      <Pressable onPress={() => supabase.auth.signOut()}><Text style={{ color: '#2f5bea' }}>Sign out</Text></Pressable>
+      <Pressable onPress={() => supabase.auth.signOut()}><Text style={{ color: '#146c43' }}>Sign out</Text></Pressable>
     </View>
   );
 }
 const s = StyleSheet.create({
   wrap: { flex: 1, padding: 16, gap: 12 },
   row: { flexDirection: 'row', gap: 8 },
-  in: { borderWidth: 1, borderColor: '#c5ced4', borderRadius: 8, padding: 12, fontSize: 16 },
-  btn: { backgroundColor: '#2f5bea', paddingHorizontal: 18, justifyContent: 'center', borderRadius: 8 },
+  in: { borderWidth: 1, borderColor: '#bccfc3', borderRadius: 8, padding: 12, fontSize: 16 },
+  btn: { backgroundColor: '#146c43', paddingHorizontal: 18, justifyContent: 'center', borderRadius: 8 },
   bt: { color: '#fff', fontWeight: '600' },
-  card: { padding: 16, borderWidth: 1, borderColor: '#d5dce1', borderRadius: 10, marginBottom: 8 },
+  card: { padding: 16, borderWidth: 1, borderColor: '#cfdcd4', borderRadius: 10, marginBottom: 8 },
   ct: { fontSize: 17, fontWeight: '600' },
 });

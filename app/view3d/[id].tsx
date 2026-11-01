@@ -42,5 +42,5 @@ export default function View3D() {
 const s = StyleSheet.create({
   wrap: { flex: 1 }, canvas: { flex: 1, backgroundColor: '#eef1f3' },
   bar: { flexDirection: 'row', gap: 16, padding: 12, alignItems: 'center' },
-  t: { flex: 1, color: '#5b6b75' }, l: { color: '#2f5bea', fontWeight: '600' },
+  t: { flex: 1, color: '#4f6a5b' }, l: { color: '#146c43', fontWeight: '600' },
 });
