@@ -10,6 +10,6 @@ export const dsn: DesignBasis = { code: 'EC2', cls: 0, use: 1, trib: 3, q: 150 }
 export const setDsn = (p: Partial<DesignBasis>) => Object.assign(dsn, p);
 
 // Drawing settings on the ribbon: snap step (m), grid and dimension labels, default wall and slab thickness (m).
-export type PlanSettings = { snap: number; grid: boolean; dims: boolean; wallTh: number; slabTh: number };
-export const plan: PlanSettings = { snap: 0.5, grid: true, dims: true, wallTh: 0.2, slabTh: 0.2 };
+export type PlanSettings = { snap: number; grid: boolean; dims: boolean; wallTh: number; slabTh: number; blue: boolean };
+export const plan: PlanSettings = { snap: 0.5, grid: true, dims: true, wallTh: 0.2, slabTh: 0.2, blue: true };
 export const setPlan = (p: Partial<PlanSettings>) => Object.assign(plan, p);
