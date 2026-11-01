@@ -35,7 +35,7 @@ export default function Layout() {
     <Stack.Screen name="index" options={{ title: 'Unibuild' }} />
     <Stack.Screen name="projects" options={{ title: 'Projects' }} />
     <Stack.Screen name="hub/[id]" options={{ title: 'Modules' }} />
-    <Stack.Screen name="project/[id]" options={{ title: 'Plan' }} />
+    <Stack.Screen name="project/[id]" options={{ title: 'Plan', headerShown: false }} />
     <Stack.Screen name="view3d/[id]" options={{ title: '3D view' }} />
     <Stack.Screen name="dashboard/[id]" options={{ title: 'Dashboard' }} />
     <Stack.Screen name="clashes/[id]" options={{ title: 'Clash detection' }} />

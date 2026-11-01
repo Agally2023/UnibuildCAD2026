@@ -2,6 +2,10 @@
 export type Code = 'EC2' | 'BS8110';
 export type Mat = { fck: number; fyk: number; code?: Code };
 export const CLASSES = [25, 30, 35, 40];
+// Eurocode class names pair the cylinder and cube strengths: C25/30, C30/37, C35/45, C40/50
+const CUBE: Record<number, number> = { 25: 30, 30: 37, 35: 45, 40: 50 };
+export const cube = (fck: number) => CUBE[fck] ?? Math.round(fck * 1.2);
+export const cname = (fck: number) => `C${fck}/${cube(fck)}`;
 export const mp = (m: Mat) => ({ fcd: (0.85 * m.fck) / 1.5, fyd: m.fyk / 1.15, fctm: 0.3 * Math.pow(m.fck, 2 / 3) });
 export const area = (d: number) => (Math.PI * d * d) / 4;
 export const COVER = 30, LINK = 8;

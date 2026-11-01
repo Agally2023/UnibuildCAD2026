@@ -1,10 +1,10 @@
 // BS 8110-1:1997 member design (alternative to Eurocode 2). Units: mm, N, MPa unless noted.
 // Loads 1.4 Gk + 1.6 Qk, cube strength fcu, 0.87 fy, K' = 0.156. Serviceability by span/depth (Tables 3.9, 3.10) and
 // the BS 8110-2 cl 3.8 crack width. Preliminary: verify every result independently.
-import { area, BeamResult, COVER, ColResult, f0, f1, linkFor, LINK, Mat, pickBars, Status } from './rc';
+import { area, cube, BeamResult, COVER, ColResult, f0, f1, linkFor, LINK, Mat, pickBars, Status } from './rc';
 import type { FootingResult, SlabResult } from './slabfound';
 
-export const fcuOf = (fck: number) => (({ 25: 30, 30: 37, 35: 45, 40: 50 } as Record<number, number>)[fck] ?? Math.round(fck * 1.2));
+export const fcuOf = (fck: number) => cube(fck);
 const Es = 200000, Ec28 = (fcu: number) => 20000 + 200 * fcu;
 
 // design shear stress vc (Table 3.8 as a formula), N/mm²
