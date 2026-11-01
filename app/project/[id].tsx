@@ -1,15 +1,20 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
 import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { newId, useModel } from '../../lib/useModel';
 import { rememberProject } from '../../lib/session';
+import { Ribbon, RItem, RTab, Seg, Stepper, Toggle } from '../../components/ribbon/Ribbon';
+import type { IconName } from '../../components/ribbon/Icon';
+import { CLASSES, cname } from '../../lib/rc';
+import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
+import { saveFile } from '../../components/saveFile';
+import { toIfc } from '../../lib/ifc';
 import { beamSec, wallT } from '../../lib/model';
 import type { El, Lib } from '../../lib/engineering';
 
 const PX = 50;      // pixels per metre at 100% zoom
-const SNAP = 0.5;   // snap grid in metres
 const N = 120;      // plan canvas size in metres
 type Pt = [number, number];
 type Tool = 'select' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
@@ -28,12 +33,8 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
   plant: { label: 'Plant', hint: 'Tap to place the air handler or chiller that feeds the outlets.' },
   outlet: { label: 'Outlet', hint: 'Tap to place a diffuser or terminal. Set its cooling load below.' },
 };
-const GROUPS: { name: string; tools: Tool[] }[] = [
-  { name: 'Edit', tools: ['select'] },
-  { name: 'Structure', tools: ['column', 'beam', 'slab'] },
-  { name: 'Architecture', tools: ['wall', 'door', 'window'] },
-  { name: 'Services', tools: ['duct', 'pipe', 'plant', 'outlet'] },
-];
+const OCC = ['Residential', 'Office', 'Laboratory'];
+const TOOL_ICON: Record<Tool, IconName> = { select: 'select', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
 const BOXC: Record<string, string> = { slab: '#2f5bea', roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
 const NAME: Record<string, string> = { wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
@@ -99,7 +100,7 @@ const Grid = memo(function Grid() {
 });
 
 // All drawn elements. Memoised: it only redraws when the elements themselves change, not on zoom, tool or selection changes.
-const Layer = memo(function Layer({ here, libById, wallById }: { here: El[]; libById: Record<string, Lib>; wallById: Record<string, El> }) {
+const Layer = memo(function Layer({ here, libById, wallById, dims }: { here: El[]; libById: Record<string, Lib>; wallById: Record<string, El>; dims: boolean }) {
   return (
     <>
       {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BOXC[e.type] ?? '#2f5bea'} fillOpacity={0.1} stroke={BOXC[e.type] ?? '#2f5bea'} strokeWidth={1.5} />; })}
@@ -109,7 +110,7 @@ const Layer = memo(function Layer({ here, libById, wallById }: { here: El[]; lib
           const l = Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]);
           return <G key={e.id}>
             <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#2f5bea" strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
-            <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill="#16232b">{l.toFixed(1)} m</SvgText>
+            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill="#16232b">{l.toFixed(1)} m</SvgText>}
           </G>;
         }
         if (e.type === 'beam') return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#c98a00" strokeWidth={3} strokeDasharray="10 6" />;
@@ -154,6 +155,23 @@ export default function Plan() {
   const [elev, setElev] = useState(3.15);
   const [zoom, setZoom] = useState(0.6);
   const [kw, setKw] = useState(5);
+  const [tab, setTab] = useState('draw');
+  const [snap, setSnapS] = useState(plan.snap);
+  const [grid, setGridS] = useState(plan.grid);
+  const [dims, setDimsS] = useState(plan.dims);
+  const [wallTh, setWallThS] = useState(plan.wallTh);
+  const [slabTh, setSlabThS] = useState(plan.slabTh);
+  const [, bump] = useState(0);                       // design basis lives in lib/settings and is shared with the design screens
+  const { width: winW } = useWindowDimensions();
+  const wide = winW >= 900;
+  const [vp, setVp] = useState({ w: 800, h: 500 });
+  const hRef = useRef<ScrollView>(null), vRef = useRef<ScrollView>(null);
+  const setSnap = (v: number) => { setPlan({ snap: v }); setSnapS(v); };
+  const setGrid = (v: boolean) => { setPlan({ grid: v }); setGridS(v); };
+  const setDims = (v: boolean) => { setPlan({ dims: v }); setDimsS(v); };
+  const setWallTh = (v: number) => { setPlan({ wallTh: v }); setWallThS(v); };
+  const setSlabTh = (v: number) => { setPlan({ slabTh: v }); setSlabThS(v); };
+  const basis = (p: Partial<typeof dsn>) => { setDsn(p); bump(n => n + 1); };
   const [selId, setSelId] = useState<string | null>(null);
   const [issues, setIssues] = useState<{ id: string; location: any; story_id: string | null }[]>([]);
 
@@ -168,7 +186,8 @@ export default function Plan() {
   const chosen = choices.length ? choices[(pick[tool] ?? 0) % choices.length] : null;
   const sel = selId ? here.find(e => e.id === selId) ?? null : null;
 
-  useFocusEffect(useCallback(() => { rememberProject(id); }, [id]));
+  const [pname, setPname] = useState('');
+  useFocusEffect(useCallback(() => { rememberProject(id); supabase.from('projects').select('name').eq('id', id).single().then(({ data }) => setPname(data?.name ?? '')); }, [id]));
 
   // open clashes are fetched when the screen is shown, not on every edit
   useFocusEffect(useCallback(() => {
@@ -187,7 +206,7 @@ export default function Plan() {
   const tap = async (wx: number, wy: number) => {
     const mx = wx / PX, my = wy / PX;
     if (tool === 'select') { setSelId(hitTest(here, wallById, mx, my, 14 / (PX * zoom))?.id ?? null); return; }
-    const p: Pt = [Math.round(mx / SNAP) * SNAP, Math.round(my / SNAP) * SNAP];
+    const p: Pt = [r2(Math.round(mx / snap) * snap), r2(Math.round(my / snap) * snap)];
     if (tool === 'column') { const sp = chosen?.specs ?? {}; return add({ at: p, b: (sp.b_mm ?? 300) / 1000, h: (sp.h_mm ?? 300) / 1000, height: H }); }
     if (tool === 'plant') return add({ at: p });
     if (tool === 'outlet') return add({ at: p, kw });
@@ -199,8 +218,8 @@ export default function Plan() {
     }
     if (!start) return setStart(p);
     if (p[0] === start[0] && p[1] === start[1]) return setStart(null);
-    if (tool === 'slab') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: r2(H - 0.2), z1: H }); return setStart(null); }
-    await add(tool === 'wall' ? { start, end: p, height: H } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
+    if (tool === 'slab') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: r2(H - slabTh), z1: H }); return setStart(null); }
+    await add(tool === 'wall' ? { start, end: p, height: H, thickness: wallTh } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
     setStart(p);
   };
 
@@ -275,100 +294,186 @@ export default function Plan() {
     return { info, steps };
   };
 
+  const setT = (k: Tool) => { setTool(k); setStart(null); setErr(''); if (k !== 'select') setSelId(null); };
+  const ti = (k: Tool): RItem => ({ key: k, label: TOOLS[k].label, icon: TOOL_ICON[k], active: tool === k, onPress: () => setT(k) });
+  const go = (route: string): RItem['onPress'] => () => router.push(`/${route}/${id}` as any);
+  const exportIfc = async () => {
+    try { const { data: pr } = await supabase.from('projects').select('name').eq('id', id).single(); const nm = pr?.name ?? 'Unibuild'; await saveFile(`${nm.replace(/[^A-Za-z0-9_-]+/g, '_')}.ifc`, toIfc(nm, els, lib, stories)); setErr('IFC exported'); }
+    catch (e: any) { setErr('IFC export failed: ' + (e?.message ?? e)); }
+  };
+  const stepStorey = (d: number) => { const i = stories.findIndex(x => x.id === story?.id), n = stories[i + d]; if (n) { setCur(n.id); setStart(null); setSelId(null); } };
+  // fit the drawing in the window
+  const fit = () => {
+    const xs: number[] = [], ys: number[] = [];
+    for (const e of here) { const g = e.geometry; if (g.start) { xs.push(g.start[0], g.end[0]); ys.push(g.start[1], g.end[1]); } if (g.at) { xs.push(g.at[0]); ys.push(g.at[1]); } if (g.rect) { xs.push(g.rect[0], g.rect[2]); ys.push(g.rect[1], g.rect[3]); } }
+    if (!xs.length) { setZoom(0.6); setTimeout(() => { hRef.current?.scrollTo({ x: 0, animated: false }); vRef.current?.scrollTo({ y: 0, animated: false }); }, 30); return; }
+    const x0 = Math.min(...xs) - 1.5, y0 = Math.min(...ys) - 1.5, w = Math.max(...xs) + 1.5 - x0, d = Math.max(...ys) + 1.5 - y0;
+    const z = Math.max(0.15, Math.min(3, vp.w / (w * PX), vp.h / (d * PX)));
+    setZoom(z); setTimeout(() => { hRef.current?.scrollTo({ x: x0 * PX * z, animated: false }); vRef.current?.scrollTo({ y: y0 * PX * z, animated: false }); }, 50);
+  };
+  const cycle = (d: number) => setPick(pk => ({ ...pk, [tool]: ((pk[tool] ?? 0) + d + choices.length * 1000) % Math.max(choices.length, 1) }));
+  const short = (x: string, n = 15) => (x.length > n ? x.slice(0, n - 1) + '…' : x);
+
+  const toolSettings = (
+    <>
+      {tool === 'select' && <Text style={s.rhint}>Select has no settings. Tap an element, then change it in the Properties panel.</Text>}
+      {choices.length > 0 && <Stepper label={`${def.label} type`} value={chosen ? short(chosen.name, 16) : '-'} dec={() => cycle(-1)} inc={() => cycle(1)} />}
+      {tool === 'wall' && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
+      {tool === 'slab' && <Stepper label="Slab thickness" value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
+      {(tool === 'duct' || tool === 'pipe') && <Stepper label="Centreline height" value={`${elev.toFixed(2)} m`} dec={() => setElev(v => Math.max(0.1, r2(v - 0.1)))} inc={() => setElev(v => Math.min(H, r2(v + 0.1)))} />}
+      {tool === 'outlet' && <Stepper label="Cooling load" value={`${kw} kW`} dec={() => setKw(v => Math.max(1, v - 1))} inc={() => setKw(v => Math.min(50, v + 1))} />}
+      {['beam', 'column', 'door', 'window', 'plant'].includes(tool) && choices.length === 0 && <Text style={s.rhint}>No settings for this tool.</Text>}
+    </>
+  );
+  const tabs: RTab[] = [
+    { key: 'home', label: 'Home', groups: [
+      { name: 'Select', items: [ti('select'), { key: 'del', label: 'Delete', icon: 'delete', disabled: !sel, onPress: () => sel && remove(sel) }] },
+      { name: 'Edit', items: [{ key: 'undo', label: 'Undo', icon: 'undo', onPress: undo }, { key: 'fin', label: 'Finish', icon: 'finish', disabled: !start, onPress: () => setStart(null) }] },
+      { name: 'Storey', items: [{ key: 'ns', label: 'Add storey', icon: 'plus', onPress: () => addStorey(false) }, { key: 'cu', label: 'Copy up', icon: 'copy', onPress: () => addStorey(true) }] },
+      { name: 'Project', items: [{ key: 'mod', label: 'Modules', icon: 'modules', onPress: () => router.push(`/hub/${id}` as any) }, { key: 'prj', label: 'Projects', icon: 'projects', onPress: () => router.replace('/projects') }] },
+    ] },
+    { key: 'draw', label: 'Draw', groups: [
+      { name: 'Select', items: [ti('select')] },
+      { name: 'Structure', items: [ti('column'), ti('beam'), ti('slab')] },
+      { name: 'Architecture', items: [ti('wall'), ti('door'), ti('window')] },
+      { name: 'Services', items: [ti('duct'), ti('pipe'), ti('plant'), ti('outlet')] },
+      { name: 'Edit', items: [{ key: 'undo', label: 'Undo', icon: 'undo', onPress: undo }, { key: 'fin', label: 'Finish', icon: 'finish', disabled: !start, onPress: () => setStart(null) }] },
+    ] },
+    { key: 'settings', label: 'Settings', groups: [
+      { name: `Tool: ${def.label}`, custom: toolSettings },
+      { name: 'Snap and display', custom: (
+        <>
+          <Seg label="Snap step" options={[['0.1', '0.1'], ['0.25', '0.25'], ['0.5', '0.5'], ['1', '1 m']]} value={String(snap)} onChange={v => setSnap(Number(v))} />
+          <Toggle label="Grid" on={grid} onChange={setGrid} />
+          <Toggle label="Wall lengths" on={dims} onChange={setDims} />
+        </>
+      ) },
+      { name: 'Design basis', custom: (
+        <>
+          <Seg label="Design code" options={[['EC2', 'EC2'], ['BS8110', 'BS 8110']]} value={dsn.code} onChange={v => basis({ code: v as 'EC2' | 'BS8110' })} />
+          <Stepper label="Concrete" value={`${cname(CLASSES[dsn.cls])}`} dec={() => basis({ cls: Math.max(0, dsn.cls - 1) })} inc={() => basis({ cls: Math.min(CLASSES.length - 1, dsn.cls + 1) })} />
+          <Stepper label="Occupancy" value={OCC[dsn.use]} dec={() => basis({ use: Math.max(0, dsn.use - 1) })} inc={() => basis({ use: Math.min(OCC.length - 1, dsn.use + 1) })} />
+          <Stepper label="Soil bearing" value={`${dsn.q} kPa`} dec={() => basis({ q: Math.max(50, dsn.q - 25) })} inc={() => basis({ q: Math.min(600, dsn.q + 25) })} />
+        </>
+      ) },
+    ] },
+    { key: 'analyze', label: 'Analyze', groups: [
+      { name: 'Structural design', items: [{ key: 'md', label: 'Members', icon: 'design', onPress: go('design') }, { key: 'sf', label: 'Slab & found.', icon: 'foundation', onPress: go('foundations') }, { key: 'wq', label: 'Wind & quake', icon: 'wind', onPress: go('lateral') }] },
+      { name: 'Services', items: [{ key: 'mep', label: 'MEP', icon: 'mep', onPress: go('mep') }] },
+      { name: 'Check', items: [{ key: 'cl', label: nHere.length ? `Clashes (${nHere.length})` : 'Clashes', icon: 'clash', onPress: go('clashes') }, { key: 'db', label: 'Dashboard', icon: 'dashboard', onPress: go('dashboard') }] },
+      { name: 'Model', items: [{ key: '3d', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'imp', label: 'Import IFC', icon: 'ifc', onPress: go('import') }, { key: 'exp', label: 'Export IFC', icon: 'ifc', onPress: exportIfc }] },
+    ] },
+    { key: 'view', label: 'View', groups: [
+      { name: 'Zoom', items: [{ key: 'zi', label: 'Zoom in', icon: 'zoomin', onPress: () => setZoom(z => Math.min(3, z * 1.25)) }, { key: 'zo', label: 'Zoom out', icon: 'zoomout', onPress: () => setZoom(z => Math.max(0.15, z / 1.25)) }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
+      { name: 'Display', items: [{ key: 'g', label: 'Grid', icon: 'grid', active: grid, onPress: () => setGrid(!grid) }, { key: 'd', label: 'Lengths', icon: 'dims', active: dims, onPress: () => setDims(!dims) }] },
+      { name: 'Storey', items: [{ key: 'su', label: 'Up', icon: 'storey', onPress: () => stepStorey(1) }, { key: 'sd', label: 'Down', icon: 'storey', onPress: () => stepStorey(-1) }] },
+    ] },
+  ];
+
+  const insp = sel ? inspector(sel) : null;
+  const Inspector = insp && sel ? (
+    <View style={s.insp}>
+      <View style={s.ir}><Text style={s.it}>{NAME[sel.type] ?? sel.type}{libById[sel.library_item_id ?? ''] ? ` · ${libById[sel.library_item_id ?? ''].name}` : ''}</Text><Pressable onPress={() => setSelId(null)}><Text style={s.l}>Done</Text></Pressable></View>
+      <Text style={s.k}>{insp.info}</Text>
+      {insp.steps.map(([label, val, dec, inc]) => (
+        <View key={label} style={s.ir}><Text style={[s.k, { flex: 1 }]}>{label}</Text><Pressable onPress={dec}><Text style={s.step}>−</Text></Pressable><Text style={s.sv}>{val}</Text><Pressable onPress={inc}><Text style={s.step}>+</Text></Pressable></View>
+      ))}
+      <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
+    </View>
+  ) : null;
+  const rows: [string, number][] = ([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number]);
+
   return (
     <View style={s.wrap}>
-      <View style={s.top}>
-        <Pressable style={s.modules} onPress={() => router.push(`/hub/${id}`)}><Text style={s.modulesT}>☰ Modules</Text></Pressable>
-        <Pressable onPress={() => router.replace('/projects')} style={{ paddingHorizontal: 10 }}><Text style={s.l}>Projects</Text></Pressable>
-        <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={s.rowIn} showsHorizontalScrollIndicator={false}>
-          {stories.map(st => (
-            <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.chip, story?.id === st.id && s.chipOn]}><Text style={[s.chipT, story?.id === st.id && s.on]}>{st.name}</Text></Pressable>
-          ))}
-          <Pressable onPress={() => addStorey(false)} style={s.chip}><Text style={s.chipT}>+ Storey</Text></Pressable>
-          <Pressable onPress={() => addStorey(true)} style={s.chip}><Text style={s.chipT}>Copy up</Text></Pressable>
-        </ScrollView>
-      </View>
-      <View style={s.tools}>
-        {GROUPS.map(gr => (
-          <View key={gr.name} style={s.group}>
-            <Text style={s.gl}>{gr.name}</Text>
-            <View style={s.gr}>
-              {gr.tools.map(t => (
-                <Pressable key={t} onPress={() => { setTool(t); setStart(null); setErr(''); if (t !== 'select') setSelId(null); }} style={[s.tool, tool === t && s.chipOn]}><Text style={[s.chipT, tool === t && s.on]}>{TOOLS[t].label}</Text></Pressable>
+      <Ribbon tabs={tabs} active={tab} onTab={setTab} />
+      <View style={s.body}>
+        {wide && (
+          <View style={s.nav}>
+            <Text style={s.ph}>Storeys</Text>
+            <ScrollView style={{ maxHeight: 260 }}>
+              {[...stories].reverse().map(st => (
+                <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.st, story?.id === st.id && s.stOn]}>
+                  <Text style={[s.stn, story?.id === st.id && { color: '#fff' }]}>{st.name}</Text>
+                  <Text style={[s.sts, story?.id === st.id && { color: '#dbe6ff' }]}>level {st.elevation_m.toFixed(2)} m · {st.height_m.toFixed(2)} m high</Text>
+                </Pressable>
               ))}
-            </View>
+            </ScrollView>
+            <View style={s.navBtns}><Pressable onPress={() => addStorey(false)}><Text style={s.l}>+ Storey</Text></Pressable><Pressable onPress={() => addStorey(true)}><Text style={s.l}>Copy up</Text></Pressable></View>
+            <Text style={[s.ph, { marginTop: 14 }]}>On {story?.name ?? 'this storey'}</Text>
+            {rows.length ? rows.map(([k, v]) => <View key={k} style={s.cr}><Text style={s.k}>{k}</Text><Text style={s.cv}>{v}</Text></View>) : <Text style={s.k}>Nothing drawn yet.</Text>}
+            {wallLen > 0 && <View style={s.cr}><Text style={s.k}>Wall length</Text><Text style={s.cv}>{wallLen.toFixed(1)} m</Text></View>}
+            {nHere.length > 0 && <Pressable onPress={go('clashes')}><Text style={[s.del, { marginTop: 8 }]}>{nHere.length} open clash{nHere.length > 1 ? 'es' : ''}</Text></Pressable>}
           </View>
-        ))}
-      </View>
-      <View style={s.bar}>
-        <Text style={s.t} numberOfLines={2}>{chosen ? `${chosen.name}. ` : ''}{def.hint}</Text>
-        {choices.length > 1 && <Pressable onPress={() => setPick(p => ({ ...p, [tool]: (p[tool] ?? 0) + 1 }))}><Text style={s.l}>Next type</Text></Pressable>}
-        <Pressable onPress={() => setStart(null)}><Text style={s.l}>Finish</Text></Pressable>
-        <Pressable onPress={undo}><Text style={s.l}>Undo</Text></Pressable>
-        <Pressable onPress={() => setZoom(z => Math.max(0.15, z / 1.25))}><Text style={s.l}>−</Text></Pressable>
-        <Text style={s.k}>{Math.round(zoom * 100)}%</Text>
-        <Pressable onPress={() => setZoom(z => Math.min(3, z * 1.25))}><Text style={s.l}>+</Text></Pressable>
-      </View>
-      <Text style={s.sum}>{story?.name ?? ''} · {wallLen.toFixed(1)} m of wall · {counts.column ?? 0} columns · {counts.beam ?? 0} beams · {counts.slab ?? 0} slabs · {counts.door ?? 0} doors · {counts.window ?? 0} windows{nHere.length ? ` · ${nHere.length} open clashes` : ''}</Text>
-      {(tool === 'duct' || tool === 'pipe') && (
-        <View style={s.bar}>
-          <Text style={s.t}>Centreline height {elev.toFixed(2)} m</Text>
-          <Pressable onPress={() => setElev(v => Math.max(0.1, v - 0.1))}><Text style={s.l}>Lower</Text></Pressable>
-          <Pressable onPress={() => setElev(v => Math.min(H, v + 0.1))}><Text style={s.l}>Higher</Text></Pressable>
-        </View>
-      )}
-      {tool === 'outlet' && (
-        <View style={s.bar}>
-          <Text style={s.t}>Cooling load {kw} kW per outlet</Text>
-          <Pressable onPress={() => setKw(v => Math.max(1, v - 1))}><Text style={s.l}>Less</Text></Pressable>
-          <Pressable onPress={() => setKw(v => Math.min(50, v + 1))}><Text style={s.l}>More</Text></Pressable>
-        </View>
-      )}
-      {sel && (() => {
-        const { info, steps } = inspector(sel);
-        return (
-          <View style={s.insp}>
-            <View style={s.ir}><Text style={s.it}>{NAME[sel.type] ?? sel.type}{libById[sel.library_item_id ?? ''] ? ` · ${libById[sel.library_item_id ?? ''].name}` : ''}</Text><Pressable onPress={() => setSelId(null)}><Text style={s.l}>Done</Text></Pressable></View>
-            <Text style={s.k}>{info}</Text>
-            {steps.map(([label, val, dec, inc]) => (
-              <View key={label} style={s.ir}><Text style={s.k}>{label}</Text><Pressable onPress={dec}><Text style={s.step}>−</Text></Pressable><Text style={s.sv}>{val}</Text><Pressable onPress={inc}><Text style={s.step}>+</Text></Pressable></View>
-            ))}
-            <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
+        )}
+        <View style={s.center}>
+          {!wide && (
+            <ScrollView horizontal style={s.chips} contentContainerStyle={s.chipsIn} showsHorizontalScrollIndicator={false}>
+              {stories.map(st => <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.chip, story?.id === st.id && s.chipOn]}><Text style={[s.chipT, story?.id === st.id && s.on]}>{st.name}</Text></Pressable>)}
+            </ScrollView>
+          )}
+          {!wide && Inspector}
+          {!!err && <Text style={s.err}>{err}</Text>}
+          {!loaded && !els.length && <Text style={s.sum}>Loading the model…</Text>}
+          <View style={{ flex: 1 }} onLayout={e => setVp({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+            <ScrollView horizontal ref={hRef}><ScrollView ref={vRef}>
+              <Pressable style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
+                <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
+                  {grid ? <Grid /> : <Rect x={0} y={0} width={S} height={S} fill="#fff" />}
+                  <Layer here={here} libById={libById} wallById={wallById} dims={dims} />
+                  {sel && <Highlight e={sel} wallById={wallById} />}
+                  {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
+                  {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
+                </Svg>
+              </Pressable>
+            </ScrollView></ScrollView>
           </View>
-        );
-      })()}
-      {!!err && <Text style={s.err}>{err}</Text>}
-      {!loaded && !els.length && <Text style={s.sum}>Loading the model…</Text>}
-      <ScrollView horizontal><ScrollView>
-        <Pressable style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
-          <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
-            <Grid />
-            <Layer here={here} libById={libById} wallById={wallById} />
-            {sel && <Highlight e={sel} wallById={wallById} />}
-            {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
-            {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
-          </Svg>
-        </Pressable>
-      </ScrollView></ScrollView>
+        </View>
+        {wide && (
+          <View style={s.props}>
+            <Text style={s.ph}>Properties</Text>
+            {Inspector ?? (
+              <View style={{ gap: 6 }}>
+                <Text style={s.it}>{def.label} tool</Text>
+                <Text style={s.k}>{def.hint}</Text>
+                {chosen && <View style={s.cr}><Text style={s.k}>Type</Text><Text style={s.cv}>{short(chosen.name, 22)}</Text></View>}
+                {tool === 'wall' && <View style={s.cr}><Text style={s.k}>Thickness</Text><Text style={s.cv}>{Math.round(wallTh * 1000)} mm</Text></View>}
+                {tool === 'slab' && <View style={s.cr}><Text style={s.k}>Thickness</Text><Text style={s.cv}>{Math.round(slabTh * 1000)} mm</Text></View>}
+                {(tool === 'duct' || tool === 'pipe') && <View style={s.cr}><Text style={s.k}>Height</Text><Text style={s.cv}>{elev.toFixed(2)} m</Text></View>}
+                {tool === 'outlet' && <View style={s.cr}><Text style={s.k}>Cooling load</Text><Text style={s.cv}>{kw} kW</Text></View>}
+                <Text style={[s.k, { marginTop: 8 }]}>Change these on the Settings tab of the ribbon.</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+      <View style={s.status}>
+        <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{def.hint}</Text>
+        <Text style={s.stR}>{pname ? `${pname} · ` : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
+      </View>
     </View>
   );
 }
 const s = StyleSheet.create({
-  wrap: { flex: 1 },
-  top: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderColor: '#d5dce1', paddingLeft: 8 },
-  rowIn: { gap: 8, padding: 8, alignItems: 'center' },
-  modules: { backgroundColor: '#16232b', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 }, modulesT: { color: '#fff', fontWeight: '700' },
+  wrap: { flex: 1, backgroundColor: '#fff' },
+  body: { flex: 1, flexDirection: 'row' },
+  center: { flex: 1 },
+  nav: { width: 210, padding: 10, borderRightWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
+  props: { width: 270, padding: 10, borderLeftWidth: 1, borderColor: '#d5dce1', backgroundColor: '#f7f9fb' },
+  ph: { fontSize: 11, color: '#5b6b75', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, fontWeight: '700' },
+  st: { paddingVertical: 7, paddingHorizontal: 9, borderRadius: 6, marginBottom: 3, borderWidth: 1, borderColor: '#d5dce1', backgroundColor: '#fff' }, stOn: { backgroundColor: '#2f5bea', borderColor: '#2f5bea' },
+  stn: { fontWeight: '700' }, sts: { fontSize: 11, color: '#5b6b75' },
+  navBtns: { flexDirection: 'row', gap: 16, marginTop: 6 },
+  cr: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, gap: 8 }, cv: { fontWeight: '700' },
+  chips: { flexGrow: 0, borderBottomWidth: 1, borderColor: '#d5dce1' }, chipsIn: { gap: 8, padding: 8, alignItems: 'center' },
   chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: '#2f5bea' },
   chipOn: { backgroundColor: '#2f5bea' }, chipT: { color: '#2f5bea', fontWeight: '600' }, on: { color: '#fff' },
-  tools: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, paddingHorizontal: 10, paddingVertical: 6, borderBottomWidth: 1, borderColor: '#d5dce1' },
-  group: { gap: 3 }, gl: { fontSize: 11, color: '#5b6b75', textTransform: 'uppercase', letterSpacing: 0.5 }, gr: { flexDirection: 'row', gap: 6 },
-  tool: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#2f5bea' },
-  bar: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, padding: 10, alignItems: 'center' },
-  t: { flex: 1, fontWeight: '600', minWidth: 200 }, l: { color: '#2f5bea', fontWeight: '600' }, k: { color: '#5b6b75' },
+  l: { color: '#2f5bea', fontWeight: '600' }, k: { color: '#5b6b75' }, rhint: { color: '#5b6b75', maxWidth: 220, fontSize: 12, paddingTop: 6 },
   sum: { paddingHorizontal: 12, paddingBottom: 6, color: '#5b6b75', fontSize: 13 },
-  err: { color: '#c62828', paddingHorizontal: 12, paddingBottom: 6 },
-  insp: { marginHorizontal: 10, marginBottom: 8, padding: 12, gap: 8, borderWidth: 1, borderColor: '#c62828', borderRadius: 10 },
-  ir: { flexDirection: 'row', alignItems: 'center', gap: 12 }, it: { flex: 1, fontWeight: '700', fontSize: 16 },
-  step: { fontSize: 24, color: '#2f5bea', paddingHorizontal: 10 }, sv: { fontWeight: '600', minWidth: 70, textAlign: 'center' },
+  err: { color: '#c62828', paddingHorizontal: 12, paddingVertical: 4 },
+  insp: { margin: 8, padding: 12, gap: 8, borderWidth: 1, borderColor: '#c62828', borderRadius: 10, backgroundColor: '#fff' },
+  ir: { flexDirection: 'row', alignItems: 'center', gap: 6 }, it: { flex: 1, fontWeight: '700', fontSize: 15 },
+  step: { fontSize: 22, color: '#2f5bea', paddingHorizontal: 4 }, sv: { fontWeight: '600', minWidth: 54, textAlign: 'center' },
   del: { color: '#c62828', fontWeight: '700' },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#16232b' },
+  stT: { flex: 1, color: '#e6edf2', fontSize: 12 }, stR: { color: '#9fb2bf', fontSize: 12 },
 });

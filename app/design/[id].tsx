@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { cname, cube } from '../../lib/rc';
+import { dsn, setDsn } from '../../lib/settings';
 import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { supabase } from '../../lib/supabase';
@@ -16,10 +18,11 @@ const n0 = (x: number) => Math.round(x).toLocaleString('en-US');
 export default function Design() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { els, lib, stories } = useModel(id);
-  const [code, setCode] = useState<'EC2' | 'BS8110'>('EC2');
-  const [cls, setCls] = useState(0);
-  const [use, setUse] = useState(1);
-  const [trib, setTrib] = useState(3);
+  const [code, setCode] = useState<'EC2' | 'BS8110'>(dsn.code);
+  const [cls, setCls] = useState(dsn.cls);
+  const [use, setUse] = useState(dsn.use);
+  const [trib, setTrib] = useState(dsn.trib);
+  useEffect(() => { setDsn({ code, cls, use, trib }); }, [code, cls, use, trib]);
   const [msg, setMsg] = useState('');
   const fck = CLASSES[cls], mat = { fck, fyk: code === 'BS8110' ? 460 : 500, code };
   const groups = useMemo(() => groupByStory(els, stories), [els, stories]);
@@ -35,7 +38,7 @@ export default function Design() {
     } catch (e: any) { setMsg('Export failed: ' + (e?.message ?? e)); }
   };
   const save = async () => {
-    const { error } = await supabase.from('snapshots').insert({ project_id: id, label: `${code === 'BS8110' ? 'BS 8110' : 'EC2'} design C${fck}/${Math.round(fck * 1.2)}`, summary: { kind: 'design', code: code === 'BS8110' ? 'BS 8110-1' : 'EN 1992-1-1', fck, storeys: groups.length, tribWidth: trib, steel_t: r.steelT, beams: r.beams.length, columns: r.cols.length, cost: { total: 0 } } });
+    const { error } = await supabase.from('snapshots').insert({ project_id: id, label: `${code === 'BS8110' ? 'BS 8110' : 'EC2'} design ${cname(fck)}`, summary: { kind: 'design', code: code === 'BS8110' ? 'BS 8110-1' : 'EN 1992-1-1', fck, storeys: groups.length, tribWidth: trib, steel_t: r.steelT, beams: r.beams.length, columns: r.cols.length, cost: { total: 0 } } });
     setMsg(error ? error.message : 'Design summary saved');
   };
 
@@ -55,7 +58,7 @@ export default function Design() {
       <View style={s.step}>
         {([['EC2', 'Eurocode 2'], ['BS8110', 'BS 8110']] as const).map(([k, l]) => <Pressable key={k} onPress={() => setCode(k)} style={[s.chip, code === k && s.chipOn]}><Text style={[s.chipT, code === k && { color: '#fff' }]}>{l}</Text></Pressable>)}
       </View>
-      <Step label="Concrete" value={`C${fck}/${Math.round(fck * 1.2)}${code === 'BS8110' ? ` (fcu ${Math.round(fck * 1.2)})` : ''}`} dec={() => setCls(c => Math.max(0, c - 1))} inc={() => setCls(c => Math.min(CLASSES.length - 1, c + 1))} />
+      <Step label="Concrete" value={`${cname(fck)}${code === 'BS8110' ? ` (fcu ${cube(fck)})` : ''}`} dec={() => setCls(c => Math.max(0, c - 1))} inc={() => setCls(c => Math.min(CLASSES.length - 1, c + 1))} />
       <Step label="Use" value={`${IMPOSED[use][0]} ${IMPOSED[use][1]} kN/m²`} dec={() => setUse(u => Math.max(0, u - 1))} inc={() => setUse(u => Math.min(2, u + 1))} />
       <Step label="Default tributary width" value={`${trib.toFixed(1)} m`} dec={() => setTrib(v => Math.max(1, v - 0.5))} inc={() => setTrib(v => Math.min(9, v + 0.5))} />
       <Text style={s.k}>{groups.length} storey{groups.length > 1 ? 's' : ''} · tributary widths come from the beam layout (the default is used for beams with no parallel neighbour) · reinforcement about {r.steelT.toFixed(2)} t</Text>

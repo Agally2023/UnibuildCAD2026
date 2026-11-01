@@ -1,4 +1,5 @@
 // Calculation report (Markdown): every input, assumption, intermediate value and clause behind the design results.
+import { cname } from './rc';
 import type { Design } from './design';
 import type { Mat } from './design';
 import { fcuOf } from './bs8110';
@@ -14,7 +15,7 @@ export function buildReport(o: { project: string; mat: Mat; imposed: number; def
   L.push(`# Calculation report: ${o.project}`, '', `Generated ${(o.date ?? new Date()).toISOString().slice(0, 10)} by Unibuild. Preliminary design to ${m.code === 'BS8110' ? 'BS 8110-1:1997' : 'EN 1992-1-1 (Eurocode 2)'}. **Not for construction without review by a registered engineer.**`, '');
   const bs = m.code === 'BS8110';
   L.push('## 1. Basis of design', '',
-    bs ? `- Concrete C${m.fck}/${Math.round(m.fck * 1.2)}: characteristic cube strength fcu = ${fcuOf(m.fck)} MPa` : `- Concrete C${m.fck}/${Math.round(m.fck * 1.2)}: fck = ${m.fck} MPa, fcd = αcc fck/γc = 0.85 × ${m.fck}/1.5 = ${fcd.toFixed(1)} MPa`,
+    bs ? `- Concrete ${cname(m.fck)}: characteristic cube strength fcu = ${fcuOf(m.fck)} MPa` : `- Concrete ${cname(m.fck)}: fck = ${m.fck} MPa, fcd = αcc fck/γc = 0.85 × ${m.fck}/1.5 = ${fcd.toFixed(1)} MPa`,
     bs ? `- Reinforcement: fy = ${m.fyk} MPa, design strength 0.87 fy = ${(0.87 * m.fyk).toFixed(0)} MPa` : `- Reinforcement: fyk = ${m.fyk} MPa, fyd = fyk/γs = ${m.fyk}/1.15 = ${fyd.toFixed(0)} MPa`,
     bs ? '- Cover 30 mm, links T8; ULS combination 1.4 Gk + 1.6 Qk, 1.0 Gk on unloaded spans (BS 8110 cl 2.4.3, 3.2.1.2)' : '- Cover 30 mm, links T8; ULS combination 1.35 Gk + 1.5 Qk (EN 1990 6.10)',
     `- Imposed load qk = ${o.imposed} kN/m²; finishes and services 2.5 kN/m²; concrete 25 kN/m³`,
@@ -62,7 +63,7 @@ import type { LateralInput, LateralResult } from './lateral';
 export function buildLateralReport(o: { project: string; mat: Mat; input: LateralInput; result: LateralResult; date?: Date }): string {
   const { result: r, input: i, mat: m } = o, bs = m.code === 'BS8110', L: string[] = [];
   L.push(`# Lateral load report: ${o.project}`, '', `Generated ${(o.date ?? new Date()).toISOString().slice(0, 10)} by Unibuild. Preliminary. **Not for construction without review by a registered engineer.**`, '');
-  L.push('## 1. Basis', '', `- Section design code: ${bs ? 'BS 8110-1:1997' : 'EN 1992-1-1'}, concrete C${m.fck}/${Math.round(m.fck * 1.2)}`);
+  L.push('## 1. Basis', '', `- Section design code: ${bs ? 'BS 8110-1:1997' : 'EN 1992-1-1'}, concrete ${cname(m.fck)}`);
   if (i.wind && r.wind) L.push(`- Wind (EN 1991-1-4): basic wind speed ${i.wind.vb} m/s, terrain category ${i.wind.terrain}; peak velocity pressure qp = (1 + 7 Iv) ½ ρ vm² with ρ = 1.25 kg/m³; qp at the top ${Math.round(r.wind.qpTop)} Pa; net force coefficients cf = cpe(D) + |cpe(E)| = ${r.wind.cf.x.toFixed(2)} (along x), ${r.wind.cf.y.toFixed(2)} (along y); cs·cd = 1.0`);
   if (i.seismic && r.seismic) L.push(`- Earthquake (EN 1998-1 equivalent static): ag/g = ${i.seismic.agG}, ground type ${i.seismic.ground}, q = ${i.seismic.q}, ψ2 = ${i.seismic.psi2}; T1 = 0.075 H^0.75 = ${r.seismic.T1.toFixed(2)} s; Sd(T1) = ${r.seismic.Sd.toFixed(3)} g; λ = ${r.seismic.lambda}; Fb = Sd m λ = ${r.seismic.Fb.toFixed(0)} kN on a seismic weight ${r.seismic.W.toFixed(0)} kN; forces distributed in proportion to height × mass`);
   L.push(`- Ground-storey column bases: ${i.base === 'pinned' ? 'pinned (isolated pads; first-storey columns carry the shear moment at their tops)' : 'fixed (restrained by ground beams or a raft; base moment 0.65 V h)'}`);
