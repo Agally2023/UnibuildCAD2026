@@ -3,6 +3,7 @@ import { Pressable, Text } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { clearModelCache } from '../lib/useModel';
+import { session } from '../lib/session';
 
 export default function Layout() {
   const [ready, setReady] = useState(false);
@@ -12,7 +13,7 @@ export default function Layout() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSignedIn(!!data.session); setReady(true); });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) => { if (!s) clearModelCache(); setSignedIn(!!s); });
+    const { data } = supabase.auth.onAuthStateChange((_e, s) => { if (!s) { clearModelCache(); session.autoOpened = false; } setSignedIn(!!s); });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -33,7 +34,7 @@ export default function Layout() {
   return <Stack screenOptions={toHub as any}>
     <Stack.Screen name="index" options={{ title: 'Unibuild' }} />
     <Stack.Screen name="projects" options={{ title: 'Projects' }} />
-    <Stack.Screen name="hub/[id]" options={{ title: 'Project modules' }} />
+    <Stack.Screen name="hub/[id]" options={{ title: 'Modules' }} />
     <Stack.Screen name="project/[id]" options={{ title: 'Plan' }} />
     <Stack.Screen name="view3d/[id]" options={{ title: '3D view' }} />
     <Stack.Screen name="dashboard/[id]" options={{ title: 'Dashboard' }} />
