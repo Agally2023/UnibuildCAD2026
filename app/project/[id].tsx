@@ -35,7 +35,6 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
 };
 const OCC = ['Residential', 'Office', 'Laboratory'];
 const TOOL_ICON: Record<Tool, IconName> = { select: 'select', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
-const BOXC: Record<string, string> = { slab: '#2a6f97', roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
 const NAME: Record<string, string> = { wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -86,52 +85,58 @@ function tapPos(ev: any): [number, number] {
   return [n.offsetX ?? 0, n.offsetY ?? 0];
 }
 
-const Grid = memo(function Grid() {
+const PAL = {
+  light: { bg: '#f7fcf8', minor: '#cfe3d6', major: '#86b79b', node: '#146c43', axis: '#146c43', text: '#146c43', wall: '#146c43', dim: '#0a2e1f', beam: '#c98a00', col: '#c98a00', duct: '#0c9a87', pipe: '#0b6b8a', door: '#1a8f4d', win: '#0c9a87', plant: '#0b6b8a', slab: '#2a6f97', cursor: '#146c43' },
+  blue: { bg: '#0b2447', minor: '#1b4180', major: '#3a6bb5', node: '#7fb2ff', axis: '#7fb2ff', text: '#8fbcff', wall: '#e8f1ff', dim: '#bcd6ff', beam: '#ffcf4a', col: '#ffcf4a', duct: '#3fd6c2', pipe: '#5cc8ff', door: '#6ee7a0', win: '#3fd6c2', plant: '#5cc8ff', slab: '#6aa8ff', cursor: '#ffffff' },
+};
+type Pal = typeof PAL.light;
+const Grid = memo(function Grid({ c }: { c: Pal }) {
   const S = N * PX, M = PX * 5;
   return (
     <>
       <Defs>
-        <Pattern id="g1" width={PX} height={PX} patternUnits="userSpaceOnUse"><Path d={`M ${PX} 0 L 0 0 0 ${PX}`} fill="none" stroke="#cfe3d6" strokeWidth={0.6} /></Pattern>
-        <Pattern id="g5" width={M} height={M} patternUnits="userSpaceOnUse"><Path d={`M ${M} 0 L 0 0 0 ${M}`} fill="none" stroke="#86b79b" strokeWidth={1} /><Circle cx={0} cy={0} r={2.6} fill="#146c43" /></Pattern>
+        <Pattern id="g1" width={PX} height={PX} patternUnits="userSpaceOnUse"><Path d={`M ${PX} 0 L 0 0 0 ${PX}`} fill="none" stroke={c.minor} strokeWidth={0.6} /></Pattern>
+        <Pattern id="g5" width={M} height={M} patternUnits="userSpaceOnUse"><Path d={`M ${M} 0 L 0 0 0 ${M}`} fill="none" stroke={c.major} strokeWidth={1} /><Circle cx={0} cy={0} r={2.6} fill={c.node} /></Pattern>
       </Defs>
-      <Rect x={0} y={0} width={S} height={S} fill="#f7fcf8" /><Rect x={0} y={0} width={S} height={S} fill="url(#g1)" /><Rect x={0} y={0} width={S} height={S} fill="url(#g5)" />
-      <Line x1={0} y1={0} x2={S} y2={0} stroke="#146c43" strokeWidth={3} /><Line x1={0} y1={0} x2={0} y2={S} stroke="#146c43" strokeWidth={3} />
+      <Rect x={0} y={0} width={S} height={S} fill={c.bg} /><Rect x={0} y={0} width={S} height={S} fill="url(#g1)" /><Rect x={0} y={0} width={S} height={S} fill="url(#g5)" />
+      <Line x1={0} y1={0} x2={S} y2={0} stroke={c.axis} strokeWidth={3} /><Line x1={0} y1={0} x2={0} y2={S} stroke={c.axis} strokeWidth={3} />
       {Array.from({ length: N / 5 + 1 }, (_, i) => i * 5).filter(v => v > 0).map(v => (
-        <G key={v}><SvgText x={v * PX + 4} y={16} fontSize={12} fill="#146c43">{v}</SvgText><SvgText x={4} y={v * PX - 4} fontSize={12} fill="#146c43">{v}</SvgText></G>
+        <G key={v}><SvgText x={v * PX + 4} y={16} fontSize={12} fill={c.text}>{v}</SvgText><SvgText x={4} y={v * PX - 4} fontSize={12} fill={c.text}>{v}</SvgText></G>
       ))}
     </>
   );
 });
 
 // All drawn elements. Memoised: it only redraws when the elements themselves change, not on zoom, tool or selection changes.
-const Layer = memo(function Layer({ here, libById, wallById, dims }: { here: El[]; libById: Record<string, Lib>; wallById: Record<string, El>; dims: boolean }) {
+const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: El[]; libById: Record<string, Lib>; wallById: Record<string, El>; dims: boolean; c: Pal }) {
+  const BX: Record<string, string> = { slab: c.slab, roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
   return (
     <>
-      {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BOXC[e.type] ?? '#146c43'} fillOpacity={0.1} stroke={BOXC[e.type] ?? '#146c43'} strokeWidth={1.5} />; })}
+      {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BX[e.type] ?? c.wall} fillOpacity={0.1} stroke={BX[e.type] ?? c.wall} strokeWidth={1.5} />; })}
       {here.map(e => {
         const g = e.geometry;
         if (e.type === 'wall') {
           const l = Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]);
           return <G key={e.id}>
-            <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#146c43" strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
-            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill="#0a2e1f">{l.toFixed(1)} m</SvgText>}
+            <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={c.wall} strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
+            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill={c.dim}>{l.toFixed(1)} m</SvgText>}
           </G>;
         }
-        if (e.type === 'beam') return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke="#c98a00" strokeWidth={3} strokeDasharray="10 6" />;
+        if (e.type === 'beam') return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={c.beam} strokeWidth={3} strokeDasharray="10 6" />;
         if (e.type === 'column') {
           const sp = libById[e.library_item_id ?? '']?.specs ?? {}, w = ((sp.b_mm ?? g.b * 1000) / 1000) * PX, h = ((sp.h_mm ?? g.h * 1000) / 1000) * PX;
-          return <Rect key={e.id} x={g.at[0] * PX - w / 2} y={g.at[1] * PX - h / 2} width={Math.max(w, 8)} height={Math.max(h, 8)} fill="#c98a00" />;
+          return <Rect key={e.id} x={g.at[0] * PX - w / 2} y={g.at[1] * PX - h / 2} width={Math.max(w, 8)} height={Math.max(h, 8)} fill={c.col} />;
         }
         if (e.type === 'duct' || e.type === 'pipe') {
           const sp = libById[e.library_item_id ?? '']?.specs ?? {}, wpx = ((e.type === 'duct' ? sp.w_mm ?? 600 : sp.dia_mm ?? 110) / 1000) * PX;
-          return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={e.type === 'duct' ? '#0c9a87' : '#0b6b8a'} strokeWidth={Math.max(wpx, 3)} opacity={0.75} />;
+          return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={e.type === 'duct' ? c.duct : c.pipe} strokeWidth={Math.max(wpx, 3)} opacity={0.75} />;
         }
         if (e.type === 'door' || e.type === 'window') {
           const o = openingSeg(e, wallById); if (!o) return null;
-          return <Line key={e.id} x1={o.a[0] * PX} y1={o.a[1] * PX} x2={o.b[0] * PX} y2={o.b[1] * PX} stroke={e.type === 'door' ? '#1a8f4d' : '#0c9a87'} strokeWidth={e.type === 'door' ? 9 : 4} />;
+          return <Line key={e.id} x1={o.a[0] * PX} y1={o.a[1] * PX} x2={o.b[0] * PX} y2={o.b[1] * PX} stroke={e.type === 'door' ? c.door : c.win} strokeWidth={e.type === 'door' ? 9 : 4} />;
         }
-        if (e.type === 'equipment') return <Rect key={e.id} x={g.at[0] * PX - 14} y={g.at[1] * PX - 14} width={28} height={28} fill="#0b6b8a" />;
-        if (e.type === 'fixture') return <G key={e.id}><Circle cx={g.at[0] * PX} cy={g.at[1] * PX} r={8} fill="#0c9a87" /><SvgText x={g.at[0] * PX + 11} y={g.at[1] * PX + 4} fontSize={11} fill="#0a2e1f">{g.kw ?? 5} kW</SvgText></G>;
+        if (e.type === 'equipment') return <Rect key={e.id} x={g.at[0] * PX - 14} y={g.at[1] * PX - 14} width={28} height={28} fill={c.plant} />;
+        if (e.type === 'fixture') return <G key={e.id}><Circle cx={g.at[0] * PX} cy={g.at[1] * PX} r={8} fill={c.duct} /><SvgText x={g.at[0] * PX + 11} y={g.at[1] * PX + 4} fontSize={11} fill={c.dim}>{g.kw ?? 5} kW</SvgText></G>;
         return null;
       })}
     </>
@@ -165,6 +170,7 @@ export default function Plan() {
   const [snap, setSnapS] = useState(plan.snap);
   const [grid, setGridS] = useState(plan.grid);
   const [dims, setDimsS] = useState(plan.dims);
+  const [blue, setBlueS] = useState(plan.blue);
   const [wallTh, setWallThS] = useState(plan.wallTh);
   const [slabTh, setSlabThS] = useState(plan.slabTh);
   const [, bump] = useState(0);                       // design basis lives in lib/settings and is shared with the design screens
@@ -173,6 +179,8 @@ export default function Plan() {
   const [vp, setVp] = useState({ w: 800, h: 500 });
   const hRef = useRef<ScrollView>(null), vRef = useRef<ScrollView>(null);
   const setSnap = (v: number) => { setPlan({ snap: v }); setSnapS(v); };
+  const setBlue = (v: boolean) => { setPlan({ blue: v }); setBlueS(v); };
+  const pal = blue ? PAL.blue : PAL.light;
   const setGrid = (v: boolean) => { setPlan({ grid: v }); setGridS(v); };
   const setDims = (v: boolean) => { setPlan({ dims: v }); setDimsS(v); };
   const setWallTh = (v: number) => { setPlan({ wallTh: v }); setWallThS(v); };
@@ -338,7 +346,7 @@ export default function Plan() {
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
     { key: 'edit', label: 'Edit', items: [mi('Undo last element', undo), mi('Select (V)', () => setT('select')), mi('Delete selected', () => sel && remove(sel), { disabled: !sel }), mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
-    { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
+    { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
     { key: 'design', label: 'Design', items: [...(['column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Dashboard', go('dashboard'))] },
     { key: 'options', label: 'Options', items: [
@@ -427,6 +435,7 @@ export default function Plan() {
       <Seg label="Snap" options={[['0.1', '0.1'], ['0.25', '0.25'], ['0.5', '0.5'], ['1', '1 m']]} value={String(snap)} onChange={v => setSnap(Number(v))} />
       <Toggle label="Grid" on={grid} onChange={setGrid} />
       <Toggle label="Lengths" on={dims} onChange={setDims} />
+      <Toggle label="Blue canvas" on={blue} onChange={setBlue} />
       <View style={s.qsep} />
       <Seg label="Design code" options={[['EC2', 'EC2'], ['BS8110', 'BS 8110']]} value={dsn.code} onChange={v => basis({ code: v as 'EC2' | 'BS8110' })} />
       <Stepper label="Concrete" value={cname(CLASSES[dsn.cls])} dec={() => basis({ cls: Math.max(0, dsn.cls - 1) })} inc={() => basis({ cls: Math.min(CLASSES.length - 1, dsn.cls + 1) })} />
@@ -477,11 +486,11 @@ export default function Plan() {
             <ScrollView horizontal ref={hRef}><ScrollView ref={vRef}>
               <Pressable ref={canvasRef} style={{ width: S * zoom, height: S * zoom }} onPress={e => { const [x, y] = tapPos(e); tap(x / zoom, y / zoom); }}>
                 <Svg width={S * zoom} height={S * zoom} viewBox={`0 0 ${S} ${S}`} pointerEvents="none">
-                  {grid ? <Grid /> : <Rect x={0} y={0} width={S} height={S} fill="#fff" />}
-                  <Layer here={here} libById={libById} wallById={wallById} dims={dims} />
+                  {grid ? <Grid c={pal} /> : <Rect x={0} y={0} width={S} height={S} fill={pal.bg} />}
+                  <Layer here={here} libById={libById} wallById={wallById} dims={dims} c={pal} />
                   {sel && <Highlight e={sel} wallById={wallById} />}
-                  {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke="#146c43" strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke="#146c43" strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={4} fill="none" stroke="#146c43" strokeWidth={1.5} /></G>}
-                  {start && cur2 && (tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke="#146c43" strokeWidth={2} strokeDasharray="8 6" />}
+                  {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke={pal.cursor} strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={4} fill="none" stroke={pal.cursor} strokeWidth={1.5} /></G>}
+                  {start && cur2 && (tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
                 </Svg>
