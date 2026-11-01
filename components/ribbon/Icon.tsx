@@ -4,7 +4,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 export type IconName =
   | 'select' | 'column' | 'beam' | 'slab' | 'wall' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet'
   | 'undo' | 'finish' | 'delete' | 'zoomin' | 'zoomout' | 'fit' | 'grid' | 'dims' | 'modules' | 'projects' | 'cube'
-  | 'design' | 'foundation' | 'wind' | 'mep' | 'clash' | 'dashboard' | 'storey' | 'plus' | 'copy' | 'ifc' | 'next' | 'code' | 'snap';
+  | 'design' | 'foundation' | 'wind' | 'mep' | 'clash' | 'dashboard' | 'storey' | 'plus' | 'copy' | 'ifc' | 'next' | 'code' | 'snap' | 'redo' | 'move';
 
 export function Icon({ name, size = 26, color = '#0a2e1f', accent = '#146c43' }: { name: IconName; size?: number; color?: string; accent?: string }) {
   const p = { stroke: color, strokeWidth: 1.7, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -23,6 +23,8 @@ export function Icon({ name, size = 26, color = '#0a2e1f', accent = '#146c43' }:
       case 'plant': return <><Rect x="3" y="5" width="18" height="14" {...p} /><Circle cx="12" cy="12" r="4" {...a} /><Path d="M12 8v8M8 12h8" {...a} /></>;
       case 'outlet': return <><Circle cx="12" cy="12" r="8" {...p} /><Path d="M12 7v10M7 12h10" {...a} /></>;
       case 'undo': return <><Path d="M9 7L4 12l5 5" {...p} /><Path d="M4 12h10a6 6 0 0 1 0 12" {...a} transform="translate(0 -4)" /></>;
+      case 'redo': return <><Path d="M15 7l5 5-5 5" {...p} /><Path d="M20 12H10a6 6 0 0 0 0 12" {...a} transform="translate(0 -4)" /></>;
+      case 'move': return <><Path d="M12 3v18M3 12h18" {...a} /><Path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3" {...p} /></>;
       case 'finish': return <Path d="M4 12l5 5L20 6" {...a} />;
       case 'delete': return <><Path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" {...p} /><Path d="M10 11v7M14 11v7" {...a} /></>;
       case 'zoomin': return <><Circle cx="10" cy="10" r="6" {...p} /><Path d="M15 15l6 6" {...p} /><Path d="M10 7v6M7 10h6" {...a} /></>;
