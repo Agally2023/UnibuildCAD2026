@@ -34,7 +34,7 @@ export const manual: Section[] = [
     id: 'workspace', title: 'The workspace', blurb: 'What each part of the Plan window is for.',
     blocks: [
       { t: 'table', head: ['Part', 'What it does'], rows: [
-        ['Menu bar', 'File (projects, modules, IFC), Edit (undo, redo, select, move, copy, delete), View (zoom, grid, lengths, canvas colour, storeys, 3D), Design (tools, storeys), Analyze (design modules, clashes, dashboard), Options (snap, design basis), Help.'],
+        ['Menu bar', 'File (projects, modules, IFC), Edit (undo, redo, select, move, copy, delete), View (zoom, grid, lengths, canvas colour, storeys, 3D), Design (tools, storeys), Analyze (design modules, clashes, schedules, elevations and sections, dashboard), Options (snap, design basis), Help.'],
         ['Tool bar', 'Icon buttons for select, undo, redo, move, copy, delete, finish, zoom in and out, fit, grid, wall lengths, storey up, 3D and Modules. Hover a button to see its name.'],
         ['Info Box', 'Under the tool bar. Shows the settings of the tool you are using (wall thickness, element type, height, cooling load) and the typed-input fields for exact points.'],
         ['Tool Box', 'On the left. Design tools (grid line, column, beam, slab, wall, door, window, duct, pipe, plant, outlet), then Viewpoint, Document and Analyze shortcuts. Sections fold up with the arrow.'],
@@ -75,6 +75,8 @@ export const manual: Section[] = [
         ['Roof (R)', 'A flat roof on top of the current storey, drawn like a slab (rectangle or polygon). Thickness is set in the Info Box.'],
         ['Stair (T)', 'Tap two opposite corners of the flight. It rises one storey along the longer side, with risers of about 175 mm. Properties shows the number of risers and warns if the run is too short for 250 mm treads; **Flip direction** reverses it.'],
         ['Room (Z)', 'Tap each corner, then the first corner (or Enter) to close. The room is named Room 1, Room 2 and so on and shows its area; rename it in Properties.'],
+        ['Dimension (I)', 'Tap the start point, the end point, then where the dimension line should sit. It shows the true length. Points snap like any other tool. Select it to delete it.'],
+        ['Text (X)', 'Tap where the note goes. Type the text in the Info Box first; edit it later in Properties.'],
         ['Door (D) and window (N)', 'Tap close to a wall (within about half a metre). The opening is centred where you tapped, kept inside the wall length.'],
         ['Duct (U) and pipe (P)', 'Tap the start, then each end point. Set the centreline height above the floor in the Info Box. You can also let the MEP module route them.'],
         ['Plant', 'Tap to place the air handler or chiller that feeds the outlets.'],
@@ -179,6 +181,17 @@ export const manual: Section[] = [
     ],
   },
   {
+    id: 'documents', title: 'Schedules, elevations and sections', blurb: 'Tables and drawings made from the model.',
+    blocks: [
+      { t: 'ul', x: [
+        '**Schedules** (Analyze > Schedules, or the Document section of the Tool Box): doors and windows with marks D1, D2 and W1, W2 in storey and plan order; walls with gross, opening and net area and volume; columns, beams, slabs and roofs, rooms, stairs, services and a concrete summary. **Download CSV** opens in Excel.',
+        'Door height is taken as 2.1 m and window height as 1.2 m everywhere (schedules, drawings, 3D and clash detection).',
+        '**Elevations and sections** (Analyze > Elevations and sections): pick North, East, South or West for an elevation, or a section cut at a Y or X position. Move the cut with the −0.5 and +0.5 buttons and flip the viewing direction. Cut elements are drawn dark, what is seen beyond is light, doors and windows are open boxes, and the storey levels are dashed lines. **Download SVG** saves the drawing.',
+      ] },
+      { t: 'note', x: 'These drawings show the model as boxes. There is no hatching by material, no door swings, and no stair or roof slope detail yet.' },
+    ],
+  },
+  {
     id: 'clashes', title: 'Clash detection', blurb: 'Finding things that occupy the same space.',
     blocks: [
       { t: 'p', x: 'Each element becomes a footprint with a height range. Two elements clash when both overlap by more than a small tolerance. Clashes are listed per storey, saved, and marked on the plan with red rings. Run it after every round of changes; chained segments of one duct or pipe run are not counted as clashes with each other.' },
@@ -200,7 +213,7 @@ export const manual: Section[] = [
     blocks: [
       { t: 'table', head: ['Key', 'Action'], rows: [
         ['V', 'Select tool'], ['G', 'Grid line'], ['W', 'Wall'], ['C', 'Column'], ['B', 'Beam'], ['S', 'Slab'], ['D', 'Door'], ['N', 'Window'], ['U', 'Duct'], ['P', 'Pipe'],
-        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['Enter', 'Close the polygon you are drawing'],
+        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['I', 'Dimension'], ['X', 'Text'], ['Enter', 'Close the polygon you are drawing'],
         ['M', 'Move the selection'], ['K', 'Copy the selection'], ['Arrow keys', 'Nudge the selection by the snap step'],
         ['Shift (held)', 'Ortho lock while drawing; add to the selection while selecting'],
         ['Esc', 'Finish the chain, cancel move or copy, clear the selection, close a menu'],
@@ -218,7 +231,7 @@ export const manual: Section[] = [
         'Curved walls are chains of straight walls. Roofs are flat and stairs are straight flights; there are no railings, curtain walls, openings in slabs, or free-form shapes.',
         'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
         'There are no raft footings, and slab deflection uses the span/depth method rather than a calculation for slabs.',
-        'There are no sections, elevations, dimensions, labels, schedules or drawing sheets, and no PDF or DWG output.',
+        'Elevations and sections are simple box drawings with no material hatching. There are no drawing sheets yet, and no PDF or DWG output.',
         'Not yet tested against real Revit, ArchiCAD or Tekla exports.',
       ] },
     ],
