@@ -4,6 +4,14 @@ export type Pt = [number, number];
 export const DEFAULT_H = 3.6;
 export const wallT = (g: any): number => g.thickness ?? 0.2;
 export const beamSec = (g: any, s: any = {}) => ({ b: (g.b_mm ?? s.b_mm ?? 250) / 1000, d: (g.h_mm ?? s.h_mm ?? 500) / 1000 });
+// Footprint of a slab, roof or room: the polygon if it has one, else its rectangle. Every polygon element also carries
+// rect (its bounding box), so code that only knows rectangles still sees the right extent.
+export const footprint = (g: any): Pt[] | null => (g.poly && g.poly.length >= 3 ? g.poly : g.rect ? [[g.rect[0], g.rect[1]], [g.rect[2], g.rect[1]], [g.rect[2], g.rect[3]], [g.rect[0], g.rect[3]]] : null);
+export const polyArea = (p: Pt[]) => Math.abs(p.reduce((a, q, i) => { const n = p[(i + 1) % p.length]; return a + q[0] * n[1] - n[0] * q[1]; }, 0)) / 2;
+export const polyCentroid = (p: Pt[]): Pt => { let a = 0, cx = 0, cy = 0; p.forEach((q, i) => { const n = p[(i + 1) % p.length], f = q[0] * n[1] - n[0] * q[1]; a += f; cx += (q[0] + n[0]) * f; cy += (q[1] + n[1]) * f; }); return Math.abs(a) < 1e-9 ? p[0] : [cx / (3 * a), cy / (3 * a)]; };
+export const inPoly = (p: Pt[], x: number, y: number) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < ((p[j][0] - p[i][0]) * (y - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; return c; };
+export const polyBox = (p: Pt[]): [number, number, number, number] => [Math.min(...p.map(q => q[0])), Math.min(...p.map(q => q[1])), Math.max(...p.map(q => q[0])), Math.max(...p.map(q => q[1]))];
+export const stairSteps = (g: any) => Math.max(2, Math.round(((g.z1 ?? 3.6) - (g.z0 ?? 0)) / 0.175));
 export const isBox = (t: string) => t === 'slab' || t === 'roof' || t === 'stair' || t === 'foundation';
 
 export type Group = { story: Story; els: El[] };

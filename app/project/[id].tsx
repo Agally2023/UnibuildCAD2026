@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions, Platform } from 'react-native';
-import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Text as SvgText } from 'react-native-svg';
+import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, Platform } from 'react-native';
+import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Polygon, Polyline, Text as SvgText } from 'react-native-svg';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { newId, useModel } from '../../lib/useModel';
@@ -11,24 +11,29 @@ import { CLASSES, cname } from '../../lib/rc';
 import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
 import { saveFile } from '../../components/saveFile';
 import { toIfc } from '../../lib/ifc';
-import { beamSec, wallT } from '../../lib/model';
+import { beamSec, footprint, inPoly, polyArea, polyBox, polyCentroid, stairSteps, wallT } from '../../lib/model';
 import type { El, Lib } from '../../lib/engineering';
 
 const PX = 50;      // pixels per metre at 100% zoom
 const N = 120;      // plan canvas size in metres
 type Pt = [number, number];
 type Cmd = { add: El[]; del: El[]; mod: [El, El][] };      // one undoable step: rows added, rows deleted, rows changed (before, after)
-type Tool = 'select' | 'grid' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
+type Tool = 'select' | 'grid' | 'arc' | 'roof' | 'stair' | 'zone' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
 const DBT: Record<string, string> = { plant: 'equipment', outlet: 'fixture' };
 const LINE_TOOLS = ['wall', 'beam', 'duct', 'pipe', 'grid', 'slab'];
-const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', grid: 'structure', slab: 'structure', foundation: 'structure', duct: 'mep', pipe: 'mep', equipment: 'mep', fixture: 'mep' };
+const POLY_TOOLS = ['slab', 'roof', 'zone'];
+const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', grid: 'structure', zone: 'architecture', slab: 'structure', foundation: 'structure', duct: 'mep', pipe: 'mep', equipment: 'mep', fixture: 'mep' };
 const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boolean }> = {
   select: { label: 'Select', hint: 'Tap an element to see its details, change its size or delete it.' },
   grid: { label: 'Grid line', hint: 'Tap the start and end of a grid line. Numbers go to vertical lines, letters to horizontal ones. Or generate a whole grid below.' },
   column: { label: 'Column', hint: 'Tap to place a column. Use "Next type" to change its size.', lib: l => l.category === 'section' && /column/i.test(l.name) },
   beam: { label: 'Beam', hint: 'Tap the start, then each end point. Beams that meet end to end form one continuous beam. Tap Finish to stop.', lib: l => l.category === 'section' && /beam/i.test(l.name) },
-  slab: { label: 'Slab', hint: 'Tap two opposite corners of the slab.' },
+  slab: { label: 'Slab', hint: 'Rectangle: tap two corners. Polygon: tap each corner, then the first corner or Finish.' },
   wall: { label: 'Wall', hint: 'Tap the start, then each corner. Tap Finish to stop.' },
+  arc: { label: 'Arc wall', hint: 'Tap the start, the end, then a point on the curve. It is built as a chain of short straight walls.' },
+  roof: { label: 'Roof', hint: 'Flat roof on top of this storey. Rectangle: tap two corners. Polygon: tap each corner, then the first corner or Finish.' },
+  stair: { label: 'Stair', hint: 'Tap two opposite corners of the flight. It rises one storey along the longer side; flip the direction in Properties.' },
+  zone: { label: 'Room', hint: 'Tap each corner of the room, then the first corner or Finish. It gets a name and an area.' },
   door: { label: 'Door', hint: 'Tap close to a wall to place a door in it.', lib: l => l.category === 'door' },
   window: { label: 'Window', hint: 'Tap close to a wall to place a window in it.', lib: l => l.category === 'window' },
   duct: { label: 'Duct', hint: 'Tap the start, then each end point. Set the centreline height below.', lib: l => l.category === 'duct' },
@@ -37,8 +42,8 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
   outlet: { label: 'Outlet', hint: 'Tap to place a diffuser or terminal. Set its cooling load below.' },
 };
 const OCC = ['Residential', 'Office', 'Laboratory'];
-const TOOL_ICON: Record<Tool, IconName> = { select: 'select', grid: 'grid', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
-const NAME: Record<string, string> = { grid: 'Grid line', wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
+const TOOL_ICON: Record<Tool, IconName> = { select: 'select', grid: 'grid', arc: 'arc', roof: 'roof', stair: 'stair', zone: 'zone', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
+const NAME: Record<string, string> = { zone: 'Room', grid: 'Grid line', wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
 function nearestWall(walls: El[], x: number, y: number) {
@@ -73,6 +78,7 @@ function hitTest(here: El[], wallById: Record<string, El>, x: number, y: number,
     if (e.type === 'door' || e.type === 'window') { const o = openingSeg(e, wallById); if (o) d = segDist(o.a, o.b, x, y) - 0.05; }
     else if (g.start && g.end) d = segDist(g.start, g.end, x, y) - (e.type === 'wall' ? wallT(g) / 2 : 0);
     else if (g.at) d = Math.hypot(x - g.at[0], y - g.at[1]) - (e.type === 'column' ? Math.max(g.b ?? 0.3, g.h ?? 0.3) / 2 : 0.15);
+    else if (g.poly) d = inPoly(g.poly, x, y) ? tol * 0.9 : Infinity;
     else if (g.rect) d = x >= g.rect[0] && x <= g.rect[2] && y >= g.rect[1] && y <= g.rect[3] ? tol * 0.9 : Infinity;   // inside a slab loses to anything closer
     if (d <= tol && d < bd) { bd = d; best = e; }
   }
@@ -115,14 +121,30 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
   const BX: Record<string, string> = { slab: c.slab, roof: '#8a6d3b', stair: '#6b7a85', foundation: '#555d63' };
   return (
     <>
-      {here.filter(e => e.geometry.rect).map(e => { const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={BX[e.type] ?? c.wall} fillOpacity={0.1} stroke={BX[e.type] ?? c.wall} strokeWidth={1.5} />; })}
+      {here.filter(e => e.geometry.rect && e.type !== 'stair' && e.type !== 'zone').map(e => {
+        const col = BX[e.type] ?? c.wall;
+        if (e.geometry.poly) return <Polygon key={e.id} points={e.geometry.poly.map((q: Pt) => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
+        const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
+      })}
+      {here.filter(e => e.type === 'zone' && e.geometry.poly).map(e => {
+        const q = e.geometry.poly as Pt[], cen = polyCentroid(q);
+        return <G key={e.id}><Polygon points={q.map(v => `${v[0] * PX},${v[1] * PX}`).join(' ')} fill={c.pipe} fillOpacity={0.12} stroke={c.pipe} strokeWidth={1} strokeDasharray="6 4" /><SvgText x={cen[0] * PX} y={cen[1] * PX} fontSize={13} fontWeight="700" textAnchor="middle" fill={c.dim}>{e.geometry.name ?? 'Room'}</SvgText><SvgText x={cen[0] * PX} y={cen[1] * PX + 15} fontSize={11} textAnchor="middle" fill={c.dim}>{polyArea(q).toFixed(1)} m²</SvgText></G>;
+      })}
+      {here.filter(e => e.type === 'stair' && e.geometry.rect).map(e => {
+        const [x0, y0, x1, y1] = e.geometry.rect as number[], n = stairSteps(e.geometry), alongX = Math.abs(x1 - x0) >= Math.abs(y1 - y0), flip = e.geometry.flip ? -1 : 1, L = alongX ? x1 - x0 : y1 - y0;
+        const cut = Array.from({ length: n - 1 }, (_, i) => (i + 1) / n);
+        const ax = alongX ? (flip > 0 ? x0 + L * 0.1 : x1 - L * 0.1) : (x0 + x1) / 2, ay = alongX ? (y0 + y1) / 2 : (flip > 0 ? y0 + L * 0.1 : y1 - L * 0.1), bx = alongX ? (flip > 0 ? x1 - L * 0.1 : x0 + L * 0.1) : (x0 + x1) / 2, by = alongX ? (y0 + y1) / 2 : (flip > 0 ? y1 - L * 0.1 : y0 + L * 0.1);
+        return <G key={e.id}><Rect x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={c.wall} fillOpacity={0.06} stroke={c.wall} strokeWidth={1.5} />
+          {cut.map((f, i) => alongX ? <Line key={i} x1={(x0 + (x1 - x0) * f) * PX} y1={y0 * PX} x2={(x0 + (x1 - x0) * f) * PX} y2={y1 * PX} stroke={c.wall} strokeWidth={0.8} /> : <Line key={i} x1={x0 * PX} y1={(y0 + (y1 - y0) * f) * PX} x2={x1 * PX} y2={(y0 + (y1 - y0) * f) * PX} stroke={c.wall} strokeWidth={0.8} />)}
+          <Line x1={ax * PX} y1={ay * PX} x2={bx * PX} y2={by * PX} stroke={c.beam} strokeWidth={2} /><Circle cx={ax * PX} cy={ay * PX} r={4} fill={c.beam} /><SvgText x={(ax + bx) / 2 * PX + 6} y={(ay + by) / 2 * PX - 6} fontSize={11} fill={c.dim}>UP</SvgText></G>;
+      })}
       {here.map(e => {
         const g = e.geometry;
         if (e.type === 'wall') {
           const l = Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]);
           return <G key={e.id}>
             <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={c.wall} strokeWidth={Math.max(wallT(g) * PX, 4)} strokeLinecap="butt" />
-            {dims && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill={c.dim}>{l.toFixed(1)} m</SvgText>}
+            {dims && l > 1.2 && <SvgText x={(g.start[0] + g.end[0]) / 2 * PX + 6} y={(g.start[1] + g.end[1]) / 2 * PX - 6} fontSize={12} fill={c.dim}>{l.toFixed(1)} m</SvgText>}
           </G>;
         }
         if (e.type === 'beam') return <Line key={e.id} x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={c.beam} strokeWidth={3} strokeDasharray="10 6" />;
@@ -166,6 +188,7 @@ function snapGeo(all: El[], wallById: Record<string, El>) {
     const g = e.geometry;
     if (g.start && g.end) { segs.push([g.start, g.end]); pts.push([g.start, 'end'], [g.end, 'end'], [[(g.start[0] + g.end[0]) / 2, (g.start[1] + g.end[1]) / 2], 'mid']); }
     else if (g.at) pts.push([g.at, 'end']);
+    else if (g.poly) { g.poly.forEach((q: Pt, i: number) => { const n = g.poly[(i + 1) % g.poly.length]; segs.push([q, n]); pts.push([q, 'end'], [[(q[0] + n[0]) / 2, (q[1] + n[1]) / 2], 'mid']); }); }
     else if (g.rect) { const [x0, y0, x1, y1] = g.rect; segs.push([[x0, y0], [x1, y0]], [[x1, y0], [x1, y1]], [[x1, y1], [x0, y1]], [[x0, y1], [x0, y0]]); pts.push([[x0, y0], 'end'], [[x1, y0], 'end'], [[x1, y1], 'end'], [[x0, y1], 'end'], [[(x0 + x1) / 2, (y0 + y1) / 2], 'mid']); }
   }
   return { segs, pts };
@@ -177,11 +200,34 @@ function segCross(a: [Pt, Pt], b: [Pt, Pt]): Pt | null {
   return tt >= 0 && tt <= 1 && u >= 0 && u <= 1 ? [p[0] + tt * rx, p[1] + tt * ry] : null;
 }
 
+// points along the arc from a to b that passes through c, one chord per at most 10 degrees (a straight line if they are collinear)
+function arcPoints(a: Pt, b: Pt, c: Pt): Pt[] {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-6) return [a, b];
+  const ux = ((a[0] ** 2 + a[1] ** 2) * (b[1] - c[1]) + (b[0] ** 2 + b[1] ** 2) * (c[1] - a[1]) + (c[0] ** 2 + c[1] ** 2) * (a[1] - b[1])) / d;
+  const uy = ((a[0] ** 2 + a[1] ** 2) * (c[0] - b[0]) + (b[0] ** 2 + b[1] ** 2) * (a[0] - c[0]) + (c[0] ** 2 + c[1] ** 2) * (b[0] - a[0])) / d;
+  const r = Math.hypot(a[0] - ux, a[1] - uy), ang = (q: Pt) => Math.atan2(q[1] - uy, q[0] - ux);
+  const a0 = ang(a), a1 = ang(b), ac = ang(c), TAU = Math.PI * 2, norm = (x: number) => ((x % TAU) + TAU) % TAU;
+  let sweep = norm(a1 - a0);                                    // counter-clockwise sweep a to b
+  if (norm(ac - a0) > sweep) sweep -= TAU;                      // c is not on that side: go the other way round
+  const n = Math.max(2, Math.ceil(Math.abs(sweep) / (Math.PI / 18))), out: Pt[] = [a];
+  for (let i = 1; i < n; i++) { const th = a0 + (sweep * i) / n; out.push([r2(ux + r * Math.cos(th)), r2(uy + r * Math.sin(th))]); }
+  out.push(b); return out;
+}
+
+// a name box that saves when you press Enter or leave it
+function NameField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  const done = () => { const nm = v.trim(); if (nm && nm !== value) onCommit(nm); };
+  return <TextInput value={v} onChangeText={setV} onBlur={done} onSubmitEditing={done} placeholder="Room name" style={s.nameIn} />;
+}
+
 function Highlight({ e, wallById }: { e: El; wallById: Record<string, El> }) {
   const g = e.geometry, c = '#c62828';
   if (e.type === 'door' || e.type === 'window') { const o = openingSeg(e, wallById); return o ? <Line x1={o.a[0] * PX} y1={o.a[1] * PX} x2={o.b[0] * PX} y2={o.b[1] * PX} stroke={c} strokeWidth={14} opacity={0.35} /> : null; }
   if (g.start && g.end) return <Line x1={g.start[0] * PX} y1={g.start[1] * PX} x2={g.end[0] * PX} y2={g.end[1] * PX} stroke={c} strokeWidth={Math.max(wallT(g) * PX, 4) + 8} opacity={0.35} />;
   if (g.at) return <Circle cx={g.at[0] * PX} cy={g.at[1] * PX} r={22} fill={c} fillOpacity={0.25} stroke={c} strokeWidth={2} />;
+  if (g.poly) return <Polygon points={g.poly.map((q: Pt) => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill={c} fillOpacity={0.12} stroke={c} strokeWidth={3} />;
   if (g.rect) return <Rect x={g.rect[0] * PX} y={g.rect[1] * PX} width={(g.rect[2] - g.rect[0]) * PX} height={(g.rect[3] - g.rect[1]) * PX} fill={c} fillOpacity={0.12} stroke={c} strokeWidth={3} />;
   return null;
 }
@@ -225,6 +271,8 @@ export default function Plan() {
   const [xf, setXf] = useState<{ kind: 'move' | 'copy'; base: Pt | null } | null>(null);
   const [mq, setMq] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [multi, setMulti] = useState(false);
+  const [pts, setPts] = useState<Pt[]>([]);
+  const [shape, setShape] = useState<'rect' | 'poly'>('rect');
   const [osnap, setOsnap] = useState(true), [ortho, setOrtho] = useState(false);
   const [curKind, setCurKind] = useState<SnapKind>('cell');
   const [tf, setTf] = useState({ x: '', y: '', l: '', a: '' });
@@ -245,6 +293,7 @@ export default function Plan() {
   const libById = useMemo(() => Object.fromEntries(lib.map(l => [l.id, l])), [lib]);
   const wallById = useMemo(() => Object.fromEntries(walls.map(w => [w.id, w])), [walls]);
   const def = TOOLS[tool];
+  const polyMode = tool === 'zone' || ((tool === 'slab' || tool === 'roof') && shape === 'poly');
   const choices = useMemo(() => (def.lib ? lib.filter(def.lib) : []), [lib, def]);
   const chosen = choices.length ? choices[(pick[tool] ?? 0) % choices.length] : null;
   const selEls = useMemo(() => all.filter(e => selIds.includes(e.id)), [all, selIds]);
@@ -283,7 +332,7 @@ export default function Plan() {
 
   // the point a tap or the pointer lands on: grid cell, then ortho lock, then object snap (end, middle, crossing)
   const geo = useMemo(() => snapGeo(all, wallById), [all, wallById]);
-  const fromPt = (): Pt | null => (xf?.base ?? (start && ['wall', 'beam', 'duct', 'pipe', 'grid'].includes(tool) ? start : null));
+  const fromPt = (): Pt | null => (xf?.base ?? (pts.length && (tool === 'arc' || polyMode) ? pts[pts.length - 1] : start && ['wall', 'beam', 'duct', 'pipe', 'grid'].includes(tool) ? start : null));
   const snapAt = (mx: number, my: number, from: Pt | null): { p: Pt; kind: SnapKind } => {
     const tol = 12 / (PX * zoom), cell = (v: number) => r2(Math.round(v / snap) * snap), lock = (ortho || shiftRef.current) && !!from;
     let ax = mx, ay = my, horiz = true;
@@ -294,6 +343,7 @@ export default function Plan() {
     let bs = Infinity;
     const cand = (q: Pt, kind: SnapKind) => { if (!ok(q)) return; const d = Math.hypot(q[0] - ax, q[1] - ay); if (d > tol) return; const sc = d - (kind === 'int' ? tol * 0.3 : kind === 'end' ? tol * 0.2 : 0); if (sc < bs) { bs = sc; best = { p: [r2(q[0]), r2(q[1])], kind }; } };
     for (const [q, k] of geo.pts) cand(q, k);
+    for (const q of pts) cand(q, 'end');
     const near = geo.segs.filter(([a, b]) => segDist(a, b, ax, ay) < tol * 3).slice(0, 10);
     for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) { const x = segCross(near[i], near[j]); if (x) cand(x, 'int'); }
     return best;
@@ -315,13 +365,22 @@ export default function Plan() {
   const num = (v: string) => { const n = parseFloat(v.replace(',', '.')); return Number.isFinite(n) ? n : null; };
   const typedXY = () => { const x = num(tf.x), y = num(tf.y); if (x == null || y == null) return setErr('Type both X and Y in metres.'); setTf(f => ({ ...f, x: '', y: '' })); place([r2(x), r2(y)], x, y); };
   const typedPolar = () => {
-    const l = num(tf.l); if (l == null || !start) return setErr('Type a length in metres after the start point.');
+    const base = start ?? pts[pts.length - 1] ?? null, l = num(tf.l); if (l == null || !base) return setErr('Type a length in metres after the start point.');
     const a = num(tf.a);
     let ux = 1, uy = 0;
     if (a != null) { ux = Math.cos((a * Math.PI) / 180); uy = -Math.sin((a * Math.PI) / 180); }
-    else if (cur2 && (cur2[0] !== start[0] || cur2[1] !== start[1])) { const d = Math.hypot(cur2[0] - start[0], cur2[1] - start[1]); ux = (cur2[0] - start[0]) / d; uy = (cur2[1] - start[1]) / d; }
-    const q: Pt = [r2(start[0] + l * ux), r2(start[1] + l * uy)]; setTf(f => ({ ...f, l: '' })); place(q, q[0], q[1]);
+    else if (cur2 && (cur2[0] !== base[0] || cur2[1] !== base[1])) { const d = Math.hypot(cur2[0] - base[0], cur2[1] - base[1]); ux = (cur2[0] - base[0]) / d; uy = (cur2[1] - base[1]) / d; }
+    const q: Pt = [r2(base[0] + l * ux), r2(base[1] + l * uy)]; setTf(f => ({ ...f, l: '' })); place(q, q[0], q[1]);
   };
+
+  const closePoly = async (poly: Pt[]) => {
+    setPts([]);
+    if (polyArea(poly) < 0.01) return setErr('That outline has no area.');
+    const rect = polyBox(poly), n = els.filter(e => e.type === 'zone' && (e.story_id ?? stories[0]?.id) === story?.id).length;
+    if (tool === 'zone') return void (await add({ poly, rect, name: `Room ${n + 1}` }));
+    await add({ poly, rect, z0: tool === 'roof' ? H : r2(H - slabTh), z1: tool === 'roof' ? r2(H + slabTh) : H });
+  };
+  const finish = () => { if (polyMode && pts.length >= 3) closePoly(pts); else { setStart(null); setPts([]); } };
 
   const tap = async (wx: number, wy: number) => {
     if (Date.now() - suppress.current < 300) return;          // the click that ends a rectangle selection
@@ -351,10 +410,26 @@ export default function Plan() {
       const width = chosen?.specs?.w ?? (tool === 'door' ? 0.9 : 1.5), off = Math.max(width / 2, Math.min(hit.len - width / 2, hit.off));
       return add({ wall_id: hit.w.id, offset_m: r2(off), width_m: width });
     }
+    if (tool === 'stair') {
+      if (!start) return setStart(p);
+      if (p[0] === start[0] || p[1] === start[1]) return setStart(null);
+      const rect = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])];
+      await add({ rect, z0: 0, z1: H }); return setStart(null);
+    }
+    if (tool === 'arc') {
+      if (pts.length < 2) return setPts(old => (old.length && old[old.length - 1][0] === p[0] && old[old.length - 1][1] === p[1] ? old : [...old, p]));
+      const segs = arcPoints(pts[0], pts[1], p);
+      const rows: El[] = segs.slice(1).map((q, i) => ({ id: newId(), type: 'wall', geometry: { start: segs[i], end: q, height: H, thickness: wallTh }, library_item_id: null, story_id: story?.id ?? null, properties: {} }));
+      setPts([]); return void (await run({ add: rows, del: [], mod: [] }));
+    }
+    if (polyMode) {
+      if (pts.length >= 3 && Math.hypot(p[0] - pts[0][0], p[1] - pts[0][1]) < Math.max(snap * 0.6, 12 / (PX * zoom))) return void (await closePoly(pts));
+      return setPts(old => (old.length && old[old.length - 1][0] === p[0] && old[old.length - 1][1] === p[1] ? old : [...old, p]));
+    }
     if (tool === 'grid') { if (!start) return setStart(p); if (p[0] === start[0] && p[1] === start[1]) return setStart(null); await addGrid(start, p); return setStart(null); }
     if (!start) return setStart(p);
     if (p[0] === start[0] && p[1] === start[1]) return setStart(null);
-    if (tool === 'slab') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: r2(H - slabTh), z1: H }); return setStart(null); }
+    if (tool === 'slab' || tool === 'roof') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: tool === 'roof' ? H : r2(H - slabTh), z1: tool === 'roof' ? r2(H + slabTh) : H }); return setStart(null); }
     await add(tool === 'wall' ? { start, end: p, height: H, thickness: wallTh } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
     setStart(p);
   };
@@ -375,6 +450,7 @@ export default function Plan() {
     const o = { ...g };
     if (g.start) { o.start = [r2(g.start[0] + dx), r2(g.start[1] + dy)]; o.end = [r2(g.end[0] + dx), r2(g.end[1] + dy)]; }
     if (g.at) o.at = [r2(g.at[0] + dx), r2(g.at[1] + dy)];
+    if (g.poly) o.poly = g.poly.map((q: Pt) => [r2(q[0] + dx), r2(q[1] + dy)]);
     if (g.rect) o.rect = [r2(g.rect[0] + dx), r2(g.rect[1] + dy), r2(g.rect[2] + dx), r2(g.rect[3] + dy)];
     return o;
   };
@@ -429,7 +505,7 @@ export default function Plan() {
 
   // what the inspector shows and lets you change for the selected element
   const inspector = (e: El) => {
-    const g = e.geometry, steps: [string, string, () => void, () => void][] = [];
+    const g = e.geometry, steps: [string, string, () => void, () => void][] = [], actions: [string, () => void][] = [];
     let info = '';
     const len = g.start && g.end ? Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]) : 0;
     if (e.type === 'wall') {
@@ -445,8 +521,8 @@ export default function Plan() {
       const sp = libById[e.library_item_id ?? '']?.specs ?? {};
       info = `${sp.b_mm ?? Math.round(g.b * 1000)} × ${sp.h_mm ?? Math.round(g.h * 1000)} mm · at ${g.at[0]}, ${g.at[1]} m`;
     } else if (e.type === 'slab' || e.type === 'roof') {
-      const t = Math.round((g.z1 - g.z0) * 1000), [x0, y0, x1, y1] = g.rect;
-      info = `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`;
+      const t = Math.round((g.z1 - g.z0) * 1000), [x0, y0, x1, y1] = g.rect, fp = footprint(g);
+      info = g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`;
       steps.push(['Thickness', `${t} mm`, () => edit(e, { ...g, z0: r2(g.z1 - Math.max(0.1, (t - 25) / 1000)) }), () => edit(e, { ...g, z0: r2(g.z1 - Math.min(0.6, (t + 25) / 1000)) })]);
     } else if (e.type === 'duct' || e.type === 'pipe') {
       info = `${len.toFixed(2)} m long · centreline ${r2(g.elevation_m)} m above the floor`;
@@ -457,13 +533,18 @@ export default function Plan() {
     } else if (e.type === 'door' || e.type === 'window') {
       info = `${r2(g.width_m)} m wide, ${r2(g.offset_m)} m along its wall`;
       steps.push(['Width', `${r2(g.width_m)} m`, () => edit(e, { ...g, width_m: Math.max(0.5, r2(g.width_m - 0.1)) }), () => edit(e, { ...g, width_m: Math.min(3, r2(g.width_m + 0.1)) })]);
-    } else if (e.type === 'grid') info = `Grid line ${g.label ?? ''} · ${len.toFixed(2)} m long`;
+    } else if (e.type === 'stair') {
+      const [x0, y0, x1, y1] = g.rect, n = stairSteps(g), rise = ((g.z1 - g.z0) / n) * 1000, run = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)), width = Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0)), need = 0.25 * (n - 1);
+      info = `${n} risers of ${Math.round(rise)} mm · ${width.toFixed(2)} m wide · ${run.toFixed(2)} m run${run + 1e-6 < need ? ` (needs about ${need.toFixed(1)} m for 250 mm treads)` : ''}`;
+      actions.push(['Flip direction', () => edit(e, { ...g, flip: !g.flip })]);
+    } else if (e.type === 'zone') info = `${g.poly ? polyArea(g.poly).toFixed(1) : '?'} m² · ${g.poly?.length ?? 0} corners`;
+    else if (e.type === 'grid') info = `Grid line ${g.label ?? ''} · ${len.toFixed(2)} m long`;
     else if (e.type === 'equipment') info = `Plant at ${g.at[0]}, ${g.at[1]} m`;
-    return { info, steps };
+    return { info, steps, actions };
   };
 
   const startXf = (kind: 'move' | 'copy') => { if (!selEls.length) return setErr('Select something first, then choose Move or Copy.'); setTool('select'); setStart(null); setXf({ kind, base: null }); setErr(''); };
-  const setT = (k: Tool) => { setTool(k); setStart(null); setXf(null); setErr(''); if (k !== 'select') setSelId(null); };
+  const setT = (k: Tool) => { setTool(k); setStart(null); setPts([]); setXf(null); setErr(''); if (k !== 'select') setSelId(null); };
   const ti = (k: Tool): RItem => ({ key: k, label: TOOLS[k].label, icon: TOOL_ICON[k], active: tool === k, onPress: () => setT(k) });
   const go = (route: string): RItem['onPress'] => () => router.push(`/${route}/${id}` as any);
   const exportIfc = async () => {
@@ -487,8 +568,9 @@ export default function Plan() {
     <>
       {tool === 'select' && <><Toggle label="Add to selection" on={multi} onChange={setMulti} /><Text style={s.rhint}>Tap an element, or drag a box (left to right: inside; right to left: touching). Shift adds. Then Move (M), Copy (K), arrows to nudge.</Text></>}
       {choices.length > 0 && <Stepper label={`${def.label} type`} value={chosen ? short(chosen.name, 16) : '-'} dec={() => cycle(-1)} inc={() => cycle(1)} />}
-      {tool === 'wall' && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
-      {tool === 'slab' && <Stepper label="Slab thickness" value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
+      {(tool === 'slab' || tool === 'roof') && <Seg label="Shape" options={[['rect', 'Rectangle'], ['poly', 'Polygon']]} value={shape} onChange={v => setShape(v as 'rect' | 'poly')} />}
+      {(tool === 'wall' || tool === 'arc') && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
+      {(tool === 'slab' || tool === 'roof') && <Stepper label={tool === 'roof' ? 'Roof thickness' : 'Slab thickness'} value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
       {(tool === 'duct' || tool === 'pipe') && <Stepper label="Centreline height" value={`${elev.toFixed(2)} m`} dec={() => setElev(v => Math.max(0.1, r2(v - 0.1)))} inc={() => setElev(v => Math.min(H, r2(v + 0.1)))} />}
       {tool === 'outlet' && <Stepper label="Cooling load" value={`${kw} kW`} dec={() => setKw(v => Math.max(1, v - 1))} inc={() => setKw(v => Math.min(50, v + 1))} />}
       {tool === 'grid' && <>
@@ -503,7 +585,7 @@ export default function Plan() {
         <Field label="X (m)" value={tf.x} onChange={v => setTf(f => ({ ...f, x: v }))} onSubmit={typedXY} placeholder="x" />
         <Field label="Y (m)" value={tf.y} onChange={v => setTf(f => ({ ...f, y: v }))} onSubmit={typedXY} placeholder="y" />
         <Btn label="Place" onPress={typedXY} />
-        {start && tool !== 'slab' && <>
+        {(start || (pts.length > 0 && (tool === 'arc' || polyMode))) && tool !== 'stair' && !(tool === 'slab' && !polyMode) && <>
           <Field label="Length (m)" value={tf.l} onChange={v => setTf(f => ({ ...f, l: v }))} onSubmit={typedPolar} placeholder="len" />
           <Field label="Angle (°)" value={tf.a} onChange={v => setTf(f => ({ ...f, a: v }))} onSubmit={typedPolar} placeholder="toward cursor" />
           <Btn label="Place" onPress={typedPolar} />
@@ -516,9 +598,9 @@ export default function Plan() {
   const SEP = { label: '', sep: true };
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
-    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish chain (Esc)', () => setStart(null), { disabled: !start })] },
+    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
-    { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
+    { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'stair', 'zone', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Dashboard', go('dashboard'))] },
     { key: 'help', label: 'Help', items: [mi('Manual and guides', () => router.push('/manual' as any)), mi('Quick start', () => router.push('/manual?s=start' as any)), mi('Keyboard shortcuts', () => router.push('/manual?s=shortcuts' as any)), mi('Limits and assumptions', () => router.push('/manual?s=limits' as any))] },
     { key: 'options', label: 'Options', items: [
@@ -538,7 +620,7 @@ export default function Plan() {
     { key: 'mv', label: 'Move selection (M)', icon: 'move', active: xf?.kind === 'move', disabled: !selEls.length, onPress: () => startXf('move') },
     { key: 'cp', label: 'Copy selection (K)', icon: 'copy', active: xf?.kind === 'copy', disabled: !selEls.length, onPress: () => startXf('copy') },
     { key: 'del', label: 'Delete selected', icon: 'delete', disabled: !selEls.length, onPress: () => removeMany(selEls) },
-    { key: 'fin', label: 'Finish chain', icon: 'finish', disabled: !start, onPress: () => setStart(null) },
+    { key: 'fin', label: 'Finish (Enter)', icon: 'finish', disabled: !start && !pts.length, onPress: finish },
     { key: 's2', label: '', icon: 'select', sep: true, onPress: () => {} },
     { key: 'zi', label: 'Zoom in', icon: 'zoomin', onPress: () => setZoom(z => Math.min(3, z * 1.25)) },
     { key: 'zo', label: 'Zoom out', icon: 'zoomout', onPress: () => setZoom(z => Math.max(0.15, z / 1.25)) },
@@ -554,7 +636,7 @@ export default function Plan() {
   ];
 
   // tool box: Select, Design (drawing tools), Viewpoint, Document, Analyze
-  const designTools: Tool[] = ['grid', 'column', 'beam', 'slab', 'wall', 'door', 'window', 'duct', 'pipe', 'plant', 'outlet'];
+  const designTools: Tool[] = ['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'stair', 'zone', 'duct', 'pipe', 'plant', 'outlet'];
   const boxSecs: { key: string; title: string; items: RItem[] }[] = [
     { key: 'design', title: 'Design', items: designTools.map(ti) },
     { key: 'view', title: 'Viewpoint', items: [{ key: 'fp', label: 'Floor plan', icon: 'storey', active: true, onPress: () => {} }, { key: 'v3', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
@@ -567,12 +649,13 @@ export default function Plan() {
   keyRef.current = (k: KeyboardEvent) => {
     shiftRef.current = k.shiftKey;
     const tg = k.target as HTMLElement | null; if (tg && /INPUT|TEXTAREA/.test(tg.tagName)) return;
-    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', g: 'grid', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
+    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', g: 'grid', a: 'arc', r: 'roof', t: 'stair', z: 'zone', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
     const arrows: Record<string, Pt> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
     if (ctrl && key === 'z' && !k.shiftKey) { k.preventDefault(); undo(); }
     else if (ctrl && (key === 'y' || (key === 'z' && k.shiftKey))) { k.preventDefault(); redo(); }
     else if (ctrl && key === 'a') { k.preventDefault(); setT('select'); setSelIds(here.map(e => e.id)); }
-    else if (key === 'escape') { setStart(null); setXf(null); setSelIds([]); setMenu(null); }
+    else if (key === 'enter' && polyMode && pts.length >= 3) { k.preventDefault(); k.stopPropagation(); closePoly(pts); }
+    else if (key === 'escape') { setStart(null); setPts([]); setXf(null); setSelIds([]); setMenu(null); }
     else if ((key === 'delete' || key === 'backspace') && selEls.length) { k.preventDefault(); removeMany(selEls); }
     else if (arrows[key] && selEls.length && tool === 'select') { k.preventDefault(); doXf('move', r2(arrows[key][0] * snap), r2(arrows[key][1] * snap)); }
     else if ((key === 'm' || key === 'k') && !ctrl) startXf(key === 'm' ? 'move' : 'copy');
@@ -596,8 +679,8 @@ export default function Plan() {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const h = (k: KeyboardEvent) => keyRef.current(k), up = (k: KeyboardEvent) => { shiftRef.current = k.shiftKey; };
-    window.addEventListener('keydown', h); window.addEventListener('keyup', up);
-    return () => { window.removeEventListener('keydown', h); window.removeEventListener('keyup', up); };
+    window.addEventListener('keydown', h, true); window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', h, true); window.removeEventListener('keyup', up); };
   }, []);
   // drag a rectangle in the Select tool to pick several elements
   useEffect(() => {
@@ -626,11 +709,13 @@ export default function Plan() {
       {insp.steps.map(([label, val, dec, inc]) => (
         <View key={label} style={s.ir}><Text style={[s.k, { flex: 1 }]}>{label}</Text><Pressable onPress={dec}><Text style={s.step}>−</Text></Pressable><Text style={s.sv}>{val}</Text><Pressable onPress={inc}><Text style={s.step}>+</Text></Pressable></View>
       ))}
+      {sel.type === 'zone' && <NameField key={sel.id} value={sel.geometry.name ?? ''} onCommit={nm => edit(sel, { ...sel.geometry, name: nm })} />}
+      {insp.actions.map(([label, fn]) => <Pressable key={label} onPress={fn}><Text style={s.l}>{label}</Text></Pressable>)}
       <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable></View>
       <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
     </View>
   ) : null);
-  const rows: [string, number][] = [...(grids.length ? [['Grid lines', grids.length] as [string, number]] : []), ...([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number] as [string, number])];
+  const rows: [string, number][] = [...(grids.length ? [['Grid lines', grids.length] as [string, number]] : []), ...([['Walls', counts.wall], ['Columns', counts.column], ['Beams', counts.beam], ['Slabs', counts.slab], ['Roofs', counts.roof], ['Stairs', counts.stair], ['Rooms', counts.zone], ['Doors', counts.door], ['Windows', counts.window], ['Ducts', counts.duct], ['Pipes', counts.pipe], ['Plant', counts.equipment], ['Outlets', counts.fixture]] as [string, number | undefined][]).filter(r => r[1]).map(r => [r[0], r[1] as number] as [string, number])];
 
   const quick = (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.quick} contentContainerStyle={s.quickIn}>
@@ -698,6 +783,10 @@ export default function Plan() {
                   {xf?.base && cur2 && <Line x1={xf.base[0] * PX} y1={xf.base[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke="#c62828" strokeWidth={2} strokeDasharray="8 6" />}
                   {cur2 && <G><Line x1={cur2[0] * PX - 14} y1={cur2[1] * PX} x2={cur2[0] * PX + 14} y2={cur2[1] * PX} stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={1.5} /><Line x1={cur2[0] * PX} y1={cur2[1] * PX - 14} x2={cur2[0] * PX} y2={cur2[1] * PX + 14} stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={1.5} /><Circle cx={cur2[0] * PX} cy={cur2[1] * PX} r={curKind === 'cell' ? 4 : 9} fill="none" stroke={curKind === 'cell' ? pal.cursor : '#ffb300'} strokeWidth={2} /></G>}
                   {start && cur2 && (tool === 'grid' || tool === 'wall' || tool === 'beam' || tool === 'duct' || tool === 'pipe') && <Line x1={start[0] * PX} y1={start[1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {polyMode && pts.length > 0 && <G><Polygon points={[...pts, ...(cur2 ? [cur2] : [])].map(q => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />{pts.map((q, i) => <Circle key={i} cx={q[0] * PX} cy={q[1] * PX} r={i === 0 ? 8 : 4} fill={i === 0 ? '#ffb300' : pal.cursor} />)}</G>}
+                  {tool === 'arc' && pts.length > 0 && cur2 && <G><Polyline points={(pts.length === 2 ? arcPoints(pts[0], pts[1], cur2) : [pts[0], cur2]).map(q => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill="none" stroke={pal.cursor} strokeWidth={Math.max(wallTh * PX, 3)} strokeOpacity={0.5} />{pts.map((q, i) => <Circle key={i} cx={q[0] * PX} cy={q[1] * PX} r={5} fill="#ffb300" />)}</G>}
+                  {tool === 'stair' && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {(tool === 'slab' || tool === 'roof') && !polyMode && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}
                 </Svg>
@@ -778,6 +867,7 @@ const s = StyleSheet.create({
   ir: { flexDirection: 'row', alignItems: 'center', gap: 6 }, it: { flex: 1, fontWeight: '700', fontSize: 15 },
   step: { fontSize: 22, color: '#146c43', paddingHorizontal: 4 }, sv: { fontWeight: '600', minWidth: 54, textAlign: 'center' },
   del: { color: '#c62828', fontWeight: '700' },
+  nameIn: { height: 32, borderWidth: 1, borderColor: '#9db5a5', borderRadius: 6, paddingHorizontal: 8, fontWeight: '700', color: '#0a2e1f', backgroundColor: '#fff' },
   status: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#0a2e1f' },
   stT: { flex: 1, color: '#e4f1e9', fontSize: 12 }, stR: { color: '#a8c5b4', fontSize: 12 },
 });

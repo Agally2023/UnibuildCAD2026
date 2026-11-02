@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { beamSec, wallT } from '../lib/model';
+import { Shape } from 'three';
+import { beamSec, stairSteps, wallT } from '../lib/model';
 
 export type El = { id: string; type: string; geometry: any; library_item_id: string | null; story_id?: string | null };
 export type Lib = { id: string; specs: any };
@@ -36,6 +37,17 @@ export default function Model({ els, lib, storeyH, center }: { els: El[]; lib: R
         out.push(<mesh key={e.id} position={[g.at[0], 0.5, g.at[1]]}><boxGeometry args={[1, 1, 1]} /><meshStandardMaterial color="#0a6f61" /></mesh>);
       } else if (e.type === 'fixture' && g.at) {
         out.push(<mesh key={e.id} position={[g.at[0], storeyH - 0.2, g.at[1]]}><boxGeometry args={[0.6, 0.1, 0.6]} /><meshStandardMaterial color="#7fe0d2" /></mesh>);
+      } else if (e.type === 'stair' && g.rect) {
+        // a flight of boxes rising along the longer side of the footprint
+        const [x0, y0, x1, y1] = g.rect as number[], n = stairSteps(g), z0 = g.z0 ?? 0, z1 = g.z1 ?? storeyH, rise = (z1 - z0) / n, alongX = Math.abs(x1 - x0) >= Math.abs(y1 - y0), flip = g.flip ? -1 : 1;
+        for (let i = 0; i < n; i++) {
+          const f0 = i / n, f1 = (i + 1) / n, a = flip > 0 ? f0 : 1 - f1, b = flip > 0 ? f1 : 1 - f0, h = rise * (i + 1);
+          const sx0 = alongX ? x0 + (x1 - x0) * a : x0, sx1 = alongX ? x0 + (x1 - x0) * b : x1, sy0 = alongX ? y0 : y0 + (y1 - y0) * a, sy1 = alongX ? y1 : y0 + (y1 - y0) * b;
+          out.push(<mesh key={e.id + i} position={[(sx0 + sx1) / 2, z0 + h / 2, (sy0 + sy1) / 2]}><boxGeometry args={[Math.abs(sx1 - sx0), h, Math.abs(sy1 - sy0)]} /><meshStandardMaterial color={BOX.stair} /></mesh>);
+        }
+      } else if (BOX[e.type] && g.poly && g.poly.length >= 3) {
+        const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, sh = new Shape(); (g.poly as number[][]).forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
+        out.push(<mesh key={e.id} position={[0, z0, 0]} rotation={[-Math.PI / 2, 0, 0]}><extrudeGeometry args={[sh, { depth: Math.max(z1 - z0, 0.02), bevelEnabled: false }]} /><meshStandardMaterial color={BOX[e.type]} transparent opacity={e.type === 'slab' ? 0.75 : 1} /></mesh>);
       } else if (BOX[e.type] && g.rect) {
         const [x0, y0, x1, y1] = g.rect as number[], z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2;
         out.push(<mesh key={e.id} position={[(x0 + x1) / 2, (z0 + z1) / 2, (y0 + y1) / 2]}><boxGeometry args={[Math.abs(x1 - x0), Math.max(z1 - z0, 0.02), Math.abs(y1 - y0)]} /><meshStandardMaterial color={BOX[e.type]} transparent opacity={e.type === 'slab' ? 0.75 : 1} /></mesh>);
