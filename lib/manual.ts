@@ -34,7 +34,7 @@ export const manual: Section[] = [
     id: 'workspace', title: 'The workspace', blurb: 'What each part of the Plan window is for.',
     blocks: [
       { t: 'table', head: ['Part', 'What it does'], rows: [
-        ['Menu bar', 'File (projects, modules, IFC), Edit (undo, redo, select, move, copy, delete), View (zoom, grid, lengths, canvas colour, storeys, 3D), Design (tools, storeys), Analyze (design modules, clashes, schedules, elevations and sections, dashboard), Options (snap, design basis), Help.'],
+        ['Menu bar', 'File (projects, modules, IFC), Edit (undo, redo, select, move, copy, delete), View (zoom, grid, lengths, canvas colour, storeys, 3D), Design (tools, storeys), Analyze (design modules, clashes, schedules, elevations and sections, drawing sheets, dashboard), Options (snap, design basis), Help.'],
         ['Tool bar', 'Icon buttons for select, undo, redo, move, copy, delete, finish, zoom in and out, fit, grid, wall lengths, storey up, 3D and Modules. Hover a button to see its name.'],
         ['Info Box', 'Under the tool bar. Shows the settings of the tool you are using (wall thickness, element type, height, cooling load) and the typed-input fields for exact points.'],
         ['Tool Box', 'On the left. Design tools (grid line, column, beam, slab, wall, door, window, duct, pipe, plant, outlet), then Viewpoint, Document and Analyze shortcuts. Sections fold up with the arrow.'],
@@ -187,6 +187,7 @@ export const manual: Section[] = [
         '**Schedules** (Analyze > Schedules, or the Document section of the Tool Box): doors and windows with marks D1, D2 and W1, W2 in storey and plan order; walls with gross, opening and net area and volume; columns, beams, slabs and roofs, rooms, stairs, services and a concrete summary. **Download CSV** opens in Excel.',
         'Door height is taken as 2.1 m and window height as 1.2 m everywhere (schedules, drawings, 3D and clash detection).',
         '**Elevations and sections** (Analyze > Elevations and sections): pick North, East, South or West for an elevation, or a section cut at a Y or X position. Move the cut with the −0.5 and +0.5 buttons and flip the viewing direction. Cut elements are drawn dark, what is seen beyond is light, doors and windows are open boxes, and the storey levels are dashed lines. **Download SVG** saves the drawing.',
+        '**Drawing sheets** (Analyze > Drawing sheets): choose a storey plan, an elevation or a section, a paper size (A4 to A1) and a scale (or Best fit), fill in the title block, and check the preview. **Print / save this sheet as PDF** opens the browser print window: choose Save as PDF, margins none, scale 100%, and it prints at true scale. **Print the full set** makes one sheet for every plan, elevation and the two middle sections. Plans show walls, columns, beams, doors with swings, windows, stairs, rooms, grid lines, dimensions and text.',
       ] },
       { t: 'note', x: 'These drawings show the model as boxes. There is no hatching by material, no door swings, and no stair or roof slope detail yet.' },
     ],
@@ -231,7 +232,7 @@ export const manual: Section[] = [
         'Curved walls are chains of straight walls. Roofs are flat and stairs are straight flights; there are no railings, curtain walls, openings in slabs, or free-form shapes.',
         'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
         'There are no raft footings, and slab deflection uses the span/depth method rather than a calculation for slabs.',
-        'Elevations and sections are simple box drawings with no material hatching. There are no drawing sheets yet, and no PDF or DWG output.',
+        'Elevations and sections are simple box drawings with no material hatching. PDF comes from the browser print window (web only); there is no DWG output and no custom sheet layouts with several views on one sheet.',
         'Not yet tested against real Revit, ArchiCAD or Tekla exports.',
       ] },
     ],

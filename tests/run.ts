@@ -11,6 +11,7 @@ import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
+import { fitScale, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
 import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
 import { planMep, sizeDuct, sizePipe } from '../lib/mep';
@@ -458,6 +459,28 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('cut intervals of a rectangle are one span', cutIntervals([[0, 0], [4, 0], [4, 4], [0, 4]], p => p[0], p => p[1], 2).length === 1);
   ok('cut intervals of a U shape are two spans', cutIntervals([[0, 0], [6, 0], [6, 6], [4, 6], [4, 2], [2, 2], [2, 6], [0, 6]], p => p[0], p => p[1], 4).length === 2);
   ok('an empty model gives an empty view without throwing', buildView([], [], st as any, { kind: 'elevation', side: 'S' }).shapes.length === 0);
+}
+
+// ===== Drawing sheets =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const els: any[] = [
+    { id: 'w1', type: 'wall', geometry: { start: [0, 0], end: [10, 0], thickness: 0.2 }, story_id: 's0' },
+    { id: 'w2', type: 'wall', geometry: { start: [10, 0], end: [10, 8], thickness: 0.2 }, story_id: 's0' },
+    { id: 'd1', type: 'door', geometry: { wall_id: 'w1', offset_m: 3, width_m: 1 }, story_id: 's0' },
+    { id: 'z1', type: 'zone', geometry: { poly: [[0, 0], [10, 0], [10, 8], [0, 8]], rect: [0, 0, 10, 8], name: 'Hall & lobby' }, story_id: 's0' },
+    { id: 'm1', type: 'dimension', geometry: { start: [0, 0], end: [10, 0], offset: 1 }, story_id: 's0' },
+  ];
+  const d = makeDrawing(els, [], st as any, { kind: 'plan', storyId: 's0' }, 100);
+  near('plan at 1:100 is (10 + 5 m margin) wide = 150 mm', d.w, 150, 1e-6);
+  ok('plan shows the dimension as 10000', d.inner.includes('>10000<'));
+  ok('room name is escaped in the SVG', d.inner.includes('Hall &amp; lobby'));
+  const sv = sheetSvg(d, 'A3', 100, 'A-01', { project: 'Test', date: '2026-11-02' });
+  ok('sheet has the paper size in mm and the scale in the title block', sv.includes('width="420mm"') && sv.includes('1:100'));
+  ok('fit scale for a 10 x 8 m plan on A3 is 1:100', fitScale(els, [], st as any, { kind: 'plan', storyId: 's0' }, 'A3') === 100);
+  ok('the same plan on A4 needs a smaller scale', fitScale(els, [], st as any, { kind: 'plan', storyId: 's0' }, 'A4') >= 100);
+  const html = printHtml([sv, sv], 'A3', 'x');
+  ok('print document has one page per sheet and sets the page size', (html.match(/class="p"/g) ?? []).length === 2 && html.includes('size:420mm 297mm'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
