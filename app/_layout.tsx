@@ -36,6 +36,7 @@ export default function Layout() {
     <Stack.Screen name="manual" options={{ title: 'Manual and guides' }} />
     <Stack.Screen name="schedules/[id]" options={{ title: 'Schedules' }} />
     <Stack.Screen name="views/[id]" options={{ title: 'Elevations and sections' }} />
+    <Stack.Screen name="sheets/[id]" options={{ title: 'Drawing sheets' }} />
     <Stack.Screen name="projects" options={{ title: 'Projects' }} />
     <Stack.Screen name="hub/[id]" options={{ title: 'Modules' }} />
     <Stack.Screen name="project/[id]" options={{ title: 'Plan', headerShown: false }} />

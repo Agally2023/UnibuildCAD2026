@@ -46,6 +46,7 @@ export default function Hub() {
       { route: 'clashes', title: 'Clash detection', what: 'Finds elements that collide between disciplines and marks them on the plan; results are saved as issues.', badge: open === null ? undefined : `${open} open` },
       { route: 'schedules', title: 'Schedules', what: 'Door and window schedule with marks, walls, columns, beams, slabs, rooms, stairs, services and concrete volumes. Download as CSV for Excel.' },
       { route: 'views', title: 'Elevations and sections', what: 'Elevations from the four sides and sections cut at any X or Y, drawn from the model with the storey levels. Download as SVG.' },
+      { route: 'sheets', title: 'Drawing sheets', what: 'Plans, elevations and sections on A4 to A1 sheets with a border and title block at a true scale. Print or save as PDF from the browser.' },
       { route: 'dashboard', title: 'Dashboard', what: 'Quantities, cost, structural status and MEP loads for the whole building, with saved snapshots.' },
     ] },
   ];
