@@ -70,13 +70,17 @@ export const manual: Section[] = [
         ['Wall (W)', 'Tap the start, then each corner: a chain of walls. **Finish** (or Esc) ends the chain. Thickness is set in the Info Box; height is the storey height.'],
         ['Column (C)', 'Tap to place. Use the type stepper in the Info Box to choose the section from the library.'],
         ['Beam (B)', 'Tap the start, then each end point. Beams that meet end to end are analysed as one continuous beam. The section is chosen in the Info Box.'],
-        ['Slab (S)', 'Tap two opposite corners: slabs are rectangles. Thickness is set in the Info Box.'],
+        ['Slab (S)', 'Shape **Rectangle**: tap two opposite corners. Shape **Polygon**: tap each corner of any outline, then tap the first corner again (or press Enter, or Finish) to close it. Thickness is set in the Info Box.'],
+        ['Arc wall (A)', 'Tap the start, the end, then a point on the curve. The curve is built as a chain of short straight walls (one every 10 degrees or less), so doors, windows, clashes, loads and IFC all work. Undo removes the whole arc in one step.'],
+        ['Roof (R)', 'A flat roof on top of the current storey, drawn like a slab (rectangle or polygon). Thickness is set in the Info Box.'],
+        ['Stair (T)', 'Tap two opposite corners of the flight. It rises one storey along the longer side, with risers of about 175 mm. Properties shows the number of risers and warns if the run is too short for 250 mm treads; **Flip direction** reverses it.'],
+        ['Room (Z)', 'Tap each corner, then the first corner (or Enter) to close. The room is named Room 1, Room 2 and so on and shows its area; rename it in Properties.'],
         ['Door (D) and window (N)', 'Tap close to a wall (within about half a metre). The opening is centred where you tapped, kept inside the wall length.'],
         ['Duct (U) and pipe (P)', 'Tap the start, then each end point. Set the centreline height above the floor in the Info Box. You can also let the MEP module route them.'],
         ['Plant', 'Tap to place the air handler or chiller that feeds the outlets.'],
         ['Outlet', 'Tap to place a diffuser or terminal. Set its cooling load in kW in the Info Box before you place it.'],
       ] },
-      { t: 'note', x: 'Slabs are rectangles and walls are straight. Curved walls, polygon slabs, roofs, stairs and rooms are not drawable yet.' },
+      { t: 'note', x: 'Roofs are flat. Stairs are straight flights. Rooms, stairs and roofs are not used by the design modules (slabs are taken by their thickness and the column grid, not their outline), and the Dashboard floor area uses the plan bounding box.' },
     ],
   },
   {
@@ -184,7 +188,7 @@ export const manual: Section[] = [
     id: 'ifc', title: 'IFC import and export', blurb: 'Exchanging models with other programs.',
     blocks: [
       { t: 'ul', x: [
-        '**Export** writes a multi-storey IFC4 file with openings and property sets (File > Export IFC).',
+        '**Export** writes a multi-storey IFC4 file with openings and property sets (File > Export IFC). Polygon slabs and roofs keep their outline; a stair is exported as its box envelope; rooms are not exported yet.',
         '**Import** reads IFC2x3 and IFC4. Extruded solids are read exactly; meshes and B-reps are fitted with an oriented bounding box. Storeys and elevations are brought in and units are converted.',
         'Grid lines are not part of the IFC export yet.',
         'Very large IFC files can be slow to read in the browser.',
@@ -196,6 +200,7 @@ export const manual: Section[] = [
     blocks: [
       { t: 'table', head: ['Key', 'Action'], rows: [
         ['V', 'Select tool'], ['G', 'Grid line'], ['W', 'Wall'], ['C', 'Column'], ['B', 'Beam'], ['S', 'Slab'], ['D', 'Door'], ['N', 'Window'], ['U', 'Duct'], ['P', 'Pipe'],
+        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['Enter', 'Close the polygon you are drawing'],
         ['M', 'Move the selection'], ['K', 'Copy the selection'], ['Arrow keys', 'Nudge the selection by the snap step'],
         ['Shift (held)', 'Ortho lock while drawing; add to the selection while selecting'],
         ['Esc', 'Finish the chain, cancel move or copy, clear the selection, close a menu'],
@@ -210,7 +215,7 @@ export const manual: Section[] = [
       { t: 'note', x: 'All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.' },
       { t: 'ul', x: [
         'Everything is in metres and millimetres.',
-        'Walls are straight and slabs are rectangles; there are no roofs, stairs, railings, curtain walls or rooms yet.',
+        'Curved walls are chains of straight walls. Roofs are flat and stairs are straight flights; there are no railings, curtain walls, openings in slabs, or free-form shapes.',
         'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
         'There are no raft footings, and slab deflection uses the span/depth method rather than a calculation for slabs.',
         'There are no sections, elevations, dimensions, labels, schedules or drawing sheets, and no PDF or DWG output.',

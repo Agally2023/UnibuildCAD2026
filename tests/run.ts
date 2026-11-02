@@ -6,7 +6,7 @@ import { equivalentFrame } from '../lib/eqframe';
 import { analyseNetwork, dynamicPressure, frictionFactor, frictionPerMetre, hydraulicDiameter } from '../lib/mepfit';
 import { designBeam, designBeamM, designColumn, designAll } from '../lib/design';
 import { designFoundations, designFooting, designSlab } from '../lib/slabfound';
-import { beamChains, groupByStory, tribWidths } from '../lib/model';
+import { beamChains, footprint, groupByStory, inPoly, polyArea, polyBox, polyCentroid, stairSteps, tribWidths } from '../lib/model';
 import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
 import { parseIfc } from '../lib/ifcImport';
@@ -397,6 +397,26 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   near('pipe elbow loss = 0.75 × 500 = 375 Pa', pipe.fittings[0].dp, 375, 0.001);
   ok('pipe head is reported in kPa and is positive', pipe.head > 0 && pipe.head < 20);
   ok('an empty network gives an empty result', analyseNetwork([]).critical === null);
+}
+
+
+// ===== Polygon slabs, roofs, rooms and stairs =====
+{
+  const L: [number, number][] = [[0, 0], [6, 0], [6, 3], [3, 3], [3, 6], [0, 6]];       // L shape: 36 - 9 = 27 m²
+  near('L-shaped polygon area is 27 m²', polyArea(L), 27, 0.0001);
+  ok('polygon bounding box', JSON.stringify(polyBox(L)) === '[0,0,6,6]');
+  ok('point inside the L is inside, point in the notch is outside', inPoly(L, 1, 1) && !inPoly(L, 5, 5) && inPoly(L, 5, 1));
+  const cen = polyCentroid([[0, 0], [4, 0], [4, 2], [0, 2]]);
+  ok('rectangle centroid is its centre', Math.abs(cen[0] - 2) < 1e-9 && Math.abs(cen[1] - 1) < 1e-9);
+  ok('a rect-only slab still has a footprint of its own area', Math.abs(polyArea(footprint({ rect: [0, 0, 8, 6] })!) - 48) < 1e-9);
+  ok('polygon footprint wins over rect', Math.abs(polyArea(footprint({ poly: L, rect: [0, 0, 6, 6] })!) - 27) < 1e-9);
+  ok('stair step count: 3.6 m rise at about 175 mm', stairSteps({ z0: 0, z1: 3.6 }) === 21);
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3.6 }];
+  const poly = [{ id: '66666666-6666-4666-8666-666666666666', type: 'slab', geometry: { poly: L, rect: [0, 0, 6, 6], z0: 3.4, z1: 3.6 }, library_item_id: null, story_id: 's0' }];
+  const ifc = toIfc('Poly', poly as any, [], st as any);
+  ok('IFC export writes the polygon outline as an arbitrary closed profile', /IFCARBITRARYCLOSEDPROFILEDEF/.test(ifc) && /IFCPOLYLINE/.test(ifc) && /IFCSLAB/.test(ifc));
+  const rt = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'slab');
+  ok('IFC polygon slab re-imports as a slab with the right bounding box', !!rt && Math.abs(rt.geometry.rect[2] - rt.geometry.rect[0] - 6) < 0.05 && Math.abs(rt.geometry.rect[3] - rt.geometry.rect[1] - 6) < 0.05, JSON.stringify(rt?.geometry));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
