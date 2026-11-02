@@ -1,4 +1,4 @@
-import { ReactNode, useRef } from 'react';
+import { ReactNode, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput } from 'react-native';
 import { Icon, IconName } from './Icon';
 
@@ -32,15 +32,19 @@ export function MenuBar({ menus, open, setOpen, narrow, right }: { menus: Menu[]
 
 export type TItem = { key: string; label: string; icon: IconName; onPress: () => void; active?: boolean; disabled?: boolean; sep?: boolean };
 export function ToolBar({ items }: { items: TItem[] }) {
+  const [tip, setTip] = useState('');
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tbar} contentContainerStyle={s.tbarIn}>
-      {items.map(it => it.sep ? <View key={it.key} style={s.tsep} /> : (
-        <Pressable key={it.key} disabled={it.disabled} onPress={it.onPress} accessibilityLabel={it.label} {...({ title: it.label } as any)}
-          style={({ hovered }: any) => [s.tb, it.active && s.tbOn, hovered && !it.active && s.btnHover, it.disabled && { opacity: 0.35 }]}>
-          <Icon name={it.icon} size={20} color={it.active ? '#fff' : '#0a2e1f'} accent={it.active ? '#c4e6d2' : '#146c43'} />
-        </Pressable>
-      ))}
-    </ScrollView>
+    <View style={{ position: 'relative' }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.tbar} contentContainerStyle={s.tbarIn}>
+        {items.map(it => it.sep ? <View key={it.key} style={s.tsep} /> : (
+          <Pressable key={it.key} disabled={it.disabled} onPress={it.onPress} accessibilityLabel={it.label} onHoverIn={() => setTip(it.label)} onHoverOut={() => setTip('')}
+            style={({ hovered }: any) => [s.tb, it.active && s.tbOn, hovered && !it.active && s.btnHover, it.disabled && { opacity: 0.35 }]}>
+            <Icon name={it.icon} size={20} color={it.active ? '#fff' : '#0a2e1f'} accent={it.active ? '#c4e6d2' : '#146c43'} />
+          </Pressable>
+        ))}
+      </ScrollView>
+      {!!tip && <Text style={s.tip}>{tip}</Text>}
+    </View>
   );
 }
 
@@ -103,6 +107,7 @@ export function Btn({ label, onPress, disabled }: { label: string; onPress: () =
 }
 
 const s = StyleSheet.create({
+  tip: { position: 'absolute', right: 10, top: 8, backgroundColor: '#0a2e1f', color: '#fff', fontSize: 12, fontWeight: '600', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 5, overflow: 'hidden' },
   fld: { width: 62, height: 26, borderRadius: 6, borderWidth: 1, borderColor: '#9db5a5', backgroundColor: '#fff', paddingHorizontal: 6, fontSize: 12, fontWeight: '700', color: '#0a2e1f', textAlign: 'center' },
   act: { height: 26, paddingHorizontal: 12, borderRadius: 6, backgroundColor: '#146c43', alignItems: 'center', justifyContent: 'center', marginHorizontal: 4, marginTop: 14 }, actT: { color: '#fff', fontWeight: '700', fontSize: 12 },
   mbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0a2e1f', zIndex: 60, position: 'relative', paddingHorizontal: 4 },

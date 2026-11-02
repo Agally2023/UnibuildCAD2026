@@ -45,6 +45,7 @@ export default function Projects() {
         renderItem={({ item }) => (
           <Pressable style={s.card} onPress={() => router.push(`/project/${item.id}` as any)}><Text style={s.ct}>{item.name}</Text></Pressable>
         )} />
+      <Pressable onPress={() => router.push('/manual' as any)}><Text style={{ color: '#146c43', fontWeight: '700' }}>Manual and guides</Text></Pressable>
       <Pressable onPress={() => supabase.auth.signOut()}><Text style={{ color: '#146c43' }}>Sign out</Text></Pressable>
     </View>
   );
