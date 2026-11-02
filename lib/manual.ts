@@ -213,7 +213,7 @@ export const manual: Section[] = [
     blocks: [
       { t: 'table', head: ['Key', 'Action'], rows: [
         ['V', 'Select tool'], ['G', 'Grid line'], ['W', 'Wall'], ['C', 'Column'], ['B', 'Beam'], ['S', 'Slab'], ['D', 'Door'], ['N', 'Window'], ['U', 'Duct'], ['P', 'Pipe'],
-        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['Enter', 'Close the polygon you are drawing'],
+        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['I', 'Dimension'], ['X', 'Text'], ['Enter', 'Close the polygon you are drawing'],
         ['M', 'Move the selection'], ['K', 'Copy the selection'], ['Arrow keys', 'Nudge the selection by the snap step'],
         ['Shift (held)', 'Ortho lock while drawing; add to the selection while selecting'],
         ['Esc', 'Finish the chain, cancel move or copy, clear the selection, close a menu'],
