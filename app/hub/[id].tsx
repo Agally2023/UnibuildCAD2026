@@ -52,6 +52,7 @@ export default function Hub() {
   return (
     <ScrollView contentContainerStyle={s.wrap}>
       <Text style={s.h1}>{name || 'Project'}</Text>
+      <Pressable onPress={() => router.push('/manual' as any)}><Text style={{ color: '#146c43', fontWeight: '700' }}>Manual and guides ›</Text></Pressable>
       <Text style={s.k}>{loaded || els.length ? `${stories.length} storey${stories.length === 1 ? '' : 's'} · ${els.length} elements · ${c.wall ?? 0} walls · ${c.column ?? 0} columns · ${c.beam ?? 0} beams · ${c.slab ?? 0} slabs` : 'Loading…'}</Text>
 
       {sections.map(sec => (

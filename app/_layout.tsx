@@ -33,6 +33,7 @@ export default function Layout() {
 
   return <Stack screenOptions={toHub as any}>
     <Stack.Screen name="index" options={{ title: 'Unibuild' }} />
+    <Stack.Screen name="manual" options={{ title: 'Manual and guides' }} />
     <Stack.Screen name="projects" options={{ title: 'Projects' }} />
     <Stack.Screen name="hub/[id]" options={{ title: 'Modules' }} />
     <Stack.Screen name="project/[id]" options={{ title: 'Plan', headerShown: false }} />
