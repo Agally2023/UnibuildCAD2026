@@ -21,9 +21,11 @@ export function groupByStory(els: El[], stories: Story[]): Group[] {
   return list.map(s => ({ story: s, els: els.filter(e => (e.story_id ?? first) === s.id || (first === '_' && true)) }));
 }
 
+export const ANNOT = new Set(['grid', 'dimension', 'text', 'zone']);
 export function planBox(els: El[]) {
   const xs: number[] = [], ys: number[] = [];
   for (const e of els) {
+    if (ANNOT.has(e.type)) continue;                       // grid lines, dimensions, text and rooms are not part of the building's extent
     const g = e.geometry;
     if (g.start) { xs.push(g.start[0], g.end[0]); ys.push(g.start[1], g.end[1]); }
     if (g.at) { xs.push(g.at[0]); ys.push(g.at[1]); }

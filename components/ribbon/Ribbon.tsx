@@ -94,11 +94,11 @@ export function Toggle({ label, on, onChange }: { label: string; on: boolean; on
   );
 }
 
-export function Field({ label, value, onChange, onSubmit, placeholder }: { label: string; value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string }) {
+export function Field({ label, value, onChange, onSubmit, placeholder, text }: { label: string; value: string; onChange: (v: string) => void; onSubmit: () => void; placeholder?: string; text?: boolean }) {
   return (
     <View style={s.stp}>
       <Text style={s.sl}>{label}</Text>
-      <TextInput value={value} onChangeText={onChange} onSubmitEditing={onSubmit} placeholder={placeholder} placeholderTextColor="#9db5a5" keyboardType="numeric" style={s.fld} />
+      <TextInput value={value} onChangeText={onChange} onSubmitEditing={onSubmit} placeholder={placeholder} placeholderTextColor="#9db5a5" keyboardType={text ? 'default' : 'numeric'} style={[s.fld, text && { width: 170, textAlign: 'left' }]} />
     </View>
   );
 }

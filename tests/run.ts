@@ -9,6 +9,8 @@ import { designFoundations, designFooting, designSlab } from '../lib/slabfound';
 import { beamChains, footprint, groupByStory, inPoly, polyArea, polyBox, polyCentroid, stairSteps, tribWidths } from '../lib/model';
 import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
+import { buildSchedules, schedulesCsv } from '../lib/schedules';
+import { buildView, cutIntervals } from '../lib/views';
 import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
 import { planMep, sizeDuct, sizePipe } from '../lib/mep';
@@ -417,6 +419,45 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('IFC export writes the polygon outline as an arbitrary closed profile', /IFCARBITRARYCLOSEDPROFILEDEF/.test(ifc) && /IFCPOLYLINE/.test(ifc) && /IFCSLAB/.test(ifc));
   const rt = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'slab');
   ok('IFC polygon slab re-imports as a slab with the right bounding box', !!rt && Math.abs(rt.geometry.rect[2] - rt.geometry.rect[0] - 6) < 0.05 && Math.abs(rt.geometry.rect[3] - rt.geometry.rect[1] - 6) < 0.05, JSON.stringify(rt?.geometry));
+}
+
+// ===== Schedules and views =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }, { id: 's1', name: 'First', elevation_m: 3, height_m: 3 }];
+  const W = (id: string, a: [number, number], b: [number, number], story = 's0') => ({ id, type: 'wall', geometry: { start: a, end: b, thickness: 0.2, height: 3 }, library_item_id: null, story_id: story });
+  const els: any[] = [
+    W('w1', [0, 0], [10, 0]), W('w2', [10, 0], [10, 8]), W('w3', [10, 8], [0, 8]), W('w4', [0, 8], [0, 0]),
+    { id: 'd1', type: 'door', geometry: { wall_id: 'w1', offset_m: 2, width_m: 1 }, library_item_id: null, story_id: 's0' },
+    { id: 'd2', type: 'door', geometry: { wall_id: 'w3', offset_m: 5, width_m: 1 }, library_item_id: null, story_id: 's0' },
+    { id: 'n1', type: 'window', geometry: { wall_id: 'w1', offset_m: 6, width_m: 2 }, library_item_id: null, story_id: 's0' },
+    { id: 'sl', type: 'slab', geometry: { poly: [[0, 0], [10, 0], [10, 8], [0, 8]], rect: [0, 0, 10, 8], z0: 2.8, z1: 3 }, library_item_id: null, story_id: 's0' },
+    { id: 'z1', type: 'zone', geometry: { poly: [[0, 0], [10, 0], [10, 8], [0, 8]], rect: [0, 0, 10, 8], name: 'Hall, main' }, library_item_id: null, story_id: 's0' },
+  ];
+  const T = buildSchedules(els, [], st as any), by = (id: string) => T.find(t => t.id === id)!;
+  ok('doors get marks D1, D2 and windows W1', by('openings').rows.map(r => r[0]).join() === 'D1,D2,W1');
+  near('opening area total: 2 doors 1 x 2.1 + window 2 x 1.2', by('openings').foot![5] as number, 6.6, 1e-9);
+  near('wall length is the 36 m perimeter', by('walls').rows[0][2] as number, 36, 1e-9);
+  near('wall net area = 36 x 3 minus openings (6.6)', by('walls').rows[0][6] as number, 101.4, 0.05);
+  near('slab volume = 80 m² x 0.2 m', by('slabs').rows[0][5] as number, 16, 1e-9);
+  ok('room area 80 m²', by('rooms').rows[0][2] === 80);
+  const csv = schedulesCsv(T);
+  ok('CSV quotes a name containing a comma', csv.includes('"Hall, main"'));
+  ok('empty model still gives an openings table and nothing else', buildSchedules([], [], st as any).length === 1);
+
+  // views
+  const south = buildView(els, [], st as any, { kind: 'elevation', side: 'S' });
+  ok('south elevation spans the 10 m width', Math.abs(south.u1 - south.u0 - 10.2) < 0.3 || Math.abs(south.u1 - south.u0 - 10) < 0.3, String(south.u1 - south.u0));
+  ok('elevation shows the door and window of the south wall as openings', south.shapes.filter(x => x.open).length >= 2);
+  const north = buildView(els, [], st as any, { kind: 'elevation', side: 'N' });
+  ok('north elevation also sees the door in the north wall', north.shapes.filter(x => x.type === 'door' && x.open).length >= 1);
+  ok('levels include Ground, First and Top', south.levels.map(l => l.name).join() === 'Ground,First,Top');
+  const cut = buildView(els, [], st as any, { kind: 'section', axis: 'y', pos: 4, flip: false });
+  const cuts = cut.shapes.filter(x => x.cut && x.type === 'wall');
+  ok('a section through the middle cuts the two side walls', cuts.length === 2, String(cuts.length));
+  ok('section also cuts the slab', cut.shapes.some(x => x.cut && x.type === 'slab'));
+  ok('cut intervals of a rectangle are one span', cutIntervals([[0, 0], [4, 0], [4, 4], [0, 4]], p => p[0], p => p[1], 2).length === 1);
+  ok('cut intervals of a U shape are two spans', cutIntervals([[0, 0], [6, 0], [6, 6], [4, 6], [4, 2], [2, 2], [2, 6], [0, 6]], p => p[0], p => p[1], 4).length === 2);
+  ok('an empty model gives an empty view without throwing', buildView([], [], st as any, { kind: 'elevation', side: 'S' }).shapes.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

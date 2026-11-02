@@ -44,6 +44,8 @@ export default function Hub() {
     ] },
     { title: 'Coordination and output', color: '#8a3ffc', mods: [
       { route: 'clashes', title: 'Clash detection', what: 'Finds elements that collide between disciplines and marks them on the plan; results are saved as issues.', badge: open === null ? undefined : `${open} open` },
+      { route: 'schedules', title: 'Schedules', what: 'Door and window schedule with marks, walls, columns, beams, slabs, rooms, stairs, services and concrete volumes. Download as CSV for Excel.' },
+      { route: 'views', title: 'Elevations and sections', what: 'Elevations from the four sides and sections cut at any X or Y, drawn from the model with the storey levels. Download as SVG.' },
       { route: 'dashboard', title: 'Dashboard', what: 'Quantities, cost, structural status and MEP loads for the whole building, with saved snapshots.' },
     ] },
   ];

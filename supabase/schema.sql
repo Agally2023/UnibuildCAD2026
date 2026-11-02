@@ -171,3 +171,11 @@ revoke execute on function public.add_owner() from public, anon, authenticated;
 
 -- ===== Migration 003 (structural grid lines) =====
 alter type element_type add value if not exists 'grid';
+
+-- ===== Migration 004 (dimensions and text on the plan) =====
+alter type element_type add value if not exists 'dimension';
+alter type element_type add value if not exists 'text';
+
+-- ===== Migration 004 (dimensions and text labels) =====
+alter type element_type add value if not exists 'dimension';
+alter type element_type add value if not exists 'label';
