@@ -1,4 +1,0 @@
-{ "expo": { "name": "Unibuild", "slug": "unibuild", "scheme": "unibuild", "version": "0.1.0",
-  "orientation": "default", "userInterfaceStyle": "automatic", "plugins": ["expo-router"],
-  "android": { "package": "com.unibuild.app" }, "ios": { "bundleIdentifier": "com.unibuild.app" },
-  "web": { "bundler": "metro" } } }

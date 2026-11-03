@@ -35,6 +35,9 @@ Fire dampers for MEP, fuller 3D lateral analysis (walls, cores, P-delta), ductil
 
 All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.
 
+## Deploy (web, GitHub Pages)
+`.github/workflows/pages.yml` builds the web app and publishes it to GitHub Pages on every push to `main` (address `https://<owner>.github.io/<repo>/`). One-time setup: Settings > Pages > Source = GitHub Actions; the secrets `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are already used by CI; add the Pages address to Supabase > Authentication > URL configuration. `app.config.js` reads `EXPO_BASE_URL` so the app works under the `/<repo>/` path. Private repositories need a GitHub plan that includes Pages.
+
 ## Deploy (web, Netlify)
 `npm run build:web` writes a static site to `dist/`. `netlify.toml` sets the build command, publish folder and single-page-app redirect.
 1. In Netlify choose Add new site > Import an existing project > GitHub > `UnibuildCAD2026`.
