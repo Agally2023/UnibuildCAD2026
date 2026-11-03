@@ -1,6 +1,7 @@
 // IFC4 export (STEP text, metres). Walls, columns, beams, doors, windows, ducts and pipes become
 // IfcWall, IfcColumn, IfcBeam, IfcDoor, IfcWindow, IfcDuctSegment and IfcPipeSegment with swept-solid geometry.
 // Doors and windows get openings cut into their host walls. Opens in ArchiCAD, Revit, BIMcollab, Solibri, etc.
+import { isPitched, roofFaces, roofForm, roofThickness } from './roof';
 import type { El, Lib, Story } from './engineering';
 import { beamSec, DEFAULT_H, wallT } from './model';
 const f = (n: number) => { const s = (Math.round((n + 0) * 1e5) / 1e5).toString(); return /[.e]/.test(s) ? s : s + '.'; };
@@ -55,6 +56,16 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
   const voidProf = (pts: number[][], holes: number[][]) => add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,#${polyline(pts)},(${holes.map(h => '#' + polyline([[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]])).join(',')}))`);
   const polyProf = (pts: number[][]) => add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,#${add(`IFCPOLYLINE((${[...pts, pts[0]].map(q => '#' + P2(q[0], q[1])).join(',')}))`)})`);
   const circle = (r: number) => add(`IFCCIRCLEPROFILEDEF(.AREA.,$,#${add(`IFCAXIS2PLACEMENT2D(#${P2(0, 0)},$)`)},${f(r)})`);
+  // a pitched roof as faceted B-rep solids, one closed shell per roof face (top, underside and the four sides)
+  const brepShape = (faces: number[][][], t: number) => {
+    const poly3 = (pts: number[][]) => add(`IFCFACE((#${add(`IFCFACEOUTERBOUND(#${add(`IFCPOLYLOOP((${pts.map(q => '#' + P3(q[0], q[1], q[2])).join(',')}))`)},.T.)`)}))`);
+    const items = faces.map(face => {
+      const bot = face.map(q => [q[0], q[1], q[2] - t]), n = face.length, fs = [poly3(face), poly3([...bot].reverse())];
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; fs.push(poly3([face[i], face[j], bot[j], bot[i]])); }
+      return add(`IFCFACETEDBREP(#${add(`IFCCLOSEDSHELL((${fs.map(x => '#' + x).join(',')}))`)})`);
+    });
+    return add(`IFCPRODUCTDEFINITIONSHAPE($,$,(#${add(`IFCSHAPEREPRESENTATION(#${sub},'Body','Brep',(${items.map(x => '#' + x).join(',')}))`)}))`);
+  };
   const up = (prof: number, depth: number) => add(`IFCEXTRUDEDAREASOLID(#${prof},#${A3(origin)},#${dZ},${f(depth)})`);
   const along = (prof: number, len: number) => add(`IFCEXTRUDEDAREASOLID(#${prof},#${A3(origin, dX, dY)},#${dZ},${f(len)})`);
   const place = (pl: number, x: number, y: number, z: number, ang: number) => LP(pl, A3(P3(x, y, z), dZ, D3(Math.cos(ang), Math.sin(ang), 0)));
@@ -105,9 +116,12 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
       if (w < 1e-3 || d < 1e-3) continue;
       const holes: number[][] = (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) ? g.holes : [];
       const poly = g.poly && g.poly.length >= 3 && (e.type === 'slab' || e.type === 'roof') ? (g.poly as number[][]) : holes.length ? [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] : null;
-      const lab = { slab: 'Slab', roof: g.form && g.form !== 'flat' && g.pitch > 0 ? `Roof (${g.form} ${Math.round(g.pitch)} deg, exported flat at eaves)` : 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
-      const pre = { slab: '.FLOOR.', roof: '.FLAT_ROOF.', stair: '.STRAIGHT_RUN_STAIR.', foundation: '.PAD_FOOTING.' }[e.type as 'slab'];
-      const ent = add(`${cls}(${G(e.id)},$,${str(name(e.type, lab))},$,$,#${place(S.pl, poly ? 0 : Math.min(x0, x1), poly ? 0 : Math.min(y0, y1), z0, 0)},#${shape(up(poly ? (holes.length ? voidProf(poly, holes) : polyProf(poly)) : rect(w, d, w / 2, d / 2), Math.max(z1 - z0, 0.02)))},$,${pre})`);
+      const lab = { slab: 'Slab', roof: isPitched(g) ? `Roof (${roofForm(g)} ${Math.round(g.pitch)} deg)` : 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
+      const pre = { slab: '.FLOOR.', roof: e.type === 'roof' && isPitched(g) ? ({ gable: '.GABLE_ROOF.', hip: '.HIP_ROOF.', mono: '.SHED_ROOF.' } as Record<string, string>)[roofForm(g)] : '.FLAT_ROOF.', stair: '.STRAIGHT_RUN_STAIR.', foundation: '.PAD_FOOTING.' }[e.type as 'slab'];
+      const pitched = e.type === 'roof' && isPitched(g);
+      const bodyPl = pitched ? place(S.pl, 0, 0, 0, 0) : place(S.pl, poly ? 0 : Math.min(x0, x1), poly ? 0 : Math.min(y0, y1), z0, 0);
+      const bodyShape = pitched ? brepShape(roofFaces(g), roofThickness(g)) : shape(up(poly ? (holes.length ? voidProf(poly, holes) : polyProf(poly)) : rect(w, d, w / 2, d / 2), Math.max(z1 - z0, 0.02)));
+      const ent = add(`${cls}(${G(e.id)},$,${str(name(e.type, lab))},$,$,#${bodyPl},#${bodyShape},$,${pre})`);
       ctr(e, ent); pset(e, ent, e.type === 'roof' || e.type === 'stair' ? 'architecture' : 'structure');
     } else if (e.type === 'door' || e.type === 'window') {
       const w = walls[g.wall_id]; if (!w) continue;

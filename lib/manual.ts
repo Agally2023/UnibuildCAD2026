@@ -72,7 +72,7 @@ export const manual: Section[] = [
         ['Beam (B)', 'Tap the start, then each end point. Beams that meet end to end are analysed as one continuous beam. The section is chosen in the Info Box.'],
         ['Slab (S)', 'Shape **Rectangle**: tap two opposite corners. Shape **Polygon**: tap each corner of any outline, then tap the first corner again (or press Enter, or Finish) to close it. Thickness is set in the Info Box.'],
         ['Arc wall (A)', 'Tap the start, the end, then a point on the curve. The curve is built as a chain of short straight walls (one every 10 degrees or less), so doors, windows, clashes, loads and IFC all work. Undo removes the whole arc in one step.'],
-        ['Roof (R)', 'A roof on top of the current storey, drawn like a slab. Form **Flat** works with a rectangle or polygon. Forms **Mono**, **Gable** and **Hip** need the rectangle shape: set the pitch (5 to 60 degrees) and, for mono and gable, which way the ridge runs (the long side by default). The eaves sit at the top of the storey and the ridge rises from there. Ridges and hips are drawn as dashed lines on the plan. In Properties you can change the pitch, change the form, turn the ridge, and flip the slope of a mono roof.'],
+        ['Roof (R)', 'A roof on top of the current storey, drawn like a slab. Form **Flat** works with a rectangle or polygon. Forms **Mono**, **Gable** and **Hip** need the rectangle shape: set the pitch (5 to 60 degrees), an overhang (0 to 1.5 m past the walls, with the roof keeping its slope so the eaves drop) and, for mono and gable, which way the ridge runs (the long side by default). The eaves sit at the top of the storey and the ridge rises from there. Ridges and hips are drawn as dashed lines on the plan. In Properties you can change the pitch, the overhang, the form, turn the ridge, and flip the slope of a mono roof.'],
         ['Opening (O)', 'Tap two opposite corners of a rectangular opening inside a slab or roof, for a stair well or a shaft. It is drawn crossed out, taken off the slab area and volume, cut out of the 3D view, and exported to IFC. Undo removes it.'],
         ['Stair (T)', 'Tap two opposite corners of the flight. It rises one storey along the longer side, with risers of about 175 mm. Properties shows the number of risers and warns if the run is too short for 250 mm treads; **Flip direction** reverses it.'],
         ['Room (Z)', 'Tap each corner, then the first corner (or Enter) to close. The room is named Room 1, Room 2 and so on and shows its area; rename it in Properties.'],
@@ -83,7 +83,7 @@ export const manual: Section[] = [
         ['Plant', 'Tap to place the air handler or chiller that feeds the outlets.'],
         ['Outlet', 'Tap to place a diffuser or terminal. Set its cooling load in kW in the Info Box before you place it.'],
       ] },
-      { t: 'note', x: 'Pitched roofs are rectangles with one pitch and no overhang or dormers. Stairs are straight flights. Rooms, stairs and roofs are not used by the design modules (slabs are taken by their thickness and the column grid, not their outline), and the Dashboard floor area uses the plan bounding box.' },
+      { t: 'note', x: 'Pitched roofs are rectangles with one pitch and no dormers or different pitches on different sides. Stairs are straight flights. Rooms, stairs and roofs are not used by the design modules (slabs are taken by their thickness and the column grid, not their outline), and the Dashboard floor area uses the plan bounding box.' },
     ],
   },
   {
@@ -204,7 +204,7 @@ export const manual: Section[] = [
     id: 'ifc', title: 'IFC import and export', blurb: 'Exchanging models with other programs.',
     blocks: [
       { t: 'ul', x: [
-        '**Export** writes a multi-storey IFC4 file with openings and property sets (File > Export IFC). Polygon slabs and roofs keep their outline; a pitched roof is exported flat at the eaves (its form and pitch are in its name); a stair is exported as its box envelope; rooms are not exported yet.',
+        '**Export** writes a multi-storey IFC4 file with openings and property sets (File > Export IFC). Polygon slabs and roofs keep their outline; a pitched roof is exported as sloped solids with its roof type (gable, hip or shed); a stair is exported as its box envelope; rooms are not exported yet.',
         '**Import** reads IFC2x3 and IFC4. Extruded solids are read exactly; meshes and B-reps are fitted with an oriented bounding box. Storeys and elevations are brought in and units are converted.',
         'Grid lines are not part of the IFC export yet.',
         'Very large IFC files can be slow to read in the browser.',

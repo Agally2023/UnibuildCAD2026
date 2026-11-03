@@ -1,4 +1,4 @@
-import { FORMS, isPitched, roofForm, roofLabel, roofLines, RoofForm } from '../../lib/roof';
+import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanBox, RoofForm } from '../../lib/roof';
 import { centreOf, transformGeometry, Xf } from '../../lib/transform';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, Platform } from 'react-native';
@@ -130,7 +130,7 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
       {here.filter(e => e.geometry.rect && e.type !== 'stair' && e.type !== 'zone').map(e => {
         const col = BX[e.type] ?? c.wall;
         if (e.geometry.poly) return <Polygon key={e.id} points={e.geometry.poly.map((q: Pt) => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
-        const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
+        const [x0, y0, x1, y1] = e.type === 'roof' && isPitched(e.geometry) ? roofPlanBox(e.geometry) : e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
       })}
       {here.filter(e => (e.type === 'slab' || e.type === 'roof') && holesOf(e.geometry).length).flatMap(e => holesOf(e.geometry).map((h, i) => <G key={e.id + 'h' + i}><Rect x={Math.min(h[0], h[2]) * PX} y={Math.min(h[1], h[3]) * PX} width={Math.abs(h[2] - h[0]) * PX} height={Math.abs(h[3] - h[1]) * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={h[0] * PX} y1={h[1] * PX} x2={h[2] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={h[2] * PX} y1={h[1] * PX} x2={h[0] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /></G>))}
       {here.filter(e => e.type === 'roof' && isPitched(e.geometry)).flatMap(e => roofLines(e.geometry).map(([a, b], i) => <Line key={e.id + 'r' + i} x1={a[0] * PX} y1={a[1] * PX} x2={b[0] * PX} y2={b[1] * PX} stroke={c.dim} strokeWidth={1.5} strokeDasharray="10 5" />))}
@@ -305,6 +305,7 @@ export default function Plan() {
   const [shape, setShape] = useState<'rect' | 'poly'>('rect');
   const [rForm, setRForm] = useState<RoofForm>('flat');
   const [rPitch, setRPitch] = useState(30);
+  const [rOver, setROver] = useState(0);
   const [rRidge, setRRidge] = useState<'auto' | 'x' | 'y'>('auto');
   const [osnap, setOsnap] = useState(true), [ortho, setOrtho] = useState(false);
   const [curKind, setCurKind] = useState<SnapKind>('cell');
@@ -477,7 +478,7 @@ export default function Plan() {
       if (!host) return setErr('Draw the opening inside a slab or roof on this storey.');
       return void (await run({ add: [], del: [], mod: [[host, { ...host, geometry: { ...host.geometry, holes: [...holesOf(host.geometry), hole] } }] as [El, El]] }));
     }
-    if (tool === 'slab' || tool === 'roof') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: tool === 'roof' ? H : r2(H - slabTh), z1: tool === 'roof' ? r2(H + slabTh) : H, ...(tool === 'roof' && rForm !== 'flat' ? { form: rForm, pitch: rPitch, ...(rRidge !== 'auto' ? { ridge: rRidge } : {}) } : {}) }); return setStart(null); }
+    if (tool === 'slab' || tool === 'roof') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: tool === 'roof' ? H : r2(H - slabTh), z1: tool === 'roof' ? r2(H + slabTh) : H, ...(tool === 'roof' && rForm !== 'flat' ? { form: rForm, pitch: rPitch, ...(rOver > 0 ? { overhang: rOver } : {}), ...(rRidge !== 'auto' ? { ridge: rRidge } : {}) } : {}) }); return setStart(null); }
     await add(tool === 'wall' ? { start, end: p, height: H, thickness: wallTh } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
     setStart(p);
   };
@@ -576,7 +577,7 @@ export default function Plan() {
       info = `${sp.b_mm ?? Math.round(g.b * 1000)} × ${sp.h_mm ?? Math.round(g.h * 1000)} mm · at ${g.at[0]}, ${g.at[1]} m`;
     } else if (e.type === 'slab' || e.type === 'roof') {
       const t = Math.round((g.z1 - g.z0) * 1000), [x0, y0, x1, y1] = g.rect, fp = footprint(g);
-      if (e.type === 'roof' && g.rect) { const pf = roofForm(g); steps.push(['Pitch', pf === 'flat' ? 'flat' : `${Math.round(g.pitch)}°`, () => edit(e, { ...g, pitch: Math.max(0, (g.pitch ?? 0) - 5), form: (g.pitch ?? 0) - 5 <= 0 ? 'flat' : (g.form ?? 'gable') }), () => edit(e, { ...g, pitch: Math.min(60, (g.pitch ?? 0) + 5), form: g.form && g.form !== 'flat' ? g.form : 'gable' })]); if (pf !== 'flat') { actions.push(['Change form', () => edit(e, { ...g, form: pf === 'mono' ? 'gable' : pf === 'gable' ? 'hip' : 'mono' })]); actions.push(['Turn ridge', () => edit(e, { ...g, ridge: (g.ridge ?? (g.rect[2] - g.rect[0] >= g.rect[3] - g.rect[1] ? 'x' : 'y')) === 'x' ? 'y' : 'x' })]); if (pf === 'mono') actions.push(['Flip slope', () => edit(e, { ...g, flip: !g.flip })]); } }
+      if (e.type === 'roof' && g.rect) { const pf = roofForm(g); steps.push(['Pitch', pf === 'flat' ? 'flat' : `${Math.round(g.pitch)}°`, () => edit(e, { ...g, pitch: Math.max(0, (g.pitch ?? 0) - 5), form: (g.pitch ?? 0) - 5 <= 0 ? 'flat' : (g.form ?? 'gable') }), () => edit(e, { ...g, pitch: Math.min(60, (g.pitch ?? 0) + 5), form: g.form && g.form !== 'flat' ? g.form : 'gable' })]); if (pf !== 'flat') { steps.push(['Overhang', `${overhangOf(g).toFixed(1)} m`, () => edit(e, { ...g, overhang: Math.max(0, r2(overhangOf(g) - 0.1)) }), () => edit(e, { ...g, overhang: Math.min(1.5, r2(overhangOf(g) + 0.1)) })]); actions.push(['Change form', () => edit(e, { ...g, form: pf === 'mono' ? 'gable' : pf === 'gable' ? 'hip' : 'mono' })]); actions.push(['Turn ridge', () => edit(e, { ...g, ridge: (g.ridge ?? (g.rect[2] - g.rect[0] >= g.rect[3] - g.rect[1] ? 'x' : 'y')) === 'x' ? 'y' : 'x' })]); if (pf === 'mono') actions.push(['Flip slope', () => edit(e, { ...g, flip: !g.flip })]); } }
       info = (e.type === 'roof' && isPitched(g) ? `${roofLabel(g)} · ` : '') + (holesOf(g).length ? `${netArea(g).toFixed(1)} m² net · ${holesOf(g).length} opening(s) · ${t} mm thick` : g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`);
       steps.push(['Thickness', `${t} mm`, () => edit(e, { ...g, z0: r2(g.z1 - Math.max(0.1, (t - 25) / 1000)) }), () => edit(e, { ...g, z0: r2(g.z1 - Math.min(0.6, (t + 25) / 1000)) })]);
     } else if (e.type === 'duct' || e.type === 'pipe') {
@@ -631,6 +632,7 @@ export default function Plan() {
       {(tool === 'wall' || tool === 'arc') && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
       {tool === 'roof' && <Seg label="Form" options={FORMS} value={rForm} onChange={v => setRForm(v as RoofForm)} />}
       {tool === 'roof' && rForm !== 'flat' && <Stepper label="Pitch" value={`${rPitch}°`} dec={() => setRPitch(v => Math.max(5, v - 5))} inc={() => setRPitch(v => Math.min(60, v + 5))} />}
+      {tool === 'roof' && rForm !== 'flat' && <Stepper label="Overhang" value={`${rOver.toFixed(1)} m`} dec={() => setROver(v => Math.max(0, r2(v - 0.1)))} inc={() => setROver(v => Math.min(1.5, r2(v + 0.1)))} />}
       {tool === 'roof' && (rForm === 'gable' || rForm === 'mono') && <Seg label="Ridge runs" options={[['auto', 'Long side'], ['x', 'Along X'], ['y', 'Along Y']]} value={rRidge} onChange={v => setRRidge(v as 'auto' | 'x' | 'y')} />}
       {(tool === 'slab' || tool === 'roof') && <Stepper label={tool === 'roof' ? 'Roof thickness' : 'Slab thickness'} value={`${Math.round(slabTh * 1000)} mm`} dec={() => setSlabTh(Math.max(0.1, r2(slabTh - 0.025)))} inc={() => setSlabTh(Math.min(0.6, r2(slabTh + 0.025)))} />}
       {(tool === 'duct' || tool === 'pipe') && <Stepper label="Centreline height" value={`${elev.toFixed(2)} m`} dec={() => setElev(v => Math.max(0.1, r2(v - 0.1)))} inc={() => setElev(v => Math.min(H, r2(v + 0.1)))} />}
