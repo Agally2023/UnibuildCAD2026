@@ -12,6 +12,7 @@ import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
 import { drag, IDENTITY, qAxis, qMul, qRotate, turn, VIEWS } from '../lib/orbit';
+import { overhangOf, roofPlanBox } from '../lib/roof';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { holesOf, netArea } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
@@ -550,7 +551,7 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const sch = buildSchedules([roof], [], st as any).find(t => t.id === 'slabs')!;
   ok('the slabs and roofs schedule names the roof form and pitch', String(sch.rows[0][2]).startsWith('Gable 30'), String(sch.rows[0][2]));
   const ifc = toIfc('R', [roof], [], st as any);
-  ok('IFC names the pitched roof and says it is exported flat', /exported flat at eaves/.test(ifc));
+  ok('IFC names the pitched roof with its form and pitch', /Roof \(gable 30 deg\)/.test(ifc));
 }
 
 // ===== 3D orbit =====
@@ -585,6 +586,27 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('the composite carries every caption with the common scale', d.inner.includes('Plan, Ground') && d.inner.includes('South elevation') && d.inner.includes('East elevation') && d.inner.includes(`1:${sc}`));
   const svg = sheetSvg(d, 'A3', sc, 'A-09', { project: 'T' });
   ok('the composite sheet has the title block with its own title', svg.includes('General arrangement') && svg.includes('A-09'));
+}
+
+// ===== Roof overhang and IFC export of pitched roofs =====
+{
+  const g = { rect: [0, 0, 10, 6], z0: 3, z1: 3.2, form: 'gable', pitch: 30, overhang: 0.5 };
+  ok('the overhang grows the plan outline by 0.5 m all round', JSON.stringify(roofPlanBox(g)) === '[-0.5,-0.5,10.5,6.5]' && overhangOf(g) === 0.5);
+  near('the ridge stays where it was (3 m span x tan 30 above the walls)', roofTop(g), 3.2 + 3 * Math.tan(Math.PI / 6), 1e-9);
+  const lowest = Math.min(...roofFaces(g).flat().map(p => p[2]));
+  near('the eaves drop by overhang x tan 30', lowest, 3.2 - 0.5 * Math.tan(Math.PI / 6), 1e-9);
+  const xs = roofFaces(g).flat().map(p => p[0]);
+  ok('the verges reach 0.5 m past the gable ends', Math.min(...xs) === -0.5 && Math.max(...xs) === 10.5);
+  ok('a flat roof ignores the overhang', overhangOf({ ...g, form: 'flat' }) === 0);
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const roof: any = { id: '99999999-9999-4999-8999-999999999999', type: 'roof', geometry: g, library_item_id: null, story_id: 's0' };
+  const row = buildSchedules([roof], [], st as any).find(t => t.id === 'slabs')!.rows[0];
+  ok('the schedule area includes the overhang (11 x 7) and says so', row[3] === 77 && String(row[2]).includes('0.5 m overhang'), JSON.stringify(row));
+  const ifc = toIfc('Roof', [roof], [], st as any);
+  ok('IFC writes the pitched roof as faceted B-rep solids with a gable roof type', /IFCFACETEDBREP/.test(ifc) && /IFCCLOSEDSHELL/.test(ifc) && /\.GABLE_ROOF\./.test(ifc) && !/exported flat/.test(ifc));
+  ok('two faces give two B-rep solids', (ifc.match(/IFCFACETEDBREP/g) ?? []).length === 2);
+  const back = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'roof' || x.kind === 'slab');
+  ok('the roof re-imports as a roof or slab with roughly the right plan size', !!back && Math.abs(back.geometry.rect[2] - back.geometry.rect[0] - 11) < 0.3, JSON.stringify(back?.geometry));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

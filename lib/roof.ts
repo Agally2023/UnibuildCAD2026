@@ -9,12 +9,17 @@ export const FORMS: [RoofForm, string][] = [['flat', 'Flat'], ['mono', 'Mono'], 
 const rad = (d: number) => (d * Math.PI) / 180;
 export const roofForm = (g: any): RoofForm => (g?.rect && ['mono', 'gable', 'hip'].includes(g.form) && (g.pitch ?? 0) > 0 && !g.poly ? g.form : 'flat');
 export const isPitched = (g: any) => roofForm(g) !== 'flat';
-const box = (g: any) => { const [a, b, c, d] = g.rect as number[]; return { x0: Math.min(a, c), y0: Math.min(b, d), x1: Math.max(a, c), y1: Math.max(b, d) }; };
+const walls = (g: any) => { const [a, b, c, d] = g.rect as number[]; return { x0: Math.min(a, c), y0: Math.min(b, d), x1: Math.max(a, c), y1: Math.max(b, d) }; };
+// how far the roof reaches past the building outline (pitched roofs only)
+export const overhangOf = (g: any) => (isPitched(g) ? Math.min(1.5, Math.max(0, g.overhang ?? 0)) : 0);
+// the roof's outline in plan: the rectangle grown by the overhang
+export function roofPlanBox(g: any): [number, number, number, number] { const b = walls(g), o = overhangOf(g); return [b.x0 - o, b.y0 - o, b.x1 + o, b.y1 + o]; }
+const box = (g: any) => { const [x0, y0, x1, y1] = roofPlanBox(g); return { x0, y0, x1, y1 }; };
 // the direction the ridge (or high edge) runs: the longer side unless the roof says otherwise
-export const ridgeAxis = (g: any): 'x' | 'y' => { const { x0, y0, x1, y1 } = box(g); return g.ridge === 'x' || g.ridge === 'y' ? g.ridge : x1 - x0 >= y1 - y0 ? 'x' : 'y'; };
+export const ridgeAxis = (g: any): 'x' | 'y' => { const { x0, y0, x1, y1 } = walls(g); return g.ridge === 'x' || g.ridge === 'y' ? g.ridge : x1 - x0 >= y1 - y0 ? 'x' : 'y'; };
 
 export function roofFaces(g: any): P3[][] {
-  const { x0, y0, x1, y1 } = box(g), zE = g.z1, f = roofForm(g), tn = Math.tan(rad(g.pitch ?? 0)), w = x1 - x0, d = y1 - y0;
+  const { x0, y0, x1, y1 } = box(g), f = roofForm(g), tn = Math.tan(rad(g.pitch ?? 0)), zE = g.z1 - overhangOf(g) * tn, w = x1 - x0, d = y1 - y0;   // the plane keeps its slope past the walls, so the eaves drop by overhang x tan
   if (f === 'flat') return [[[x0, y0, zE], [x1, y0, zE], [x1, y1, zE], [x0, y1, zE]]];
   const ax = ridgeAxis(g);
   if (f === 'mono') {
@@ -34,7 +39,7 @@ export function roofFaces(g: any): P3[][] {
 export const roofThickness = (g: any) => Math.max(0.02, (g.z1 ?? 0) - (g.z0 ?? 0));
 export function roofTop(g: any): number { return Math.max(...roofFaces(g).flat().map(p => p[2])); }
 export const slopeFactor = (g: any) => (isPitched(g) ? 1 / Math.cos(rad(g.pitch)) : 1);
-export const roofLabel = (g: any) => (isPitched(g) ? `${roofForm(g)[0].toUpperCase()}${roofForm(g).slice(1)} ${Math.round(g.pitch)}°` : 'Flat');
+export const roofLabel = (g: any) => (isPitched(g) ? `${roofForm(g)[0].toUpperCase()}${roofForm(g).slice(1)} ${Math.round(g.pitch)}°${overhangOf(g) ? ` +${overhangOf(g).toFixed(1)} m overhang` : ''}` : 'Flat');
 
 // ridge, hips and the high edge of a mono roof, as plan segments for drawing
 export function roofLines(g: any): [Pt, Pt][] {
