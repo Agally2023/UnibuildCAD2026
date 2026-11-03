@@ -11,6 +11,7 @@ import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
+import { drag, IDENTITY, qAxis, qMul, qRotate, turn, VIEWS } from '../lib/orbit';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { holesOf, netArea } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
@@ -550,6 +551,21 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('the slabs and roofs schedule names the roof form and pitch', String(sch.rows[0][2]).startsWith('Gable 30'), String(sch.rows[0][2]));
   const ifc = toIfc('R', [roof], [], st as any);
   ok('IFC names the pitched roof and says it is exported flat', /exported flat at eaves/.test(ifc));
+}
+
+// ===== 3D orbit =====
+{
+  const close = (a: number[], b: number[]) => a.every((x, i) => Math.abs(x - b[i]) < 1e-9);
+  ok('a quarter turn about Z takes X to Y', close(qRotate(qAxis('z', Math.PI / 2), [1, 0, 0]), [0, 1, 0]));
+  ok('a quarter turn about X takes the up axis towards the viewer (top view)', close(qRotate(VIEWS.top.q, [0, 1, 0]), [0, 0, 1]));
+  ok('the right view brings the east side (+x) towards the viewer', close(qRotate(VIEWS.right.q, [1, 0, 0]), [0, 0, 1]));
+  ok('the back view turns the front half a turn', close(qRotate(VIEWS.back.q, [0, 0, 1]), [0, 0, -1]));
+  let q = IDENTITY; for (let i = 0; i < 24; i++) q = turn(q, 'x', Math.PI / 12);
+  ok('24 steps of 15 degrees about X make a full 360 and come back to the start', close(qRotate(q, [0, 1, 0]), [0, 1, 0]) && close(qRotate(q, [0, 0, 1]), [0, 0, 1]));
+  let r = IDENTITY; for (let i = 0; i < 500; i++) r = drag(r, 7, -3);
+  ok('many drags keep the rotation a unit quaternion (no drift)', Math.abs(Math.hypot(...r) - 1) < 1e-9);
+  ok('rotating about all three axes in turn is not the same as one axis (free rotation)', !close(qRotate(turn(turn(turn(IDENTITY, 'x', 1), 'y', 1), 'z', 1), [1, 0, 0]), qRotate(turn(IDENTITY, 'x', 1), [1, 0, 0])));
+  ok('composition: x then y equals the product', close(turn(turn(IDENTITY, 'x', 0.7), 'y', 0.4), qMul(qAxis('y', 0.4), qAxis('x', 0.7))));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
