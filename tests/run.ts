@@ -15,7 +15,7 @@ import { drag, IDENTITY, qAxis, qMul, qRotate, turn, VIEWS } from '../lib/orbit'
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { holesOf, netArea } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
-import { fitScale, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
+import { compositeDrawing, fitScale, fitScaleMany, layoutCells, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
 import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
 import { planMep, sizeDuct, sizePipe } from '../lib/mep';
@@ -566,6 +566,25 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('many drags keep the rotation a unit quaternion (no drift)', Math.abs(Math.hypot(...r) - 1) < 1e-9);
   ok('rotating about all three axes in turn is not the same as one axis (free rotation)', !close(qRotate(turn(turn(turn(IDENTITY, 'x', 1), 'y', 1), 'z', 1), [1, 0, 0]), qRotate(turn(IDENTITY, 'x', 1), [1, 0, 0])));
   ok('composition: x then y equals the product', close(turn(turn(IDENTITY, 'x', 0.7), 'y', 0.4), qMul(qAxis('y', 0.4), qAxis('x', 0.7))));
+}
+
+// ===== Several views on one sheet =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const els: any[] = [
+    { id: 'w1', type: 'wall', geometry: { start: [0, 0], end: [10, 0], thickness: 0.2, height: 3 }, story_id: 's0' },
+    { id: 'w2', type: 'wall', geometry: { start: [10, 0], end: [10, 8], thickness: 0.2, height: 3 }, story_id: 's0' },
+  ];
+  const c4 = layoutCells(4, [392, 230]);
+  ok('four views make a 2 x 2 grid that fits inside the area', c4.length === 4 && c4.every(c => c[0] >= 0 && c[1] >= 0 && c[0] + c[2] <= 392 + 1e-9 && c[1] + c[3] <= 230 + 1e-9));
+  ok('one view uses the whole area, six views a 3 x 2 grid', layoutCells(1, [392, 230])[0][2] === 392 && new Set(layoutCells(6, [392, 230]).map(c => c[0].toFixed(1))).size === 3);
+  const vs: any[] = [{ kind: 'plan', storyId: 's0' }, { kind: 'elevation', side: 'S' }, { kind: 'elevation', side: 'E' }];
+  const sc = fitScaleMany(els, [], st as any, vs, 'A3');
+  ok('a plan and two elevations fit together on A3 at a standard scale', [50, 100, 200].includes(sc), String(sc));
+  const d = compositeDrawing(els, [], st as any, vs, 'A3', sc, 'General arrangement');
+  ok('the composite carries every caption with the common scale', d.inner.includes('Plan, Ground') && d.inner.includes('South elevation') && d.inner.includes('East elevation') && d.inner.includes(`1:${sc}`));
+  const svg = sheetSvg(d, 'A3', sc, 'A-09', { project: 'T' });
+  ok('the composite sheet has the title block with its own title', svg.includes('General arrangement') && svg.includes('A-09'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

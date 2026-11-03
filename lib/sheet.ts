@@ -60,6 +60,26 @@ export function fitScale(els: El[], lib: Lib[], stories: Story[], v: SheetView, 
   for (const sc of SCALES) { const d = makeDrawing(els, lib, stories, v, sc); if (d.w <= aw && d.h <= ah) return sc; }
   return SCALES[SCALES.length - 1];
 }
+// several views on one sheet: a grid of cells, each with a drawing and a caption, all at the same scale
+export function layoutCells(n: number, area: [number, number], gap = 6): [number, number, number, number][] {
+  const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 6 ? 3 : 4, rows = Math.ceil(n / cols), cw = (area[0] - gap * (cols - 1)) / cols, ch = (area[1] - gap * (rows - 1)) / rows;
+  return Array.from({ length: n }, (_, i) => [(i % cols) * (cw + gap), Math.floor(i / cols) * (ch + gap), cw, ch]);
+}
+const CAP = 8;   // mm kept under each drawing for its caption
+export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: Paper): number {
+  const cells = layoutCells(vs.length, areaOf(paper));
+  for (const sc of SCALES) if (vs.every((v, i) => { const d = makeDrawing(els, lib, stories, v, sc); return d.w <= cells[i][2] && d.h <= cells[i][3] - CAP; })) return sc;
+  return SCALES[SCALES.length - 1];
+}
+export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: Paper, scale: number, title: string): Drawing {
+  const area = areaOf(paper), cells = layoutCells(vs.length, area);
+  const inner = vs.map((v, i) => {
+    const d = makeDrawing(els, lib, stories, v, scale), [cx, cy, cw, ch] = cells[i], ox = cx + Math.max(0, (cw - d.w) / 2), oy = cy + Math.max(0, (ch - CAP - d.h) / 2);
+    return `<g transform="translate(${ox.toFixed(2)} ${oy.toFixed(2)})">${d.inner}</g><text x="${(cx + cw / 2).toFixed(2)}" y="${(cy + ch - 2).toFixed(2)}" font-size="4" font-weight="bold" text-anchor="middle" fill="#146c43">${esc(d.name)}  1:${scale}</text><rect x="${cx.toFixed(2)}" y="${cy.toFixed(2)}" width="${cw.toFixed(2)}" height="${ch.toFixed(2)}" fill="none" stroke="#cfdcd4" stroke-width="0.2"/>`;
+  }).join('');
+  return { name: title, inner, w: area[0], h: area[1] };
+}
+
 export const areaOf = (paper: Paper): [number, number] => { const [W, H] = PAPER[paper]; return [W - 20 - 8, H - 20 - 8 - 34]; };   // 10 mm margin, 34 mm title block strip
 
 // a full sheet: border, the drawing centred in the free area, title block at the bottom right
