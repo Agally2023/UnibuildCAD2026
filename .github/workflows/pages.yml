@@ -22,8 +22,9 @@ jobs:
           touch dist/.nojekyll
         env:
           EXPO_BASE_URL: /${{ github.event.repository.name }}
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          # The project URL and anon key are public by design (data is protected by row-level security), so they are the defaults here.
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || 'https://rciyzoosuncncecqmqaq.supabase.co' }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjaXl6b29zdW5jbmNlY3FtcWFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyMDg5NjUsImV4cCI6MjEwODc4NDk2NX0.9eFRqMV6e93D0_FpdXY2ES8J5iP_FGwXAtgysbOXlrw' }}
       - uses: actions/upload-pages-artifact@v3
         with: { path: dist }
   deploy:
