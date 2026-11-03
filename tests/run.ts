@@ -11,6 +11,8 @@ import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
+import { holesOf, netArea } from '../lib/model';
+import { centreOf, transformGeometry } from '../lib/transform';
 import { fitScale, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
 import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
@@ -481,6 +483,36 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('the same plan on A4 needs a smaller scale', fitScale(els, [], st as any, { kind: 'plan', storyId: 's0' }, 'A4') >= 100);
   const html = printHtml([sv, sv], 'A3', 'x');
   ok('print document has one page per sheet and sets the page size', (html.match(/class="p"/g) ?? []).length === 2 && html.includes('size:420mm 297mm'));
+}
+
+// ===== Rotate and mirror =====
+{
+  const w = { start: [0, 0], end: [4, 0], thickness: 0.2 };
+  const c = centreOf([w]);
+  const r = transformGeometry(w, c, { kind: 'rot', quarter: 1 });
+  ok('a 4 m wall turned a quarter about its centre becomes vertical, same length', Math.abs(r.start[0] - r.end[0]) < 1e-9 && Math.abs(Math.hypot(r.end[0] - r.start[0], r.end[1] - r.start[1]) - 4) < 1e-9 && JSON.stringify(c) === '[2,0]');
+  ok('four quarter turns return the original', JSON.stringify([1, 2, 3, 4].reduce((g: any) => transformGeometry(g, [2, 0], { kind: 'rot', quarter: 1 }), w).start) === JSON.stringify(w.start));
+  ok('clockwise then counter-clockwise cancels', JSON.stringify(transformGeometry(transformGeometry(w, c, { kind: 'rot', quarter: 1 }), c, { kind: 'rot', quarter: -1 }).end) === JSON.stringify(w.end));
+  const m = transformGeometry({ start: [1, 1], end: [5, 3] }, [3, 2], { kind: 'mirror', axis: 'x' });
+  ok('left-right mirror about x = 3 swaps the ends', JSON.stringify(m.start) === '[5,1]' && JSON.stringify(m.end) === '[1,3]');
+  const col = transformGeometry({ at: [1, 1], b: 0.3, h: 0.5 }, [0, 0], { kind: 'rot', quarter: 1 });
+  ok('a rotated column swaps its sides and moves its centre', col.b === 0.5 && col.h === 0.3 && JSON.stringify(col.at) === '[-1,1]');
+  const sl = transformGeometry({ poly: [[0, 0], [6, 0], [6, 3], [0, 3]], rect: [0, 0, 6, 3] }, [3, 1.5], { kind: 'rot', quarter: 1 });
+  ok('a rotated slab keeps its area and gets a new bounding box', JSON.stringify(sl.rect) === '[1.5,-1.5,4.5,4.5]', JSON.stringify(sl.rect));
+}
+
+// ===== Slab openings =====
+{
+  const g = { rect: [0, 0, 10, 8], z0: 2.8, z1: 3, holes: [[2, 2, 4, 5]] };
+  near('net area = 80 - 2 x 3', netArea(g), 74, 1e-9);
+  ok('holesOf is empty when there are none', holesOf({ rect: [0, 0, 1, 1] }).length === 0);
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const els: any[] = [{ id: '77777777-7777-4777-8777-777777777777', type: 'slab', geometry: g, library_item_id: null, story_id: 's0' }];
+  near('schedule volume uses the net area', buildSchedules(els, [], st as any).find(t => t.id === 'slabs')!.rows[0][5] as number, 74 * 0.2, 1e-9);
+  const ifc = toIfc('Holes', els, [], st as any);
+  ok('IFC writes the slab with an inner void profile', /IFCARBITRARYPROFILEDEFWITHVOIDS/.test(ifc));
+  const back = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'slab');
+  ok('IFC slab with an opening re-imports as a slab', !!back && Math.abs(back.geometry.rect[2] - back.geometry.rect[0] - 10) < 0.05, JSON.stringify(back?.geometry));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

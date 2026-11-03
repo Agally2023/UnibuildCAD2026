@@ -1,3 +1,4 @@
+import { centreOf, transformGeometry, Xf } from '../../lib/transform';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, Platform } from 'react-native';
 import Svg, { Defs, Pattern, Path, G, Line, Rect, Circle, Polygon, Polyline, Text as SvgText } from 'react-native-svg';
@@ -11,14 +12,14 @@ import { CLASSES, cname } from '../../lib/rc';
 import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
 import { saveFile } from '../../components/saveFile';
 import { toIfc } from '../../lib/ifc';
-import { beamSec, footprint, inPoly, polyArea, polyBox, polyCentroid, stairSteps, wallT } from '../../lib/model';
+import { beamSec, footprint, holesOf, inPoly, netArea, polyArea, polyBox, polyCentroid, stairSteps, wallT } from '../../lib/model';
 import type { El, Lib } from '../../lib/engineering';
 
 const PX = 50;      // pixels per metre at 100% zoom
 const N = 120;      // plan canvas size in metres
 type Pt = [number, number];
 type Cmd = { add: El[]; del: El[]; mod: [El, El][] };      // one undoable step: rows added, rows deleted, rows changed (before, after)
-type Tool = 'select' | 'dim' | 'label' | 'grid' | 'arc' | 'roof' | 'stair' | 'zone' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
+type Tool = 'select' | 'hole' | 'dim' | 'label' | 'grid' | 'arc' | 'roof' | 'stair' | 'zone' | 'wall' | 'beam' | 'column' | 'slab' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet';
 const DBT: Record<string, string> = { plant: 'equipment', outlet: 'fixture', dim: 'dimension' };
 const LINE_TOOLS = ['wall', 'beam', 'duct', 'pipe', 'grid', 'slab'];
 const POLY_TOOLS = ['slab', 'roof', 'zone'];
@@ -26,6 +27,7 @@ const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture
 const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boolean }> = {
   select: { label: 'Select', hint: 'Tap an element to see its details, change its size or delete it.' },
   grid: { label: 'Grid line', hint: 'Tap the start and end of a grid line. Numbers go to vertical lines, letters to horizontal ones. Or generate a whole grid below.' },
+  hole: { label: 'Opening', hint: 'Tap two opposite corners of an opening inside a slab or roof (for a stair or a shaft). Undo removes it.' },
   dim: { label: 'Dimension', hint: 'Tap the two points to measure, then tap where the dimension line should sit.' },
   label: { label: 'Text', hint: 'Type the text in the Info Box, then tap where it goes.' },
   column: { label: 'Column', hint: 'Tap to place a column. Use "Next type" to change its size.', lib: l => l.category === 'section' && /column/i.test(l.name) },
@@ -44,7 +46,7 @@ const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boole
   outlet: { label: 'Outlet', hint: 'Tap to place a diffuser or terminal. Set its cooling load below.' },
 };
 const OCC = ['Residential', 'Office', 'Laboratory'];
-const TOOL_ICON: Record<Tool, IconName> = { select: 'select', dim: 'dim', label: 'text', grid: 'grid', arc: 'arc', roof: 'roof', stair: 'stair', zone: 'zone', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
+const TOOL_ICON: Record<Tool, IconName> = { select: 'select', hole: 'hole', dim: 'dim', label: 'text', grid: 'grid', arc: 'arc', roof: 'roof', stair: 'stair', zone: 'zone', column: 'column', beam: 'beam', slab: 'slab', wall: 'wall', door: 'door', window: 'window', duct: 'duct', pipe: 'pipe', plant: 'plant', outlet: 'outlet' };
 const NAME: Record<string, string> = { dimension: 'Dimension', label: 'Text', zone: 'Room', grid: 'Grid line', wall: 'Wall', beam: 'Beam', column: 'Column', slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Foundation', door: 'Door', window: 'Window', duct: 'Duct', pipe: 'Pipe', equipment: 'Plant', fixture: 'Outlet' };
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -129,6 +131,7 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
         if (e.geometry.poly) return <Polygon key={e.id} points={e.geometry.poly.map((q: Pt) => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
         const [x0, y0, x1, y1] = e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
       })}
+      {here.filter(e => (e.type === 'slab' || e.type === 'roof') && holesOf(e.geometry).length).flatMap(e => holesOf(e.geometry).map((h, i) => <G key={e.id + 'h' + i}><Rect x={Math.min(h[0], h[2]) * PX} y={Math.min(h[1], h[3]) * PX} width={Math.abs(h[2] - h[0]) * PX} height={Math.abs(h[3] - h[1]) * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={h[0] * PX} y1={h[1] * PX} x2={h[2] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={h[2] * PX} y1={h[1] * PX} x2={h[0] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /></G>))}
       {here.filter(e => e.type === 'dimension').map(e => <Dim key={e.id} a={e.geometry.start} b={e.geometry.end} off={e.geometry.offset ?? 0.6} c={c} />)}
       {here.filter(e => e.type === 'label').map(e => <SvgText key={e.id} x={e.geometry.at[0] * PX} y={e.geometry.at[1] * PX} fontSize={(e.geometry.h ?? 0.25) * PX} fill={c.dim}>{e.geometry.text ?? ''}</SvgText>)}
       {here.filter(e => e.type === 'zone' && e.geometry.poly).map(e => {
@@ -461,6 +464,13 @@ export default function Plan() {
     if (tool === 'grid') { if (!start) return setStart(p); if (p[0] === start[0] && p[1] === start[1]) return setStart(null); await addGrid(start, p); return setStart(null); }
     if (!start) return setStart(p);
     if (p[0] === start[0] && p[1] === start[1]) return setStart(null);
+    if (tool === 'hole') {
+      const hole: [number, number, number, number] = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], cx = (hole[0] + hole[2]) / 2, cy = (hole[1] + hole[3]) / 2;
+      const host = here.find(e => (e.type === 'slab' || e.type === 'roof') && inPoly(footprint(e.geometry) ?? [], cx, cy));
+      setStart(null);
+      if (!host) return setErr('Draw the opening inside a slab or roof on this storey.');
+      return void (await run({ add: [], del: [], mod: [[host, { ...host, geometry: { ...host.geometry, holes: [...holesOf(host.geometry), hole] } }] as [El, El]] }));
+    }
     if (tool === 'slab' || tool === 'roof') { await add({ rect: [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], z0: tool === 'roof' ? H : r2(H - slabTh), z1: tool === 'roof' ? r2(H + slabTh) : H }); return setStart(null); }
     await add(tool === 'wall' ? { start, end: p, height: H, thickness: wallTh } : tool === 'duct' || tool === 'pipe' ? { start, end: p, elevation_m: r2(elev) } : { start, end: p });
     setStart(p);
@@ -494,6 +504,12 @@ export default function Plan() {
     const map: Record<string, string> = {}, rows: El[] = body.map(e => { map[e.id] = newId(); return { ...e, id: map[e.id], geometry: shiftG(e.geometry, dx, dy) }; });
     here.filter(o => isOpen(o) && (ids.has(o.id) || ids.has(o.geometry.wall_id)) && map[o.geometry.wall_id]).forEach(o => rows.push({ ...o, id: newId(), geometry: { ...o.geometry, wall_id: map[o.geometry.wall_id] } }));
     setSelIds(rows.map(r => r.id)); await run({ add: rows, del: [], mod: [] });
+  };
+  const doTurn = async (xf: Xf) => {
+    const body = selEls.filter(e => !isOpen(e));
+    if (!body.length) return setErr('Select something to rotate or mirror first (doors and windows follow their wall).');
+    const c = centreOf(body.map(e => e.geometry));
+    await run({ add: [], del: [], mod: body.map(e => [e, { ...e, geometry: transformGeometry(e.geometry, c, xf) }] as [El, El]) });
   };
   const bbox = (e: El): [number, number, number, number] | null => {
     const g = e.geometry;
@@ -554,7 +570,7 @@ export default function Plan() {
       info = `${sp.b_mm ?? Math.round(g.b * 1000)} × ${sp.h_mm ?? Math.round(g.h * 1000)} mm · at ${g.at[0]}, ${g.at[1]} m`;
     } else if (e.type === 'slab' || e.type === 'roof') {
       const t = Math.round((g.z1 - g.z0) * 1000), [x0, y0, x1, y1] = g.rect, fp = footprint(g);
-      info = g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`;
+      info = holesOf(g).length ? `${netArea(g).toFixed(1)} m² net · ${holesOf(g).length} opening(s) · ${t} mm thick` : g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`;
       steps.push(['Thickness', `${t} mm`, () => edit(e, { ...g, z0: r2(g.z1 - Math.max(0.1, (t - 25) / 1000)) }), () => edit(e, { ...g, z0: r2(g.z1 - Math.min(0.6, (t + 25) / 1000)) })]);
     } else if (e.type === 'duct' || e.type === 'pipe') {
       info = `${len.toFixed(2)} m long · centreline ${r2(g.elevation_m)} m above the floor`;
@@ -622,7 +638,7 @@ export default function Plan() {
         <Field label="X (m)" value={tf.x} onChange={v => setTf(f => ({ ...f, x: v }))} onSubmit={typedXY} placeholder="x" />
         <Field label="Y (m)" value={tf.y} onChange={v => setTf(f => ({ ...f, y: v }))} onSubmit={typedXY} placeholder="y" />
         <Btn label="Place" onPress={typedXY} />
-        {(start || (pts.length > 0 && (tool === 'arc' || tool === 'dim' || polyMode))) && tool !== 'stair' && !(tool === 'slab' && !polyMode) && <>
+        {(start || (pts.length > 0 && (tool === 'arc' || tool === 'dim' || polyMode))) && tool !== 'stair' && tool !== 'hole' && !(tool === 'slab' && !polyMode) && <>
           <Field label="Length (m)" value={tf.l} onChange={v => setTf(f => ({ ...f, l: v }))} onSubmit={typedPolar} placeholder="len" />
           <Field label="Angle (°)" value={tf.a} onChange={v => setTf(f => ({ ...f, a: v }))} onSubmit={typedPolar} placeholder="toward cursor" />
           <Btn label="Place" onPress={typedPolar} />
@@ -635,9 +651,9 @@ export default function Plan() {
   const SEP = { label: '', sep: true };
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
-    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
+    { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Rotate right 90° (E)', () => doTurn({ kind: 'rot', quarter: 1 }), { disabled: !selEls.length }), mi('Rotate left 90° (Q)', () => doTurn({ kind: 'rot', quarter: -1 }), { disabled: !selEls.length }), mi('Mirror left-right (H)', () => doTurn({ kind: 'mirror', axis: 'x' }), { disabled: !selEls.length }), mi('Mirror top-bottom (F)', () => doTurn({ kind: 'mirror', axis: 'y' }), { disabled: !selEls.length }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
-    { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
+    { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Schedules', go('schedules')), mi('Elevations and sections', go('views')), mi('Drawing sheets', go('sheets')), mi('Dashboard', go('dashboard'))] },
     { key: 'help', label: 'Help', items: [mi('Manual and guides', () => router.push('/manual' as any)), mi('Quick start', () => router.push('/manual?s=start' as any)), mi('Keyboard shortcuts', () => router.push('/manual?s=shortcuts' as any)), mi('Limits and assumptions', () => router.push('/manual?s=limits' as any))] },
     { key: 'options', label: 'Options', items: [
@@ -673,7 +689,7 @@ export default function Plan() {
   ];
 
   // tool box: Select, Design (drawing tools), Viewpoint, Document, Analyze
-  const designTools: Tool[] = ['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'stair', 'zone', 'duct', 'pipe', 'plant', 'outlet'];
+  const designTools: Tool[] = ['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'duct', 'pipe', 'plant', 'outlet'];
   const boxSecs: { key: string; title: string; items: RItem[] }[] = [
     { key: 'design', title: 'Design', items: designTools.map(ti) },
     { key: 'view', title: 'Viewpoint', items: [{ key: 'fp', label: 'Floor plan', icon: 'storey', active: true, onPress: () => {} }, { key: 'v3', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
@@ -686,7 +702,7 @@ export default function Plan() {
   keyRef.current = (k: KeyboardEvent) => {
     shiftRef.current = k.shiftKey;
     const tg = k.target as HTMLElement | null; if (tg && /INPUT|TEXTAREA/.test(tg.tagName)) return;
-    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', i: 'dim', x: 'label', g: 'grid', a: 'arc', r: 'roof', t: 'stair', z: 'zone', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
+    const key = k.key.toLowerCase(), ctrl = k.ctrlKey || k.metaKey, map: Record<string, Tool> = { v: 'select', i: 'dim', x: 'label', g: 'grid', a: 'arc', r: 'roof', o: 'hole', t: 'stair', z: 'zone', w: 'wall', c: 'column', b: 'beam', s: 'slab', d: 'door', n: 'window', u: 'duct', p: 'pipe' };
     const arrows: Record<string, Pt> = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
     if (ctrl && key === 'z' && !k.shiftKey) { k.preventDefault(); undo(); }
     else if (ctrl && (key === 'y' || (key === 'z' && k.shiftKey))) { k.preventDefault(); redo(); }
@@ -696,6 +712,7 @@ export default function Plan() {
     else if ((key === 'delete' || key === 'backspace') && selEls.length) { k.preventDefault(); removeMany(selEls); }
     else if (arrows[key] && selEls.length && tool === 'select') { k.preventDefault(); doXf('move', r2(arrows[key][0] * snap), r2(arrows[key][1] * snap)); }
     else if ((key === 'm' || key === 'k') && !ctrl) startXf(key === 'm' ? 'move' : 'copy');
+    else if (['e', 'q', 'h', 'f'].includes(key) && !ctrl && selEls.length && tool === 'select') doTurn(key === 'e' ? { kind: 'rot', quarter: 1 } : key === 'q' ? { kind: 'rot', quarter: -1 } : { kind: 'mirror', axis: key === 'h' ? 'x' : 'y' });
     else if (!ctrl && !k.altKey && map[key]) setT(map[key]);
   };
   const ptrRef = useRef<(x: number, y: number) => void>(() => {});
@@ -735,7 +752,7 @@ export default function Plan() {
   const Multi = selEls.length > 1 ? (
     <View style={s.insp}>
       <View style={s.ir}><Text style={s.it}>{selEls.length} elements selected</Text><Pressable onPress={() => setSelIds([])}><Text style={s.l}>Done</Text></Pressable></View>
-      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable></View>
+      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'rot', quarter: 1 })}><Text style={s.l}>Rotate</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'mirror', axis: 'x' })}><Text style={s.l}>Mirror</Text></Pressable></View>
       <Pressable onPress={() => removeMany(selEls)}><Text style={s.del}>Delete {selEls.length} elements</Text></Pressable>
     </View>
   ) : null;
@@ -749,7 +766,7 @@ export default function Plan() {
       {sel.type === 'label' && <NameField key={sel.id} placeholder="Text" value={sel.geometry.text ?? ''} onCommit={tx => edit(sel, { ...sel.geometry, text: tx })} />}
       {sel.type === 'zone' && <NameField key={sel.id} value={sel.geometry.name ?? ''} onCommit={nm => edit(sel, { ...sel.geometry, name: nm })} />}
       {insp.actions.map(([label, fn]) => <Pressable key={label} onPress={fn}><Text style={s.l}>{label}</Text></Pressable>)}
-      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable></View>
+      <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'rot', quarter: 1 })}><Text style={s.l}>Rotate</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'mirror', axis: 'x' })}><Text style={s.l}>Mirror</Text></Pressable></View>
       <Pressable onPress={() => remove(sel)}><Text style={s.del}>Delete {NAME[sel.type]?.toLowerCase() ?? 'element'}{sel.type === 'wall' ? ' and its doors and windows' : ''}</Text></Pressable>
     </View>
   ) : null);
@@ -825,7 +842,7 @@ export default function Plan() {
                   {tool === 'dim' && pts.length === 1 && cur2 && <Line x1={pts[0][0] * PX} y1={pts[0][1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={1.5} strokeDasharray="6 4" />}
                   {tool === 'dim' && pts.length === 2 && cur2 && <Dim a={pts[0]} b={pts[1]} off={((cur2[0] - pts[0][0]) * -(pts[1][1] - pts[0][1]) + (cur2[1] - pts[0][1]) * (pts[1][0] - pts[0][0])) / (Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) || 1) || 0.6} c={pal} />}
                   {tool === 'arc' && pts.length > 0 && cur2 && <G><Polyline points={(pts.length === 2 ? arcPoints(pts[0], pts[1], cur2) : [pts[0], cur2]).map(q => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill="none" stroke={pal.cursor} strokeWidth={Math.max(wallTh * PX, 3)} strokeOpacity={0.5} />{pts.map((q, i) => <Circle key={i} cx={q[0] * PX} cy={q[1] * PX} r={5} fill="#ffb300" />)}</G>}
-                  {tool === 'stair' && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {(tool === 'stair' || tool === 'hole') && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {(tool === 'slab' || tool === 'roof') && !polyMode && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}

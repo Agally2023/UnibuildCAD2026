@@ -51,6 +51,8 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
   const shape = (solid: number) => add(`IFCPRODUCTDEFINITIONSHAPE($,$,(#${add(`IFCSHAPEREPRESENTATION(#${sub},'Body','SweptSolid',(#${solid}))`)}))`);
   const rect = (w: number, d: number, cx: number, cy: number) => add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,#${add(`IFCAXIS2PLACEMENT2D(#${P2(cx, cy)},$)`)},${f(w)},${f(d)})`);
   // an arbitrary closed outline (slabs and roofs that are not rectangles); points are in plan metres
+  const polyline = (pts: number[][]) => add(`IFCPOLYLINE((${[...pts, pts[0]].map(q => '#' + P2(q[0], q[1])).join(',')}))`);
+  const voidProf = (pts: number[][], holes: number[][]) => add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,#${polyline(pts)},(${holes.map(h => '#' + polyline([[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]])).join(',')}))`);
   const polyProf = (pts: number[][]) => add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,#${add(`IFCPOLYLINE((${[...pts, pts[0]].map(q => '#' + P2(q[0], q[1])).join(',')}))`)})`);
   const circle = (r: number) => add(`IFCCIRCLEPROFILEDEF(.AREA.,$,#${add(`IFCAXIS2PLACEMENT2D(#${P2(0, 0)},$)`)},${f(r)})`);
   const up = (prof: number, depth: number) => add(`IFCEXTRUDEDAREASOLID(#${prof},#${A3(origin)},#${dZ},${f(depth)})`);
@@ -101,10 +103,11 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
     } else if (g.rect && ['slab', 'roof', 'stair', 'foundation'].includes(e.type)) {
       const [x0, y0, x1, y1] = g.rect as number[], z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, w = Math.abs(x1 - x0), d = Math.abs(y1 - y0);
       if (w < 1e-3 || d < 1e-3) continue;
-      const poly = g.poly && g.poly.length >= 3 && (e.type === 'slab' || e.type === 'roof') ? (g.poly as number[][]) : null;
+      const holes: number[][] = (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) ? g.holes : [];
+      const poly = g.poly && g.poly.length >= 3 && (e.type === 'slab' || e.type === 'roof') ? (g.poly as number[][]) : holes.length ? [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] : null;
       const lab = { slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
       const pre = { slab: '.FLOOR.', roof: '.FLAT_ROOF.', stair: '.STRAIGHT_RUN_STAIR.', foundation: '.PAD_FOOTING.' }[e.type as 'slab'];
-      const ent = add(`${cls}(${G(e.id)},$,${str(name(e.type, lab))},$,$,#${place(S.pl, poly ? 0 : Math.min(x0, x1), poly ? 0 : Math.min(y0, y1), z0, 0)},#${shape(up(poly ? polyProf(poly) : rect(w, d, w / 2, d / 2), Math.max(z1 - z0, 0.02)))},$,${pre})`);
+      const ent = add(`${cls}(${G(e.id)},$,${str(name(e.type, lab))},$,$,#${place(S.pl, poly ? 0 : Math.min(x0, x1), poly ? 0 : Math.min(y0, y1), z0, 0)},#${shape(up(poly ? (holes.length ? voidProf(poly, holes) : polyProf(poly)) : rect(w, d, w / 2, d / 2), Math.max(z1 - z0, 0.02)))},$,${pre})`);
       ctr(e, ent); pset(e, ent, e.type === 'roof' || e.type === 'stair' ? 'architecture' : 'structure');
     } else if (e.type === 'door' || e.type === 'window') {
       const w = walls[g.wall_id]; if (!w) continue;
