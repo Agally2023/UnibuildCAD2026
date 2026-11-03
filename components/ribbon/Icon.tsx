@@ -4,7 +4,7 @@ import Svg, { Path, Circle, Rect, Line } from 'react-native-svg';
 export type IconName =
   | 'select' | 'column' | 'beam' | 'slab' | 'wall' | 'door' | 'window' | 'duct' | 'pipe' | 'plant' | 'outlet'
   | 'undo' | 'finish' | 'delete' | 'zoomin' | 'zoomout' | 'fit' | 'grid' | 'dims' | 'modules' | 'projects' | 'cube'
-  | 'design' | 'foundation' | 'wind' | 'mep' | 'clash' | 'dashboard' | 'storey' | 'plus' | 'copy' | 'ifc' | 'next' | 'code' | 'snap' | 'redo' | 'move' | 'arc' | 'roof' | 'stair' | 'zone' | 'dim' | 'text' | 'table' | 'section';
+  | 'design' | 'foundation' | 'wind' | 'mep' | 'clash' | 'dashboard' | 'storey' | 'plus' | 'copy' | 'ifc' | 'next' | 'code' | 'snap' | 'redo' | 'move' | 'arc' | 'roof' | 'stair' | 'zone' | 'dim' | 'text' | 'table' | 'section' | 'hole';
 
 export function Icon({ name, size = 26, color = '#0a2e1f', accent = '#146c43' }: { name: IconName; size?: number; color?: string; accent?: string }) {
   const p = { stroke: color, strokeWidth: 1.7, fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -33,6 +33,7 @@ export function Icon({ name, size = 26, color = '#0a2e1f', accent = '#146c43' }:
       case 'text': return <><Path d="M5 6h14M12 6v13" {...p} /><Path d="M9 19h6" {...a} /></>;
       case 'table': return <><Rect x="4" y="5" width="16" height="14" {...p} /><Path d="M4 10h16M4 15h16M10 5v14" {...a} /></>;
       case 'section': return <><Path d="M3 12h18" {...p} strokeDasharray="4 2" /><Path d="M6 12V5l-2 2M18 12V5l2 2" {...a} /><Path d="M6 19h12" {...p} /></>;
+      case 'hole': return <><Rect x="3" y="3" width="18" height="18" {...p} /><Rect x="8" y="8" width="8" height="8" {...a} /><Path d="M8 8l8 8M16 8l-8 8" {...a} /></>;
       case 'finish': return <Path d="M4 12l5 5L20 6" {...a} />;
       case 'delete': return <><Path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" {...p} /><Path d="M10 11v7M14 11v7" {...a} /></>;
       case 'zoomin': return <><Circle cx="10" cy="10" r="6" {...p} /><Path d="M15 15l6 6" {...p} /><Path d="M10 7v6M7 10h6" {...a} /></>;

@@ -1,7 +1,7 @@
 // Quantities, cost, structural status and MEP loads from the whole model, storey by storey.
 // Preliminary estimates only (EC2-style sizing, simplified loads). Not for construction.
 import { designAll } from './design';
-import { beamSec, footprint, groupByStory, planBox, polyArea, wallT } from './model';
+import { beamSec, footprint, groupByStory, netArea, planBox, polyArea, wallT } from './model';
 
 export type El = { id: string; type: string; geometry: any; library_item_id: string | null; story_id?: string | null; properties?: any };
 export type Story = { id: string; name: string; elevation_m: number; height_m: number; sort_order?: number };
@@ -40,7 +40,7 @@ export function analyse(els: El[], lib: Lib[], use: Use, stories: Story[]) {
     const box = planBox(g.els), slabs = g.els.filter(e => e.type === 'slab');
     GFA += box.area;
     const longest = Math.max(0, ...g.els.filter(e => e.type === 'beam').map(b => len(b.geometry)));
-    slabVol += slabs.length ? slabs.reduce((a, s) => a + (footprint(s.geometry) ? polyArea(footprint(s.geometry)!) : 0) * (s.geometry.z1 - s.geometry.z0), 0) : box.area * Math.max(0.15, Math.ceil((longest || 4) / 28 / 0.025) * 0.025);
+    slabVol += slabs.length ? slabs.reduce((a, s) => a + netArea(s.geometry) * (s.geometry.z1 - s.geometry.z0), 0) : box.area * Math.max(0.15, Math.ceil((longest || 4) / 28 / 0.025) * 0.025);
     const bd = Math.min(...g.els.filter(e => e.type === 'beam').map(b => beamSec(b.geometry, specOf(b)).d), 0.5);
     minBeamD = Math.min(minBeamD, bd);
     clear = Math.min(clear, g.story.height_m - bd - ductH - 0.25);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Shape } from 'three';
+import { Path, Shape } from 'three';
 import { beamSec, stairSteps, wallT } from '../lib/model';
 
 export type El = { id: string; type: string; geometry: any; library_item_id: string | null; story_id?: string | null };
@@ -45,6 +45,11 @@ export default function Model({ els, lib, storeyH, center }: { els: El[]; lib: R
           const sx0 = alongX ? x0 + (x1 - x0) * a : x0, sx1 = alongX ? x0 + (x1 - x0) * b : x1, sy0 = alongX ? y0 : y0 + (y1 - y0) * a, sy1 = alongX ? y1 : y0 + (y1 - y0) * b;
           out.push(<mesh key={e.id + i} position={[(sx0 + sx1) / 2, z0 + h / 2, (sy0 + sy1) / 2]}><boxGeometry args={[Math.abs(sx1 - sx0), h, Math.abs(sy1 - sy0)]} /><meshStandardMaterial color={BOX.stair} /></mesh>);
         }
+      } else if (BOX[e.type] && (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) && g.holes.length && (g.poly?.length >= 3 || g.rect)) {
+        const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, outer: number[][] = g.poly?.length >= 3 ? g.poly : [[g.rect[0], g.rect[1]], [g.rect[2], g.rect[1]], [g.rect[2], g.rect[3]], [g.rect[0], g.rect[3]]], sh = new Shape();
+        outer.forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
+        for (const h of g.holes as number[][]) { const ph = new Path(); ph.moveTo(h[0], -h[1]); ph.lineTo(h[2], -h[1]); ph.lineTo(h[2], -h[3]); ph.lineTo(h[0], -h[3]); ph.closePath(); sh.holes.push(ph); }
+        out.push(<mesh key={e.id} position={[0, z0, 0]} rotation={[-Math.PI / 2, 0, 0]}><extrudeGeometry args={[sh, { depth: Math.max(z1 - z0, 0.02), bevelEnabled: false }]} /><meshStandardMaterial color={BOX[e.type]} transparent opacity={e.type === 'slab' ? 0.75 : 1} /></mesh>);
       } else if (BOX[e.type] && g.poly && g.poly.length >= 3) {
         const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, sh = new Shape(); (g.poly as number[][]).forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
         out.push(<mesh key={e.id} position={[0, z0, 0]} rotation={[-Math.PI / 2, 0, 0]}><extrudeGeometry args={[sh, { depth: Math.max(z1 - z0, 0.02), bevelEnabled: false }]} /><meshStandardMaterial color={BOX[e.type]} transparent opacity={e.type === 'slab' ? 0.75 : 1} /></mesh>);

@@ -73,6 +73,7 @@ export const manual: Section[] = [
         ['Slab (S)', 'Shape **Rectangle**: tap two opposite corners. Shape **Polygon**: tap each corner of any outline, then tap the first corner again (or press Enter, or Finish) to close it. Thickness is set in the Info Box.'],
         ['Arc wall (A)', 'Tap the start, the end, then a point on the curve. The curve is built as a chain of short straight walls (one every 10 degrees or less), so doors, windows, clashes, loads and IFC all work. Undo removes the whole arc in one step.'],
         ['Roof (R)', 'A flat roof on top of the current storey, drawn like a slab (rectangle or polygon). Thickness is set in the Info Box.'],
+        ['Opening (O)', 'Tap two opposite corners of a rectangular opening inside a slab or roof, for a stair well or a shaft. It is drawn crossed out, taken off the slab area and volume, cut out of the 3D view, and exported to IFC. Undo removes it.'],
         ['Stair (T)', 'Tap two opposite corners of the flight. It rises one storey along the longer side, with risers of about 175 mm. Properties shows the number of risers and warns if the run is too short for 250 mm treads; **Flip direction** reverses it.'],
         ['Room (Z)', 'Tap each corner, then the first corner (or Enter) to close. The room is named Room 1, Room 2 and so on and shows its area; rename it in Properties.'],
         ['Dimension (I)', 'Tap the start point, the end point, then where the dimension line should sit. It shows the true length. Points snap like any other tool. Select it to delete it.'],
@@ -91,6 +92,7 @@ export const manual: Section[] = [
       { t: 'ul', x: [
         '**Select (V):** tap an element. Its Properties appear in the Navigator: change thickness, height, width, depth or load with the − and + buttons, or delete it.',
         '**Several at once:** hold Shift and tap, or turn on **Add to selection** in the Info Box (for touch). On the web you can also drag a box: left to right takes what is fully inside, right to left takes everything the box touches. **Ctrl+A** selects the whole storey.',
+        '**Rotate and mirror:** with something selected, Edit > Rotate right 90° (E), Rotate left 90° (Q), Mirror left-right (H) or Mirror top-bottom (F), or the Rotate and Mirror links in the Info Box. They turn the whole selection about its centre; doors and windows follow their wall. A column drawn from a library section cannot swap its sides, so check those after a quarter turn.',
         '**Move (M) and Copy (K):** with something selected, tap a base point, then a target point. Doors and windows follow their wall; select the wall to move or copy them with it. The status bar shows the offset while you choose the target.',
         '**Nudge:** with a selection, the arrow keys move it by the snap step.',
         '**Delete:** the Delete key, the bin button, or Delete in Properties. Deleting a wall also deletes its doors and windows.',
@@ -214,7 +216,7 @@ export const manual: Section[] = [
     blocks: [
       { t: 'table', head: ['Key', 'Action'], rows: [
         ['V', 'Select tool'], ['G', 'Grid line'], ['W', 'Wall'], ['C', 'Column'], ['B', 'Beam'], ['S', 'Slab'], ['D', 'Door'], ['N', 'Window'], ['U', 'Duct'], ['P', 'Pipe'],
-        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['I', 'Dimension'], ['X', 'Text'], ['Enter', 'Close the polygon you are drawing'],
+        ['A', 'Arc wall'], ['R', 'Roof'], ['T', 'Stair'], ['Z', 'Room'], ['O', 'Opening in a slab'], ['E / Q', 'Rotate the selection right / left'], ['H / F', 'Mirror the selection left-right / top-bottom'], ['I', 'Dimension'], ['X', 'Text'], ['Enter', 'Close the polygon you are drawing'],
         ['M', 'Move the selection'], ['K', 'Copy the selection'], ['Arrow keys', 'Nudge the selection by the snap step'],
         ['Shift (held)', 'Ortho lock while drawing; add to the selection while selecting'],
         ['Esc', 'Finish the chain, cancel move or copy, clear the selection, close a menu'],
@@ -229,7 +231,7 @@ export const manual: Section[] = [
       { t: 'note', x: 'All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.' },
       { t: 'ul', x: [
         'Everything is in metres and millimetres.',
-        'Curved walls are chains of straight walls. Roofs are flat and stairs are straight flights; there are no railings, curtain walls, openings in slabs, or free-form shapes.',
+        'Curved walls are chains of straight walls. Roofs are flat and stairs are straight flights; there are no railings, curtain walls, or free-form shapes. Slab openings are rectangles, and rotation is in quarter turns only. Sections do not show slab openings.',
         'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
         'There are no raft footings, and slab deflection uses the span/depth method rather than a calculation for slabs.',
         'Elevations and sections are simple box drawings with no material hatching. PDF comes from the browser print window (web only); there is no DWG output and no custom sheet layouts with several views on one sheet.',

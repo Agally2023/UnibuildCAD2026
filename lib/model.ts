@@ -93,3 +93,8 @@ export function tribWidths(beams: El[], fallback: number, maxSide = 8): Record<s
   }
   return out;
 }
+
+// Openings cut through a slab or roof: rectangles [x0, y0, x1, y1] stored in geometry.holes
+export const holesOf = (g: any): [number, number, number, number][] => (Array.isArray(g?.holes) ? g.holes : []);
+export const holeArea = (g: any) => holesOf(g).reduce((a, h) => a + Math.abs(h[2] - h[0]) * Math.abs(h[3] - h[1]), 0);
+export function netArea(g: any): number { const fp = footprint(g); return fp ? Math.max(0, polyArea(fp) - holeArea(g)) : 0; }
