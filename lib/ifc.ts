@@ -105,7 +105,7 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
       if (w < 1e-3 || d < 1e-3) continue;
       const holes: number[][] = (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) ? g.holes : [];
       const poly = g.poly && g.poly.length >= 3 && (e.type === 'slab' || e.type === 'roof') ? (g.poly as number[][]) : holes.length ? [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] : null;
-      const lab = { slab: 'Slab', roof: 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
+      const lab = { slab: 'Slab', roof: g.form && g.form !== 'flat' && g.pitch > 0 ? `Roof (${g.form} ${Math.round(g.pitch)} deg, exported flat at eaves)` : 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
       const pre = { slab: '.FLOOR.', roof: '.FLAT_ROOF.', stair: '.STRAIGHT_RUN_STAIR.', foundation: '.PAD_FOOTING.' }[e.type as 'slab'];
       const ent = add(`${cls}(${G(e.id)},$,${str(name(e.type, lab))},$,$,#${place(S.pl, poly ? 0 : Math.min(x0, x1), poly ? 0 : Math.min(y0, y1), z0, 0)},#${shape(up(poly ? (holes.length ? voidProf(poly, holes) : polyProf(poly)) : rect(w, d, w / 2, d / 2), Math.max(z1 - z0, 0.02)))},$,${pre})`);
       ctr(e, ent); pset(e, ent, e.type === 'roof' || e.type === 'stair' ? 'architecture' : 'structure');

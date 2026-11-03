@@ -11,6 +11,7 @@ import { detectAll } from '../lib/clash';
 import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
+import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { holesOf, netArea } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
 import { fitScale, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
@@ -513,6 +514,42 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('IFC writes the slab with an inner void profile', /IFCARBITRARYPROFILEDEFWITHVOIDS/.test(ifc));
   const back = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'slab');
   ok('IFC slab with an opening re-imports as a slab', !!back && Math.abs(back.geometry.rect[2] - back.geometry.rect[0] - 10) < 0.05, JSON.stringify(back?.geometry));
+}
+
+// ===== Pitched roofs =====
+{
+  const g = { rect: [0, 0, 10, 6], z0: 3, z1: 3.2, form: 'gable', pitch: 30 };
+  ok('a gable roof has two faces, flat has one', roofFaces(g).length === 2 && roofFaces({ ...g, form: 'flat' }).length === 1);
+  near('ridge height = 3.2 + 3 x tan 30', roofTop(g), 3.2 + 3 * Math.tan(Math.PI / 6), 1e-9);
+  ok('ridge runs along the longer side by default', ridgeAxis(g) === 'x');
+  ok('pitch zero or a polygon makes the roof flat', !isPitched({ ...g, pitch: 0 }) && !isPitched({ ...g, poly: [[0, 0], [1, 0], [1, 1]] }));
+  const hip = { ...g, form: 'hip' };
+  ok('a hip roof has four faces and a 4 m ridge on a 10 x 6 plan', roofFaces(hip).length === 4 && roofLines(hip).some(([a, b]) => Math.abs(Math.hypot(b[0] - a[0], b[1] - a[1]) - 4) < 1e-9));
+  ok('a hip roof draws a ridge and four hips', roofLines(hip).length === 5, String(roofLines(hip).length));
+  near('mono roof high edge is 6 x tan 30 above the eaves', roofTop({ ...g, form: 'mono', ridge: 'x' }), 3.2 + 6 * Math.tan(Math.PI / 6), 1e-9);
+  near('slope area factor at 30 degrees', slopeFactor(g), 1 / Math.cos(Math.PI / 6), 1e-9);
+  const U = (p: [number, number]) => -p[1] * 0 + p[0], Dp = (p: [number, number]) => p[1];            // look along +y, u = x
+  const cut = faceCut(roofFaces(g)[0], 0.2, U, Dp, 1.5);
+  ok('a section half way up the south slope cuts a parallelogram-like shell 10 m wide', cut.length >= 4 && Math.abs(Math.max(...cut.map(c => c[0])) - Math.min(...cut.map(c => c[0])) - 10) < 1e-9);
+  ok('a section outside the roof cuts nothing', faceCut(roofFaces(g)[0], 0.2, U, Dp, 9).length === 0);
+  const out = faceOutline(roofFaces(g)[0], 0.2, U);
+  ok('the silhouette seen along the ridge-side face is a hull with the eaves and ridge points', out.length >= 4);
+}
+
+// ===== Pitched roofs in drawings =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const roof: any = { id: '88888888-8888-4888-8888-888888888888', type: 'roof', geometry: { rect: [0, 0, 10, 6], z0: 3, z1: 3.2, form: 'gable', pitch: 30 }, library_item_id: null, story_id: 's0' };
+  const south = buildView([roof], [], st as any, { kind: 'elevation', side: 'S' });
+  ok('a gable roof seen from the long side is drawn as outlines with a ridge above the eaves', south.shapes.length === 2 && south.shapes.every(x => x.poly) && Math.abs(south.zmax - (3.2 + 3 * Math.tan(Math.PI / 6))) < 1e-6, south.zmax.toFixed(3));
+  const east = buildView([roof], [], st as any, { kind: 'elevation', side: 'E' });
+  ok('seen from the gable end it fills a triangle-like outline up to the ridge', east.shapes.length === 2 && Math.abs(east.zmax - (3.2 + 3 * Math.tan(Math.PI / 6))) < 1e-6);
+  const sec = buildView([roof], [], st as any, { kind: 'section', axis: 'x', pos: 5, flip: false });
+  ok('a section across the ridge cuts both slopes', sec.shapes.filter(x => x.cut).length === 2, JSON.stringify(sec.shapes.map(x => x.cut)));
+  const sch = buildSchedules([roof], [], st as any).find(t => t.id === 'slabs')!;
+  ok('the slabs and roofs schedule names the roof form and pitch', String(sch.rows[0][2]).startsWith('Gable 30'), String(sch.rows[0][2]));
+  const ifc = toIfc('R', [roof], [], st as any);
+  ok('IFC names the pitched roof and says it is exported flat', /exported flat at eaves/.test(ifc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
