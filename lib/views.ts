@@ -4,11 +4,12 @@
 // Heights are absolute (storey elevation plus the element's own level).
 import type { El, Lib, Story } from './engineering';
 import { beamSec, footprint, stairSteps, wallT } from './model';
+import { faceCut, faceOutline, isPitched, roofFaces, roofThickness } from './roof';
 
 type Pt = [number, number];
 export type Side = 'N' | 'S' | 'E' | 'W';
 export type ViewSpec = { kind: 'elevation'; side: Side } | { kind: 'section'; axis: 'x' | 'y'; pos: number; flip: boolean };
-export type VShape = { u0: number; u1: number; z0: number; z1: number; type: string; cut: boolean; depth: number; open?: boolean };
+export type VShape = { u0: number; u1: number; z0: number; z1: number; type: string; cut: boolean; depth: number; open?: boolean; poly?: [number, number][] };
 export type View2D = { title: string; shapes: VShape[]; levels: { name: string; z: number }[]; u0: number; u1: number; zmin: number; zmax: number; dir: Pt; note: string };
 
 // the side named is the one you stand on: the "south elevation" looks north at the south face
@@ -66,6 +67,17 @@ export function buildView(els: El[], lib: Lib[], stories: Story[], spec: ViewSpe
   const mean = (poly: Pt[]) => poly.reduce((a, p) => a + Dp(p), 0) / poly.length;
 
   for (const e of els) {
+    if (e.type === 'roof' && isPitched(e.geometry)) {                           // pitched roofs: one outline per face
+      const g = { ...e.geometry, z0: e.geometry.z0 + E(e), z1: e.geometry.z1 + E(e) }, t = roofThickness(g);
+      for (const face of roofFaces(g)) {
+        const ds = face.map(p => Dp([p[0], p[1]]));
+        if (sec && Math.max(...ds) <= d0) continue;
+        const cutIt = sec && Math.min(...ds) < d0, poly = cutIt ? faceCut(face, t, U, Dp, d0) : faceOutline(face, t, U);
+        if (poly.length < 3) continue;
+        shapes.push({ u0: Math.min(...poly.map(q => q[0])), u1: Math.max(...poly.map(q => q[0])), z0: Math.min(...poly.map(q => q[1])), z1: Math.max(...poly.map(q => q[1])), type: 'roof', cut: !!cutIt, depth: cutIt ? d0 : ds.reduce((a, c) => a + c, 0) / ds.length, poly });
+      }
+      continue;
+    }
     const b = body(e); if (!b) continue;
     const ds = b.poly.map(Dp), us = b.poly.map(U);
     if (sec) {
@@ -125,6 +137,7 @@ export function viewSvg(v: View2D, scale = 100, pad = 8): { svg: string; w: numb
   let inner = '';
   for (const l of v.levels) inner += `<line x1="${X(v.u0) - 12}" x2="${X(v.u1) + 8}" y1="${Y(l.z)}" y2="${Y(l.z)}" stroke="#146c43" stroke-width="0.25" stroke-dasharray="4 2"/><text x="${X(v.u0) - 13}" y="${Y(l.z) - 1}" font-size="3" text-anchor="end" fill="#146c43">${l.name} ${l.z.toFixed(2)}</text>`;
   for (const s of v.shapes) {
+    if (s.poly) { inner += `<polygon points="${s.poly.map(q => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}" fill="${s.cut ? '#2b3a33' : VCOL.roof}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`; continue; }
     const x = X(s.u0), y = Y(s.z1), ww = Math.max((s.u1 - s.u0) * k, 0.2), hh = Math.max((s.z1 - s.z0) * k, 0.2);
     inner += s.open ? `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${VCOL[s.type]}" stroke="#0a2e1f" stroke-width="0.3"/>` : `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${s.cut ? '#2b3a33' : VCOL[s.type] ?? '#ccc'}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`;
   }

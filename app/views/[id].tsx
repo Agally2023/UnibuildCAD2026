@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, useWindowDimensions } from 'react-native';
-import Svg, { Rect, Line, Text as SText } from 'react-native-svg';
+import Svg, { Rect, Line, Polygon, Text as SText } from 'react-native-svg';
 import { useLocalSearchParams } from 'expo-router';
 import { useModel } from '../../lib/useModel';
 import { buildView, modelExtent, VCOL, viewSvg, Side, ViewSpec } from '../../lib/views';
@@ -49,7 +49,7 @@ export default function Views() {
       <ScrollView horizontal><Svg width={W} height={H} style={s.paper}>
         {v.levels.map(l => <Line key={l.name + l.z} x1={20} x2={W - 10} y1={Y(l.z)} y2={Y(l.z)} stroke="#146c43" strokeWidth={1} strokeDasharray="6 4" />)}
         {v.levels.map(l => <SText key={'t' + l.name + l.z} x={4} y={Y(l.z) - 3} fontSize={10} fill="#146c43">{l.name} {l.z.toFixed(1)}</SText>)}
-        {v.shapes.map((p, i) => <Rect key={i} x={X(p.u0)} y={Y(p.z1)} width={Math.max((p.u1 - p.u0) * sc, 1)} height={Math.max((p.z1 - p.z0) * sc, 1)} fill={p.open ? VCOL[p.type] : p.cut ? '#2b3a33' : VCOL[p.type] ?? '#ccc'} stroke="#0a2e1f" strokeWidth={p.cut ? 1.5 : 0.6} />)}
+        {v.shapes.map((p, i) => p.poly ? <Polygon key={i} points={p.poly.map(q => `${X(q[0])},${Y(q[1])}`).join(' ')} fill={p.cut ? '#2b3a33' : VCOL.roof} stroke="#0a2e1f" strokeWidth={p.cut ? 1.5 : 0.6} /> : <Rect key={i} x={X(p.u0)} y={Y(p.z1)} width={Math.max((p.u1 - p.u0) * sc, 1)} height={Math.max((p.z1 - p.z0) * sc, 1)} fill={p.open ? VCOL[p.type] : p.cut ? '#2b3a33' : VCOL[p.type] ?? '#ccc'} stroke="#0a2e1f" strokeWidth={p.cut ? 1.5 : 0.6} />)}
       </Svg></ScrollView>
       <Text style={s.k}>{v.note} Levels are the storey elevations.</Text>
       <Pressable onPress={save}><Text style={s.link}>Download SVG</Text></Pressable>

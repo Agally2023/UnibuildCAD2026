@@ -1,10 +1,19 @@
 import { useMemo } from 'react';
-import { Path, Shape } from 'three';
+import { BufferGeometry, DoubleSide, Float32BufferAttribute, Path, Shape } from 'three';
+import { isPitched, roofFaces, roofThickness } from '../lib/roof';
 import { beamSec, stairSteps, wallT } from '../lib/model';
 
 export type El = { id: string; type: string; geometry: any; library_item_id: string | null; story_id?: string | null };
 export type Lib = { id: string; specs: any };
 type Pt = [number, number];
+// a roof face as a thin prism: the top polygon, the same polygon one thickness lower, and the sides
+function prism(face: number[][], t: number) {
+  const pos: number[] = [], v = (p: number[], dz = 0) => [p[0], p[2] - dz, p[1]];
+  const tri = (a: number[], b: number[], c: number[]) => pos.push(...a, ...b, ...c);
+  for (let i = 1; i < face.length - 1; i++) { tri(v(face[0]), v(face[i]), v(face[i + 1])); tri(v(face[0], t), v(face[i + 1], t), v(face[i], t)); }
+  for (let i = 0; i < face.length; i++) { const a = face[i], b = face[(i + 1) % face.length]; tri(v(a), v(b), v(b, t)); tri(v(a), v(b, t), v(a, t)); }
+  const g = new BufferGeometry(); g.setAttribute('position', new Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
+}
 const BOX: Record<string, string> = { slab: '#cdd5da', roof: '#b9a99a', stair: '#9aa8b1', foundation: '#8a8f94' };
 
 // One storey of the model as 3D meshes (plan x/y metres -> x, up, z). Shared by native and web scenes.
@@ -45,6 +54,9 @@ export default function Model({ els, lib, storeyH, center }: { els: El[]; lib: R
           const sx0 = alongX ? x0 + (x1 - x0) * a : x0, sx1 = alongX ? x0 + (x1 - x0) * b : x1, sy0 = alongX ? y0 : y0 + (y1 - y0) * a, sy1 = alongX ? y1 : y0 + (y1 - y0) * b;
           out.push(<mesh key={e.id + i} position={[(sx0 + sx1) / 2, z0 + h / 2, (sy0 + sy1) / 2]}><boxGeometry args={[Math.abs(sx1 - sx0), h, Math.abs(sy1 - sy0)]} /><meshStandardMaterial color={BOX.stair} /></mesh>);
         }
+      } else if (e.type === 'roof' && isPitched(g)) {
+        const t = roofThickness(g);
+        roofFaces(g).forEach((f, i) => out.push(<mesh key={e.id + 'f' + i} geometry={prism(f, t)}><meshStandardMaterial color={BOX.roof} side={DoubleSide} /></mesh>));
       } else if (BOX[e.type] && (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) && g.holes.length && (g.poly?.length >= 3 || g.rect)) {
         const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, outer: number[][] = g.poly?.length >= 3 ? g.poly : [[g.rect[0], g.rect[1]], [g.rect[2], g.rect[1]], [g.rect[2], g.rect[3]], [g.rect[0], g.rect[3]]], sh = new Shape();
         outer.forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
