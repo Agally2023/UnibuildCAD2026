@@ -131,7 +131,7 @@ export const manual: Section[] = [
     blocks: [
       { t: 'table', head: ['Module', 'Use it when'], rows: [
         ['Plan', 'Always first. Every other module reads this model.'],
-        ['3D view', 'Before you analyse: check the model looks right (storeys stacked at their levels, beam levels, thicknesses).'],
+        ['3D view', 'Before you analyse: check the model looks right (storeys stacked at their levels, beam levels, thicknesses). **Drag** to turn the model freely, with no limit, about its centre. **Shift+drag** (or the Roll drag button) spins it about the view axis. The X, Y and Z buttons (and the arrow keys and Q, E on the web) turn it 15 degrees at a time about each axis, so 24 presses make a full turn. The View buttons jump to Isometric, Front, Back, Left, Right, Top and Bottom. The mouse wheel or the Zoom buttons zoom.'],
         ['Import IFC', 'The architecture already exists in another program (Revit, ArchiCAD, Tekla). IFC2x3 and IFC4 are read; storeys, elevations and units are converted.'],
         ['Export IFC', 'To open the model in other BIM programs or share it with the team (File menu).'],
         ['Member design', 'After the structure is drawn: beams, columns and slabs for the code and concrete class you chose, with the calculation report.'],
