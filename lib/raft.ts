@@ -97,7 +97,8 @@ export function designRaft(cols: RaftCol[], qAllow: number, m: Mat): RaftResult 
     const g = attempt(a); last = g; lastA = a;
     if (Nserv / g.A + 25 * 0.4 > qAllow) continue;                                   // cannot even carry a minimum-thickness raft
     const r = design(g); if (!r) continue;
-    if (Nserv / g.A + 25 * r.h <= qAllow) { chosen = { g, r, a }; break; }
+    // a wider projection makes edge and corner punching easier, so try every projection and keep the least concrete
+    if (Nserv / g.A + 25 * r.h <= qAllow && (!chosen || g.A * r.h < chosen.g.A * chosen.r.h - 1e-9)) chosen = { g, r, a };
   }
   let status: Status = 'ok';
   if (!chosen) {
