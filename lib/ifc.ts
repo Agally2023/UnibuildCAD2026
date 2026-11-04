@@ -3,7 +3,7 @@
 // Doors and windows get openings cut into their host walls. Opens in ArchiCAD, Revit, BIMcollab, Solibri, etc.
 import { isPitched, roofFaces, roofForm, roofThickness } from './roof';
 import type { El, Lib, Story } from './engineering';
-import { beamSec, DEFAULT_H, wallT } from './model';
+import { beamSec, circlePoints, DEFAULT_H, holesOf, roundsOf, wallT } from './model';
 const f = (n: number) => { const s = (Math.round((n + 0) * 1e5) / 1e5).toString(); return /[.e]/.test(s) ? s : s + '.'; };
 const str = (s: string) => `'${s.replace(/'/g, "''").replace(/[^\x20-\x7E]/g, '?')}'`;
 const B64 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$';
@@ -53,7 +53,7 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
   const rect = (w: number, d: number, cx: number, cy: number) => add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,#${add(`IFCAXIS2PLACEMENT2D(#${P2(cx, cy)},$)`)},${f(w)},${f(d)})`);
   // an arbitrary closed outline (slabs and roofs that are not rectangles); points are in plan metres
   const polyline = (pts: number[][]) => add(`IFCPOLYLINE((${[...pts, pts[0]].map(q => '#' + P2(q[0], q[1])).join(',')}))`);
-  const voidProf = (pts: number[][], holes: number[][]) => add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,#${polyline(pts)},(${holes.map(h => '#' + polyline([[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]])).join(',')}))`);
+  const voidProf = (pts: number[][], holes: number[][][]) => add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,#${polyline(pts)},(${holes.map(h => '#' + polyline(h)).join(',')}))`);
   const polyProf = (pts: number[][]) => add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,#${add(`IFCPOLYLINE((${[...pts, pts[0]].map(q => '#' + P2(q[0], q[1])).join(',')}))`)})`);
   const circle = (r: number) => add(`IFCCIRCLEPROFILEDEF(.AREA.,$,#${add(`IFCAXIS2PLACEMENT2D(#${P2(0, 0)},$)`)},${f(r)})`);
   // a pitched roof as faceted B-rep solids, one closed shell per roof face (top, underside and the four sides)
@@ -114,7 +114,7 @@ export function toIfc(projectName: string, els: El[], lib: Pick<Lib, 'id' | 'nam
     } else if (g.rect && ['slab', 'roof', 'stair', 'foundation'].includes(e.type)) {
       const [x0, y0, x1, y1] = g.rect as number[], z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, w = Math.abs(x1 - x0), d = Math.abs(y1 - y0);
       if (w < 1e-3 || d < 1e-3) continue;
-      const holes: number[][] = (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) ? g.holes : [];
+      const holes: number[][][] = e.type === 'slab' || e.type === 'roof' ? [...holesOf(g).map(h => [[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]]), ...roundsOf(g).map(q => circlePoints(q.c, q.r))] : [];
       const poly = g.poly && g.poly.length >= 3 && (e.type === 'slab' || e.type === 'roof') ? (g.poly as number[][]) : holes.length ? [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] : null;
       const lab = { slab: 'Slab', roof: isPitched(g) ? `Roof (${roofForm(g)} ${Math.round(g.pitch)} deg)` : 'Roof', stair: 'Stair', foundation: 'Footing' }[e.type as 'slab'], cls = { slab: 'IFCSLAB', roof: 'IFCROOF', stair: 'IFCSTAIR', foundation: 'IFCFOOTING' }[e.type as 'slab'];
       const pre = { slab: '.FLOOR.', roof: e.type === 'roof' && isPitched(g) ? ({ gable: '.GABLE_ROOF.', hip: '.HIP_ROOF.', mono: '.SHED_ROOF.' } as Record<string, string>)[roofForm(g)] : '.FLAT_ROOF.', stair: '.STRAIGHT_RUN_STAIR.', foundation: '.PAD_FOOTING.' }[e.type as 'slab'];

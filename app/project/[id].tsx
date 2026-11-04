@@ -15,7 +15,7 @@ import { CLASSES, cname } from '../../lib/rc';
 import { dsn, plan, setDsn, setPlan } from '../../lib/settings';
 import { saveFile } from '../../components/saveFile';
 import { toIfc } from '../../lib/ifc';
-import { beamSec, footprint, holesOf, inPoly, netArea, polyArea, polyBox, polyCentroid, stairSteps, wallT } from '../../lib/model';
+import { beamSec, footprint, holesOf, inPoly, netArea, openingCount, roundsOf, polyArea, polyBox, polyCentroid, stairSteps, wallT } from '../../lib/model';
 import type { El, Lib } from '../../lib/engineering';
 
 const PX = 50;      // pixels per metre at 100% zoom
@@ -30,7 +30,7 @@ const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture
 const TOOLS: Record<Tool, { label: string; hint: string; lib?: (l: Lib) => boolean }> = {
   select: { label: 'Select', hint: 'Tap an element to see its details, change its size or delete it.' },
   grid: { label: 'Grid line', hint: 'Tap the start and end of a grid line. Numbers go to vertical lines, letters to horizontal ones. Or generate a whole grid below.' },
-  hole: { label: 'Opening', hint: 'Tap two opposite corners of an opening inside a slab or roof (for a stair or a shaft). Undo removes it.' },
+  hole: { label: 'Opening', hint: 'Rectangle: tap two opposite corners. Circle: tap the centre, then a point on the edge. Inside a slab or roof (for a stair well or a shaft). Undo removes it.' },
   dim: { label: 'Dimension', hint: 'Tap the two points to measure, then tap where the dimension line should sit.' },
   label: { label: 'Text', hint: 'Type the text in the Info Box, then tap where it goes.' },
   column: { label: 'Column', hint: 'Tap to place a column. Use "Next type" to change its size.', lib: l => l.category === 'section' && /column/i.test(l.name) },
@@ -135,6 +135,7 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
         const [x0, y0, x1, y1] = e.type === 'roof' && isPitched(e.geometry) ? roofPlanBox(e.geometry) : e.geometry.rect; return <Rect key={e.id} x={x0 * PX} y={y0 * PX} width={(x1 - x0) * PX} height={(y1 - y0) * PX} fill={col} fillOpacity={0.1} stroke={col} strokeWidth={1.5} />;
       })}
       {here.filter(e => (e.type === 'slab' || e.type === 'roof') && holesOf(e.geometry).length).flatMap(e => holesOf(e.geometry).map((h, i) => <G key={e.id + 'h' + i}><Rect x={Math.min(h[0], h[2]) * PX} y={Math.min(h[1], h[3]) * PX} width={Math.abs(h[2] - h[0]) * PX} height={Math.abs(h[3] - h[1]) * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={h[0] * PX} y1={h[1] * PX} x2={h[2] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={h[2] * PX} y1={h[1] * PX} x2={h[0] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /></G>))}
+      {here.filter(e => (e.type === 'slab' || e.type === 'roof') && roundsOf(e.geometry).length).flatMap(e => roundsOf(e.geometry).map((q, i) => <G key={e.id + 'r' + i}><Circle cx={q.c[0] * PX} cy={q.c[1] * PX} r={q.r * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={(q.c[0] - q.r) * PX} y1={q.c[1] * PX} x2={(q.c[0] + q.r) * PX} y2={q.c[1] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={q.c[0] * PX} y1={(q.c[1] - q.r) * PX} x2={q.c[0] * PX} y2={(q.c[1] + q.r) * PX} stroke={c.dim} strokeWidth={1} /></G>))}
       {here.filter(e => e.type === 'roof' && isPitched(e.geometry)).flatMap(e => roofLines(e.geometry).map(([a, b], i) => <Line key={e.id + 'r' + i} x1={a[0] * PX} y1={a[1] * PX} x2={b[0] * PX} y2={b[1] * PX} stroke={c.dim} strokeWidth={1.5} strokeDasharray="10 5" />))}
       {findFireCrossings(here, Object.values(libById), []).map((f, i) => <G key={'fd' + i}><Circle cx={f.at[0] * PX} cy={f.at[1] * PX} r={9} fill="none" stroke="#e53935" strokeWidth={2.5} /><SvgText x={f.at[0] * PX + 12} y={f.at[1] * PX - 8} fontSize={11} fill="#e53935" fontWeight="bold">{f.kind === 'damper' ? 'FD' : 'FS'} {f.rating}</SvgText></G>)}
       {here.filter(e => e.type === 'wall' && fireOf(e.geometry) > 0).map(e => <Line key={e.id + 'fw'} x1={e.geometry.start[0] * PX} y1={e.geometry.start[1] * PX} x2={e.geometry.end[0] * PX} y2={e.geometry.end[1] * PX} stroke="#e53935" strokeWidth={3} strokeOpacity={0.55} strokeDasharray="2 5" />)}
@@ -309,6 +310,7 @@ export default function Plan() {
   const [shape, setShape] = useState<'rect' | 'poly'>('rect');
   const [rForm, setRForm] = useState<RoofForm>('flat');
   const [rPitch, setRPitch] = useState(30);
+  const [holeShape, setHoleShape] = useState<'rect' | 'circle'>('rect');
   const [rOver, setROver] = useState(0);
   const [rRidge, setRRidge] = useState<'auto' | 'x' | 'y'>('auto');
   const [osnap, setOsnap] = useState(true), [ortho, setOrtho] = useState(false);
@@ -475,6 +477,14 @@ export default function Plan() {
     if (tool === 'grid') { if (!start) return setStart(p); if (p[0] === start[0] && p[1] === start[1]) return setStart(null); await addGrid(start, p); return setStart(null); }
     if (!start) return setStart(p);
     if (p[0] === start[0] && p[1] === start[1]) return setStart(null);
+    if (tool === 'hole' && holeShape === 'circle') {
+      const radius = r2(Math.hypot(p[0] - start[0], p[1] - start[1])), host = here.find(e => (e.type === 'slab' || e.type === 'roof') && inPoly(footprint(e.geometry) ?? [], start[0], start[1]));
+      const c: [number, number] = [start[0], start[1]];
+      setStart(null);
+      if (!host) return setErr('Put the centre of the round opening inside a slab or roof on this storey.');
+      if (radius < 0.05) return setErr('That opening is too small: tap further from the centre to set the radius.');
+      return void (await run({ add: [], del: [], mod: [[host, { ...host, geometry: { ...host.geometry, rounds: [...roundsOf(host.geometry), { c, r: radius }] } }] as [El, El]] }));
+    }
     if (tool === 'hole') {
       const hole: [number, number, number, number] = [Math.min(start[0], p[0]), Math.min(start[1], p[1]), Math.max(start[0], p[0]), Math.max(start[1], p[1])], cx = (hole[0] + hole[2]) / 2, cy = (hole[1] + hole[3]) / 2;
       const host = here.find(e => (e.type === 'slab' || e.type === 'roof') && inPoly(footprint(e.geometry) ?? [], cx, cy));
@@ -505,6 +515,8 @@ export default function Plan() {
     if (g.at) o.at = [r2(g.at[0] + dx), r2(g.at[1] + dy)];
     if (g.poly) o.poly = g.poly.map((q: Pt) => [r2(q[0] + dx), r2(q[1] + dy)]);
     if (g.rect) o.rect = [r2(g.rect[0] + dx), r2(g.rect[1] + dy), r2(g.rect[2] + dx), r2(g.rect[3] + dy)];
+    if (Array.isArray(g.holes)) o.holes = g.holes.map((h: number[]) => [r2(h[0] + dx), r2(h[1] + dy), r2(h[2] + dx), r2(h[3] + dy)]);
+    if (Array.isArray(g.rounds)) o.rounds = g.rounds.map((q: any) => ({ ...q, c: [r2(q.c[0] + dx), r2(q.c[1] + dy)] }));
     return o;
   };
   const doXf = async (kind: 'move' | 'copy', dx: number, dy: number) => {
@@ -583,7 +595,7 @@ export default function Plan() {
     } else if (e.type === 'slab' || e.type === 'roof') {
       const t = Math.round((g.z1 - g.z0) * 1000), [x0, y0, x1, y1] = g.rect, fp = footprint(g);
       if (e.type === 'roof' && g.rect) { const pf = roofForm(g); steps.push(['Pitch', pf === 'flat' ? 'flat' : `${Math.round(g.pitch)}°`, () => edit(e, { ...g, pitch: Math.max(0, (g.pitch ?? 0) - 5), form: (g.pitch ?? 0) - 5 <= 0 ? 'flat' : (g.form ?? 'gable') }), () => edit(e, { ...g, pitch: Math.min(60, (g.pitch ?? 0) + 5), form: g.form && g.form !== 'flat' ? g.form : 'gable' })]); if (pf !== 'flat') { steps.push(['Overhang', `${overhangOf(g).toFixed(1)} m`, () => edit(e, { ...g, overhang: Math.max(0, r2(overhangOf(g) - 0.1)) }), () => edit(e, { ...g, overhang: Math.min(1.5, r2(overhangOf(g) + 0.1)) })]); actions.push(['Change form', () => edit(e, { ...g, form: pf === 'mono' ? 'gable' : pf === 'gable' ? 'hip' : 'mono' })]); actions.push(['Turn ridge', () => edit(e, { ...g, ridge: (g.ridge ?? (g.rect[2] - g.rect[0] >= g.rect[3] - g.rect[1] ? 'x' : 'y')) === 'x' ? 'y' : 'x' })]); if (pf === 'mono') actions.push(['Flip slope', () => edit(e, { ...g, flip: !g.flip })]); } }
-      info = (e.type === 'roof' && isPitched(g) ? `${roofLabel(g)} · ` : '') + (holesOf(g).length ? `${netArea(g).toFixed(1)} m² net · ${holesOf(g).length} opening(s) · ${t} mm thick` : g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`);
+      info = (e.type === 'roof' && isPitched(g) ? `${roofLabel(g)} · ` : '') + (openingCount(g) ? `${netArea(g).toFixed(1)} m² net · ${openingCount(g)} opening(s) · ${t} mm thick` : g.poly ? `${fp ? polyArea(fp).toFixed(1) : '?'} m² polygon · ${t} mm thick` : `${(x1 - x0).toFixed(1)} × ${(y1 - y0).toFixed(1)} m · ${t} mm thick`);
       steps.push(['Thickness', `${t} mm`, () => edit(e, { ...g, z0: r2(g.z1 - Math.max(0.1, (t - 25) / 1000)) }), () => edit(e, { ...g, z0: r2(g.z1 - Math.min(0.6, (t + 25) / 1000)) })]);
     } else if (e.type === 'duct' || e.type === 'pipe') {
       info = `${len.toFixed(2)} m long · centreline ${r2(g.elevation_m)} m above the floor`;
@@ -639,6 +651,7 @@ export default function Plan() {
       {choices.length > 0 && <Stepper label={`${def.label} type`} value={chosen ? short(chosen.name, 16) : '-'} dec={() => cycle(-1)} inc={() => cycle(1)} />}
       {(tool === 'slab' || tool === 'roof') && <Seg label="Shape" options={[['rect', 'Rectangle'], ['poly', 'Polygon']]} value={shape} onChange={v => setShape(v as 'rect' | 'poly')} />}
       {(tool === 'wall' || tool === 'arc') && <Stepper label="Wall thickness" value={`${Math.round(wallTh * 1000)} mm`} dec={() => setWallTh(Math.max(0.1, r2(wallTh - 0.025)))} inc={() => setWallTh(Math.min(0.6, r2(wallTh + 0.025)))} />}
+      {tool === 'hole' && <Seg label="Shape" options={[['rect', 'Rectangle'], ['circle', 'Circle']]} value={holeShape} onChange={v => setHoleShape(v as 'rect' | 'circle')} />}
       {tool === 'roof' && <Seg label="Form" options={FORMS} value={rForm} onChange={v => setRForm(v as RoofForm)} />}
       {tool === 'roof' && rForm !== 'flat' && <Stepper label="Pitch" value={`${rPitch}°`} dec={() => setRPitch(v => Math.max(5, v - 5))} inc={() => setRPitch(v => Math.min(60, v + 5))} />}
       {tool === 'roof' && rForm !== 'flat' && <Stepper label="Overhang" value={`${rOver.toFixed(1)} m`} dec={() => setROver(v => Math.max(0, r2(v - 0.1)))} inc={() => setROver(v => Math.min(1.5, r2(v + 0.1)))} />}
@@ -863,7 +876,8 @@ export default function Plan() {
                   {tool === 'dim' && pts.length === 1 && cur2 && <Line x1={pts[0][0] * PX} y1={pts[0][1] * PX} x2={cur2[0] * PX} y2={cur2[1] * PX} stroke={pal.cursor} strokeWidth={1.5} strokeDasharray="6 4" />}
                   {tool === 'dim' && pts.length === 2 && cur2 && <Dim a={pts[0]} b={pts[1]} off={((cur2[0] - pts[0][0]) * -(pts[1][1] - pts[0][1]) + (cur2[1] - pts[0][1]) * (pts[1][0] - pts[0][0])) / (Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]) || 1) || 0.6} c={pal} />}
                   {tool === 'arc' && pts.length > 0 && cur2 && <G><Polyline points={(pts.length === 2 ? arcPoints(pts[0], pts[1], cur2) : [pts[0], cur2]).map(q => `${q[0] * PX},${q[1] * PX}`).join(' ')} fill="none" stroke={pal.cursor} strokeWidth={Math.max(wallTh * PX, 3)} strokeOpacity={0.5} />{pts.map((q, i) => <Circle key={i} cx={q[0] * PX} cy={q[1] * PX} r={5} fill="#ffb300" />)}</G>}
-                  {(tool === 'stair' || tool === 'hole') && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {tool === 'hole' && holeShape === 'circle' && start && cur2 && <Circle cx={start[0] * PX} cy={start[1] * PX} r={Math.hypot(cur2[0] - start[0], cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
+                  {(tool === 'stair' || (tool === 'hole' && holeShape === 'rect')) && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {(tool === 'slab' || tool === 'roof') && !polyMode && start && cur2 && <Rect x={Math.min(start[0], cur2[0]) * PX} y={Math.min(start[1], cur2[1]) * PX} width={Math.abs(cur2[0] - start[0]) * PX} height={Math.abs(cur2[1] - start[1]) * PX} fill={pal.cursor} fillOpacity={0.07} stroke={pal.cursor} strokeWidth={2} strokeDasharray="8 6" />}
                   {start && <Circle cx={start[0] * PX} cy={start[1] * PX} r={7} fill="#c98a00" />}
                   {nHere.map(i => <Circle key={i.id} cx={i.location[0] * PX} cy={i.location[1] * PX} r={16} fill="none" stroke="#c62828" strokeWidth={3} />)}

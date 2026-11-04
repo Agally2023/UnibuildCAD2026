@@ -96,5 +96,10 @@ export function tribWidths(beams: El[], fallback: number, maxSide = 8): Record<s
 
 // Openings cut through a slab or roof: rectangles [x0, y0, x1, y1] stored in geometry.holes
 export const holesOf = (g: any): [number, number, number, number][] => (Array.isArray(g?.holes) ? g.holes : []);
-export const holeArea = (g: any) => holesOf(g).reduce((a, h) => a + Math.abs(h[2] - h[0]) * Math.abs(h[3] - h[1]), 0);
+// round openings: centre and radius, stored in geometry.rounds
+export type Round = { c: [number, number]; r: number };
+export const roundsOf = (g: any): Round[] => (Array.isArray(g?.rounds) ? g.rounds.filter((q: any) => q?.c && q.r > 0) : []);
+export const openingCount = (g: any) => holesOf(g).length + roundsOf(g).length;
+export const circlePoints = (c: [number, number], r: number, n = 48): [number, number][] => Array.from({ length: n }, (_, i) => [Math.round((c[0] + r * Math.cos((2 * Math.PI * i) / n)) * 1e4) / 1e4, Math.round((c[1] + r * Math.sin((2 * Math.PI * i) / n)) * 1e4) / 1e4]);
+export const holeArea = (g: any) => holesOf(g).reduce((a, h) => a + Math.abs(h[2] - h[0]) * Math.abs(h[3] - h[1]), 0) + roundsOf(g).reduce((a, q) => a + Math.PI * q.r * q.r, 0);
 export function netArea(g: any): number { const fp = footprint(g); return fp ? Math.max(0, polyArea(fp) - holeArea(g)) : 0; }

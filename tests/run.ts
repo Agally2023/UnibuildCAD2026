@@ -16,7 +16,7 @@ import { findFireCrossings, segCross } from '../lib/firedamper';
 import { planDxf, viewDxf } from '../lib/dxf';
 import { overhangOf, roofPlanBox } from '../lib/roof';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
-import { holesOf, netArea } from '../lib/model';
+import { circlePoints, holesOf, netArea, openingCount, roundsOf } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
 import { compositeDrawing, fitScale, fitScaleMany, layoutCells, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
 import { parseIfc } from '../lib/ifcImport';
@@ -654,6 +654,27 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const sch = buildSchedules([wall('w', 60), duct, pipe], [], st as any).find(t => t.id === 'fire')!;
   ok('the schedule lists FD1 and FS2 with the rating and wall thickness', sch.rows.length === 2 && sch.rows[0][0] === 'FD1' && sch.rows[1][0] === 'FS2' && sch.rows[0][4] === 60 && sch.rows[0][5] === 200, JSON.stringify(sch.rows));
   ok('without fire walls there is no fire table', !buildSchedules([wall('w', 0), duct], [], st as any).some(t => t.id === 'fire'));
+}
+
+// ===== Round openings =====
+{
+  const g = { rect: [0, 0, 10, 8], z0: 2.8, z1: 3, holes: [[2, 2, 4, 5]], rounds: [{ c: [7, 4], r: 1 }] };
+  near('net area = 80 - 6 - pi', netArea(g), 80 - 6 - Math.PI, 1e-9);
+  ok('opening count includes round ones', openingCount(g) === 2 && roundsOf(g).length === 1 && roundsOf({ rounds: [{ c: [0, 0], r: 0 }] }).length === 0);
+  const pts = circlePoints([7, 4], 1, 48);
+  ok('a circle is 48 points all at the radius', pts.length === 48 && pts.every(p => Math.abs(Math.hypot(p[0] - 7, p[1] - 4) - 1) < 1e-3));
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const els: any[] = [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', type: 'slab', geometry: g, library_item_id: null, story_id: 's0' }];
+  const row = buildSchedules(els, [], st as any).find(t => t.id === 'slabs')!.rows[0];
+  near('schedule volume uses the net area with the round opening', row[5] as number, (80 - 6 - Math.PI) * 0.2, 0.01);
+  ok('schedule counts both openings', String(row[2]).includes('2 opening(s)'));
+  const ifc = toIfc('R', els, [], st as any);
+  ok('IFC writes both inner curves of the profile', /IFCARBITRARYPROFILEDEFWITHVOIDS/.test(ifc) && (ifc.match(/IFCPOLYLINE/g) ?? []).length >= 3);
+  ok('DXF has a circle for the round opening', planDxf(els, [], st as any, 's0').includes('\n0\nCIRCLE\n'));
+  const turned = transformGeometry(g, [5, 4], { kind: 'rot', quarter: 1 });
+  ok('rotating the slab turns its openings with it (round centre and rectangle)', JSON.stringify(turned.rounds[0].c) === '[5,6]' && turned.holes.length === 1 && JSON.stringify(turned.holes[0]) === '[4,1,7,3]', JSON.stringify([turned.rounds, turned.holes]));
+  const sheet = makeDrawing(els, [], st as any, { kind: 'plan', storyId: 's0' }, 100);
+  ok('sheet plan draws the round opening as a circle', sheet.inner.includes('<circle'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

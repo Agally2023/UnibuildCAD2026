@@ -57,10 +57,11 @@ export default function Model({ els, lib, storeyH, center }: { els: El[]; lib: R
       } else if (e.type === 'roof' && isPitched(g)) {
         const t = roofThickness(g);
         roofFaces(g).forEach((f, i) => out.push(<mesh key={e.id + 'f' + i} geometry={prism(f, t)}><meshStandardMaterial color={BOX.roof} side={DoubleSide} /></mesh>));
-      } else if (BOX[e.type] && (e.type === 'slab' || e.type === 'roof') && Array.isArray(g.holes) && g.holes.length && (g.poly?.length >= 3 || g.rect)) {
+      } else if (BOX[e.type] && (e.type === 'slab' || e.type === 'roof') && ((Array.isArray(g.holes) && g.holes.length) || (Array.isArray(g.rounds) && g.rounds.length)) && (g.poly?.length >= 3 || g.rect)) {
         const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, outer: number[][] = g.poly?.length >= 3 ? g.poly : [[g.rect[0], g.rect[1]], [g.rect[2], g.rect[1]], [g.rect[2], g.rect[3]], [g.rect[0], g.rect[3]]], sh = new Shape();
         outer.forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
-        for (const h of g.holes as number[][]) { const ph = new Path(); ph.moveTo(h[0], -h[1]); ph.lineTo(h[2], -h[1]); ph.lineTo(h[2], -h[3]); ph.lineTo(h[0], -h[3]); ph.closePath(); sh.holes.push(ph); }
+        for (const q of (g.rounds ?? []) as { c: number[]; r: number }[]) { const pc = new Path(); pc.absarc(q.c[0], -q.c[1], q.r, 0, Math.PI * 2, false); sh.holes.push(pc); }
+        for (const h of (g.holes ?? []) as number[][]) { const ph = new Path(); ph.moveTo(h[0], -h[1]); ph.lineTo(h[2], -h[1]); ph.lineTo(h[2], -h[3]); ph.lineTo(h[0], -h[3]); ph.closePath(); sh.holes.push(ph); }
         out.push(<mesh key={e.id} position={[0, z0, 0]} rotation={[-Math.PI / 2, 0, 0]}><extrudeGeometry args={[sh, { depth: Math.max(z1 - z0, 0.02), bevelEnabled: false }]} /><meshStandardMaterial color={BOX[e.type]} transparent opacity={e.type === 'slab' ? 0.75 : 1} /></mesh>);
       } else if (BOX[e.type] && g.poly && g.poly.length >= 3) {
         const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, sh = new Shape(); (g.poly as number[][]).forEach((q, i) => (i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1])));
