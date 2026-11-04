@@ -282,6 +282,18 @@ export default function Plan() {
   const [menu, setMenu] = useState<string | null>(null);
   const [open, setOpenS] = useState<Record<string, boolean>>({ design: true, view: true, doc: true, more: true, stories: true, here: true, tools: true, props: true });
   const tog = (k: string) => setOpenS(o => ({ ...o, [k]: !o[k] }));
+  // desktop layout: each ribbon/panel can be folded away, and full window leaves only the drawing
+  const [lay, setLayS] = useState<{ ribbon: boolean; left: boolean; right: boolean; full: boolean }>(() => {
+    try { if (Platform.OS === 'web') { const v = JSON.parse(window.localStorage.getItem('unibuild.layout') ?? 'null'); if (v) return { ribbon: v.ribbon !== false, left: v.left !== false, right: v.right !== false, full: false }; } } catch { /* storage may be blocked */ }
+    return { ribbon: true, left: true, right: true, full: false };
+  });
+  const setLay = (p: Partial<typeof lay>) => setLayS(o => {
+    const n = { ...o, ...p };
+    try { if (Platform.OS === 'web') window.localStorage.setItem('unibuild.layout', JSON.stringify(n)); } catch { /* ignore */ }
+    return n;
+  });
+  const toggleFull = () => setLay({ full: !lay.full });
+  const browserFull = () => { if (Platform.OS !== 'web') return; try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch { /* not allowed */ } };
   const [snap, setSnapS] = useState(plan.snap);
   const [grid, setGridS] = useState(plan.grid);
   const [dims, setDimsS] = useState(plan.dims);
@@ -686,7 +698,7 @@ export default function Plan() {
   const menus: Menu[] = [
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc), mi('Export DXF (this storey)', exportDxf)] },
     { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Rotate right 90° (E)', () => doTurn({ kind: 'rot', quarter: 1 }), { disabled: !selEls.length }), mi('Rotate left 90° (Q)', () => doTurn({ kind: 'rot', quarter: -1 }), { disabled: !selEls.length }), mi('Mirror left-right (H)', () => doTurn({ kind: 'mirror', axis: 'x' }), { disabled: !selEls.length }), mi('Mirror top-bottom (F)', () => doTurn({ kind: 'mirror', axis: 'y' }), { disabled: !selEls.length }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
-    { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
+    { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Full window (F9)', toggleFull, { checked: lay.full }), mi('Tool ribbon', () => setLay({ ribbon: !lay.ribbon }), { checked: lay.ribbon }), mi('Tool palette (left)', () => setLay({ left: !lay.left }), { checked: lay.left }), mi('Properties panel (right)', () => setLay({ right: !lay.right }), { checked: lay.right }), mi('Browser full screen', browserFull), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
     { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },
     { key: 'analyze', label: 'Analyze', items: [mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Schedules', go('schedules')), mi('Elevations and sections', go('views')), mi('Drawing sheets', go('sheets')), mi('Dashboard', go('dashboard'))] },
     { key: 'help', label: 'Help', items: [mi('Manual and guides', () => router.push('/manual' as any)), mi('Quick start', () => router.push('/manual?s=start' as any)), mi('Keyboard shortcuts', () => router.push('/manual?s=shortcuts' as any)), mi('Limits and assumptions', () => router.push('/manual?s=limits' as any))] },
@@ -742,6 +754,7 @@ export default function Plan() {
     else if (ctrl && (key === 'y' || (key === 'z' && k.shiftKey))) { k.preventDefault(); redo(); }
     else if (ctrl && key === 'a') { k.preventDefault(); setT('select'); setSelIds(here.map(e => e.id)); }
     else if (key === 'enter' && polyMode && pts.length >= 3) { k.preventDefault(); k.stopPropagation(); closePoly(pts); }
+    else if (key === 'f9') { k.preventDefault(); toggleFull(); }
     else if (key === 'escape') { setStart(null); setPts([]); setXf(null); setSelIds([]); setMenu(null); }
     else if ((key === 'delete' || key === 'backspace') && selEls.length) { k.preventDefault(); removeMany(selEls); }
     else if (arrows[key] && selEls.length && tool === 'select') { k.preventDefault(); doXf('move', r2(arrows[key][0] * snap), r2(arrows[key][1] * snap)); }
@@ -824,20 +837,34 @@ export default function Plan() {
 
   return (
     <View style={s.wrap}>
-      <MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />
+      {!lay.full && <MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />}
       {menu && <Pressable style={s.backdrop} onPress={() => setMenu(null)} />}
-      <ToolBar items={tbItems} />
-      <View style={s.info}>
+      {!lay.full && wide && (
+        <View style={s.fold}>
+          <Pressable testID="fold-ribbon" onPress={() => setLay({ ribbon: !lay.ribbon })} style={s.foldB}><Text style={s.foldT}>{lay.ribbon ? '▲ Hide ribbon' : '▼ Show ribbon'}</Text></Pressable>
+          <Pressable testID="fold-left" onPress={() => setLay({ left: !lay.left })} style={s.foldB}><Text style={s.foldT}>{lay.left ? '◀ Hide tools' : '▶ Show tools'}</Text></Pressable>
+          <Pressable testID="fold-right" onPress={() => setLay({ right: !lay.right })} style={s.foldB}><Text style={s.foldT}>{lay.right ? 'Hide panel ▶' : 'Show panel ◀'}</Text></Pressable>
+          <Pressable testID="full-window" onPress={toggleFull} style={[s.foldB, s.foldFull]}><Text style={[s.foldT, { color: '#fff' }]}>⤢ Full window</Text></Pressable>
+        </View>
+      )}
+      {lay.full && (
+        <View style={s.floatB}>
+          <Pressable testID="exit-full" onPress={toggleFull} style={s.foldB}><Text style={s.foldT}>⤡ Exit full window (F9)</Text></Pressable>
+          {wide && <Pressable onPress={browserFull} style={s.foldB}><Text style={s.foldT}>Browser full screen</Text></Pressable>}
+        </View>
+      )}
+      {!lay.full && lay.ribbon && <ToolBar items={tbItems} />}
+      {!lay.full && lay.ribbon && <View style={s.info}>
         <View style={s.infoT}><Icon name={TOOL_ICON[tool]} size={20} /><Text style={s.infoN}>{def.label}</Text></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.infoIn}>{toolSettings}</ScrollView>
-      </View>
+      </View>}
       {!wide && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.strip} contentContainerStyle={{ padding: 4, gap: 2 }}>
           {[ti('select'), ...designTools.map(ti)].map(it => <BoxBtn key={it.key} it={it} strip />)}
         </ScrollView>
       )}
       <View style={s.body}>
-        {wide && (
+        {wide && !lay.full && lay.left && (
           <ScrollView style={s.box}>
             <View style={{ padding: 6 }}><BoxBtnRow items={[ti('select')]} /></View>
             {boxSecs.map(sc => (
@@ -886,7 +913,7 @@ export default function Plan() {
             </ScrollView></ScrollView>
           </View>
         </View>
-        {wide && (
+        {wide && !lay.full && lay.right && (
           <ScrollView style={s.props}>
             <Sec title="Navigator · Project map" open={open.stories} onToggle={() => tog('stories')}>
               <Text style={s.proj}>{pname || 'Project'}</Text>
@@ -918,17 +945,22 @@ export default function Plan() {
           </ScrollView>
         )}
       </View>
-      {quick}
-      <View style={s.status}>
+      {!lay.full && lay.ribbon && quick}
+      {!lay.full && <View style={s.status}>
         <Text style={s.stT} numberOfLines={1}>{chosen && tool !== 'select' ? `${short(chosen.name, 28)}. ` : ''}{xf ? (xf.base ? `Tap the target point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}. Esc cancels.` : `Tap the base point to ${xf.kind} ${selEls.length} element${selEls.length > 1 ? 's' : ''}.`) : def.hint}</Text>
         <Text style={s.stR}>{cur2 ? `X ${cur2[0].toFixed(2)}  Y ${cur2[1].toFixed(2)} m` : ''}{cur2 && curKind !== 'cell' ? `  ·  ${{ end: 'Endpoint', mid: 'Middle', int: 'Crossing', cell: '' }[curKind]}` : ''}{xf?.base && cur2 ? `  ·  Δ ${r2(cur2[0] - xf.base[0])}, ${r2(cur2[1] - xf.base[1])} m` : ''}{start && cur2 ? `  ·  length ${Math.hypot(cur2[0] - start[0], cur2[1] - start[1]).toFixed(2)} m` : ''}{cur2 ? '  ·  ' : ''}{story?.name ?? ''} · Snap {snap} m · Zoom {Math.round(zoom * 100)}%</Text>
-      </View>
+      </View>}
     </View>
   );
 }
 function BoxBtnRow({ items }: { items: RItem[] }) { return <View style={{ flexDirection: 'row', gap: 4 }}>{items.map(it => <BoxBtn key={it.key} it={it} />)}</View>; }
 const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#fff' },
+  fold: { flexDirection: 'row', gap: 6, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#e6f0ea', borderBottomWidth: 1, borderColor: '#cfdcd4', alignItems: 'center' },
+  foldB: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 5, backgroundColor: '#f4f9f6', borderWidth: 1, borderColor: '#bccfc3' },
+  foldFull: { backgroundColor: '#146c43', borderColor: '#146c43', marginLeft: 'auto' },
+  foldT: { fontSize: 12, fontWeight: '600', color: '#0a2e1f' },
+  floatB: { position: 'absolute', top: 8, right: 14, zIndex: 40, flexDirection: 'row', gap: 6 },
   body: { flex: 1, flexDirection: 'row' },
   center: { flex: 1 },
   box: { width: 200, flexGrow: 0, borderRightWidth: 1, borderColor: '#cfdcd4', backgroundColor: '#f4f9f6' }, grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' },
