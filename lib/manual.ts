@@ -111,7 +111,7 @@ export const manual: Section[] = [
         '**Typed input:** for exact points, type **X** and **Y** (metres from the plan origin) in the Info Box and press Enter or **Place**. Once a start point is set you can also type a **Length** and an **Angle** (degrees, counter-clockwise from the east; leave the angle empty to use the direction towards the pointer).',
         '**Pointer readout (web):** the status bar shows the snapped X and Y, and the length of the segment being drawn.',
         '**Zoom:** the magnifier buttons, **Fit** (frames the whole storey), and scrolling to pan.',
-        '**More room to draw (desktop):** the buttons under the menu bar fold away the tool ribbon (tool bar, Info Box and Quick Options), the Tool Box on the left and the Navigator on the right, and **Full window** (F9, or View) leaves only the drawing and the storey tabs. Your choices are remembered. Tools stay on their keys in full window; **Browser full screen** (View) also hides the browser frame.',
+        '**More room to draw (desktop):** the buttons under the menu bar fold away the tool ribbon (tool bar, Info Box and Quick Options), the Tool Box on the left and the Navigator on the right, and **Full window** (F9, or View) squeezes everything into thin bars: the menus, the icon tool bar, one sideways strip holding every tool, and three buttons (tool settings, Quick options, Navigator and properties) that drop a panel over the drawing and close again. Nothing is lost, it only takes less room. Your fold choices are remembered. **Browser full screen** (View) also hides the browser frame.',
       ] },
     ],
   },

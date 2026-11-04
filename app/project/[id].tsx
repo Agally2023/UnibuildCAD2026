@@ -835,9 +835,42 @@ export default function Plan() {
     </ScrollView>
   );
 
+  const navPanel = (style: any) => (
+<ScrollView style={style}>
+            <Sec title="Navigator · Project map" open={open.stories} onToggle={() => tog('stories')}>
+              <Text style={s.proj}>{pname || 'Project'}</Text>
+              {[...stories].reverse().map(st => {
+                const n = els.filter(e => (e.story_id ?? stories[0]?.id) === st.id).length;
+                return (
+                  <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.tr, story?.id === st.id && s.trOn]}>
+                    <Text style={[s.trn, story?.id === st.id && { color: '#fff' }]}>▪ {st.name}</Text>
+                    <Text style={[s.trs, story?.id === st.id && { color: '#d3ecdd' }]}>{st.elevation_m.toFixed(2)} m · {n} el.</Text>
+                  </Pressable>
+                );
+              })}
+              <View style={s.navBtns}><Pressable onPress={() => addStorey(false)}><Text style={s.l}>+ Storey</Text></Pressable><Pressable onPress={() => addStorey(true)}><Text style={s.l}>Copy up</Text></Pressable></View>
+            </Sec>
+            <Sec title={`On ${story?.name ?? 'this storey'}`} open={open.here} onToggle={() => tog('here')}>
+              {rows.length ? rows.map(([k, v]) => <View key={k} style={s.cr}><Text style={s.k}>{k}</Text><Text style={s.cv}>{v}</Text></View>) : <Text style={s.k}>Nothing drawn yet.</Text>}
+              {wallLen > 0 && <View style={s.cr}><Text style={s.k}>Wall length</Text><Text style={s.cv}>{wallLen.toFixed(1)} m</Text></View>}
+              {nHere.length > 0 && <Pressable onPress={go('clashes')}><Text style={[s.del, { marginTop: 6 }]}>{nHere.length} open clash{nHere.length > 1 ? 'es' : ''}</Text></Pressable>}
+            </Sec>
+            <Sec title="Properties" open={open.props} onToggle={() => tog('props')}>
+              {Inspector ?? (
+                <View style={{ gap: 6 }}>
+                  <Text style={s.it}>{def.label} tool</Text>
+                  <Text style={s.k}>{def.hint}</Text>
+                  <Text style={[s.k, { marginTop: 6 }]}>Keys: V select, W wall, C column, B beam, S slab, D door, N window, U duct, P pipe, Esc finish, Delete remove, Ctrl+Z undo.</Text>
+                </View>
+              )}
+            </Sec>
+          </ScrollView>
+  );
+  const [pop, setPop] = useState<null | 'set' | 'quick' | 'nav'>(null);
+  useEffect(() => { if (!lay.full) setPop(null); }, [lay.full]);
   return (
     <View style={s.wrap}>
-      {!lay.full && <MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />}
+      {<MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />}
       {menu && <Pressable style={s.backdrop} onPress={() => setMenu(null)} />}
       {!lay.full && wide && (
         <View style={s.fold}>
@@ -847,11 +880,23 @@ export default function Plan() {
           <Pressable testID="full-window" onPress={toggleFull} style={[s.foldB, s.foldFull]}><Text style={[s.foldT, { color: '#fff' }]}>⤢ Full window</Text></Pressable>
         </View>
       )}
-      {lay.full && (
-        <View style={s.floatB}>
-          <Pressable testID="exit-full" onPress={toggleFull} style={s.foldB}><Text style={s.foldT}>⤡ Exit full window (F9)</Text></Pressable>
-          {wide && <Pressable onPress={browserFull} style={s.foldB}><Text style={s.foldT}>Browser full screen</Text></Pressable>}
+      {lay.full && wide && (
+        <View style={s.fold}>
+          <Pressable testID="exit-full" onPress={toggleFull} style={[s.foldB, s.foldFull, { marginLeft: 0 }]}><Text style={[s.foldT, { color: '#fff' }]}>⤡ Exit full window (F9)</Text></Pressable>
+          <Pressable onPress={browserFull} style={s.foldB}><Text style={s.foldT}>Browser full screen</Text></Pressable>
+          <Pressable testID="pop-set" onPress={() => setPop(pop === 'set' ? null : 'set')} style={[s.foldB, pop === 'set' && s.foldOn]}><Text style={s.foldT}>{def.label} settings ▾</Text></Pressable>
+          <Pressable testID="pop-quick" onPress={() => setPop(pop === 'quick' ? null : 'quick')} style={[s.foldB, pop === 'quick' && s.foldOn]}><Text style={s.foldT}>Quick options ▾</Text></Pressable>
+          <Pressable testID="pop-nav" onPress={() => setPop(pop === 'nav' ? null : 'nav')} style={[s.foldB, pop === 'nav' && s.foldOn]}><Text style={s.foldT}>Navigator and properties ▾</Text></Pressable>
         </View>
+      )}
+      {lay.full && !wide && (
+        <View style={s.floatB}><Pressable testID="exit-full" onPress={toggleFull} style={s.foldB}><Text style={s.foldT}>⤡ Exit full window</Text></Pressable></View>
+      )}
+      {lay.full && wide && <ToolBar items={tbItems} />}
+      {lay.full && wide && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.strip} contentContainerStyle={{ padding: 3, gap: 2 }}>
+          {[ti('select'), ...boxSecs.flatMap(sc => sc.items)].map(it => <BoxBtn key={it.key} it={it} strip />)}
+        </ScrollView>
       )}
       {!lay.full && lay.ribbon && <ToolBar items={tbItems} />}
       {!lay.full && lay.ribbon && <View style={s.info}>
@@ -864,6 +909,9 @@ export default function Plan() {
         </ScrollView>
       )}
       <View style={s.body}>
+        {lay.full && wide && pop === 'set' && <View style={s.pop}><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.infoIn}>{toolSettings}</ScrollView></View>}
+        {lay.full && wide && pop === 'quick' && <View style={s.pop}>{quick}</View>}
+        {lay.full && wide && pop === 'nav' && <View style={s.popR}>{navPanel({ flexGrow: 0 })}</View>}
         {wide && !lay.full && lay.left && (
           <ScrollView style={s.box}>
             <View style={{ padding: 6 }}><BoxBtnRow items={[ti('select')]} /></View>
@@ -913,37 +961,7 @@ export default function Plan() {
             </ScrollView></ScrollView>
           </View>
         </View>
-        {wide && !lay.full && lay.right && (
-          <ScrollView style={s.props}>
-            <Sec title="Navigator · Project map" open={open.stories} onToggle={() => tog('stories')}>
-              <Text style={s.proj}>{pname || 'Project'}</Text>
-              {[...stories].reverse().map(st => {
-                const n = els.filter(e => (e.story_id ?? stories[0]?.id) === st.id).length;
-                return (
-                  <Pressable key={st.id} onPress={() => { setCur(st.id); setStart(null); setSelId(null); }} style={[s.tr, story?.id === st.id && s.trOn]}>
-                    <Text style={[s.trn, story?.id === st.id && { color: '#fff' }]}>▪ {st.name}</Text>
-                    <Text style={[s.trs, story?.id === st.id && { color: '#d3ecdd' }]}>{st.elevation_m.toFixed(2)} m · {n} el.</Text>
-                  </Pressable>
-                );
-              })}
-              <View style={s.navBtns}><Pressable onPress={() => addStorey(false)}><Text style={s.l}>+ Storey</Text></Pressable><Pressable onPress={() => addStorey(true)}><Text style={s.l}>Copy up</Text></Pressable></View>
-            </Sec>
-            <Sec title={`On ${story?.name ?? 'this storey'}`} open={open.here} onToggle={() => tog('here')}>
-              {rows.length ? rows.map(([k, v]) => <View key={k} style={s.cr}><Text style={s.k}>{k}</Text><Text style={s.cv}>{v}</Text></View>) : <Text style={s.k}>Nothing drawn yet.</Text>}
-              {wallLen > 0 && <View style={s.cr}><Text style={s.k}>Wall length</Text><Text style={s.cv}>{wallLen.toFixed(1)} m</Text></View>}
-              {nHere.length > 0 && <Pressable onPress={go('clashes')}><Text style={[s.del, { marginTop: 6 }]}>{nHere.length} open clash{nHere.length > 1 ? 'es' : ''}</Text></Pressable>}
-            </Sec>
-            <Sec title="Properties" open={open.props} onToggle={() => tog('props')}>
-              {Inspector ?? (
-                <View style={{ gap: 6 }}>
-                  <Text style={s.it}>{def.label} tool</Text>
-                  <Text style={s.k}>{def.hint}</Text>
-                  <Text style={[s.k, { marginTop: 6 }]}>Keys: V select, W wall, C column, B beam, S slab, D door, N window, U duct, P pipe, Esc finish, Delete remove, Ctrl+Z undo.</Text>
-                </View>
-              )}
-            </Sec>
-          </ScrollView>
-        )}
+        {wide && !lay.full && lay.right && navPanel(s.props)}
       </View>
       {!lay.full && lay.ribbon && quick}
       {!lay.full && <View style={s.status}>
@@ -959,6 +977,9 @@ const s = StyleSheet.create({
   fold: { flexDirection: 'row', gap: 6, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: '#e6f0ea', borderBottomWidth: 1, borderColor: '#cfdcd4', alignItems: 'center' },
   foldB: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 5, backgroundColor: '#f4f9f6', borderWidth: 1, borderColor: '#bccfc3' },
   foldFull: { backgroundColor: '#146c43', borderColor: '#146c43', marginLeft: 'auto' },
+  foldOn: { backgroundColor: '#c4e6d2' },
+  pop: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30, backgroundColor: '#f4f9f6', borderBottomWidth: 1, borderColor: '#bccfc3', paddingVertical: 4, elevation: 6 },
+  popR: { position: 'absolute', top: 0, right: 0, bottom: 0, width: 280, zIndex: 30, backgroundColor: '#f4f9f6', borderLeftWidth: 1, borderColor: '#bccfc3', elevation: 6 },
   foldT: { fontSize: 12, fontWeight: '600', color: '#0a2e1f' },
   floatB: { position: 'absolute', top: 8, right: 14, zIndex: 40, flexDirection: 'row', gap: 6 },
   body: { flex: 1, flexDirection: 'row' },
