@@ -5,6 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { useModel } from '../../lib/useModel';
 import { planMep, MepResult, MepSeg } from '../../lib/mep';
 import { analyseNetwork } from '../../lib/mepfit';
+import { findFireCrossings, fireOf } from '../../lib/firedamper';
 
 const n1 = (x: number) => x.toFixed(1);
 const group = (segs: MepSeg[]) => Object.entries(segs.reduce<Record<string, number>>((a, s) => { const k = s.kind === 'duct' ? `${s.size.w_mm}×${s.size.h_mm} duct` : `DN${(s.size.dia_mm ?? 12) - 12} pipe`; a[k] = (a[k] ?? 0) + Math.hypot(s.end[0] - s.start[0], s.end[1] - s.start[1]); return a; }, {}));
@@ -25,6 +26,10 @@ export default function Mep() {
   const slabs = here.filter(e => e.type === 'slab');
   const slabT = slabs.length ? slabs.reduce((a, s) => a + (s.geometry.z1 - s.geometry.z0), 0) / slabs.length : 0.2;
   const nOut = here.filter(e => e.type === 'fixture').length, nPlant = here.filter(e => e.type === 'equipment').length;
+  // fire dampers and sleeves: for what is already in the model, and for the routed result before it is added
+  const fireWalls = here.filter(e => e.type === 'wall' && fireOf(e.geometry) > 0);
+  const fireNow = useMemo(() => findFireCrossings(here, lib, stories), [here, lib, stories]);
+  const firePlan = useMemo(() => res ? findFireCrossings([...fireWalls, ...[...res.ducts, ...res.pipes].map((sg, i) => ({ id: 'r' + i, type: sg.kind, geometry: { start: sg.start, end: sg.end, elevation_m: sg.elevation, ...sg.size }, library_item_id: null, story_id: story?.id }))] as any, lib, stories) : [], [res, fireWalls, lib, stories, story]);
   const nAuto = here.filter(e => e.properties?.auto).length;
 
   const run = () => { setMsg(''); setBusy(true); setTimeout(() => { setRes(planMep({ els: here, lib, storeyH: story?.height_m ?? 3.6, maxDuctH: maxH, includePipes: pipes, requiredClear: clear, slabT })); setBusy(false); }, 30); };
@@ -87,6 +92,12 @@ export default function Mep() {
               {n.notes.map(x => <Text key={x} style={s.warn}>{x}</Text>)}
             </View>
           ))}
+          {fireWalls.length > 0 && (
+            <View style={s.card}>
+              <Text style={s.h}>Fire dampers and sleeves (routed result)</Text>
+              {firePlan.length ? firePlan.map((c, i) => <Text key={i} style={s.warn}>{c.kind === 'damper' ? `Fire damper ${c.size}` : `Fire-stopped sleeve ${c.size}`}, {c.rating} min wall, at {c.at[0].toFixed(1)}, {c.at[1].toFixed(1)}</Text>) : <Text style={s.k}>The routed services do not cross any fire-rated wall.</Text>}
+            </View>
+          )}
           <View style={s.card}>
             <Text style={s.h}>Sizes</Text>
             {[...group(res.ducts), ...group(res.pipes)].map(([k, v]) => <View key={k} style={s.row}><Text style={s.k}>{k}</Text><Text style={s.v}>{n1(v)} m</Text></View>)}
@@ -94,6 +105,12 @@ export default function Mep() {
           {res.notes.map(n => <Text key={n} style={s.warn}>{n}</Text>)}
           <Pressable style={[s.save, busy && s.off]} onPress={apply} disabled={busy || (!res.ducts.length && !res.pipes.length)}><Text style={s.sb}>Add to the model</Text></Pressable>
         </>
+      )}
+      {fireWalls.length > 0 && !res && (
+        <View style={s.card}>
+          <Text style={s.h}>Fire dampers and sleeves in the model</Text>
+          {fireNow.length ? fireNow.map((c, i) => <Text key={i} style={s.warn}>{c.kind === 'damper' ? `Fire damper ${c.size}` : `Fire-stopped sleeve ${c.size}`}, {c.rating} min wall, at {c.at[0].toFixed(1)}, {c.at[1].toFixed(1)}</Text>) : <Text style={s.k}>No duct or pipe crosses a fire-rated wall on this storey.</Text>}
+        </View>
       )}
       {!!msg && <Text style={s.k}>{msg}</Text>}
       <Text style={s.note}>Routes run on a 0.5 m grid: columns are avoided, wall crossings are minimised, and the network is lowered under any beam it meets, then re-checked with the clash engine. Duct sizes use a velocity method (4 to 6 m/s) at ΔT 10 K, pipes ΔT 5 K. Fittings, pressure drop, fire dampers and acoustics are not designed. Preliminary only: review with an MEP engineer.</Text>

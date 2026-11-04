@@ -12,6 +12,7 @@ import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
 import { drag, IDENTITY, qAxis, qMul, qRotate, turn, VIEWS } from '../lib/orbit';
+import { findFireCrossings, segCross } from '../lib/firedamper';
 import { planDxf, viewDxf } from '../lib/dxf';
 import { overhangOf, roofPlanBox } from '../lib/roof';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
@@ -636,6 +637,23 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const vy = viewDxf(buildView(els, [], st as any, { kind: 'elevation', side: 'S' })).split('\n');
   const zs = vy.map((x, i) => (i % 2 === 0 && x === '20' ? Number(vy[i + 1]) : null)).filter(x => x !== null) as number[];
   ok('in the elevation the heights come out positive (z up) in mm', Math.max(...zs) >= 3000 && Math.min(...zs) >= -1);
+}
+
+// ===== Fire dampers =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const wall = (id: string, fire: number): any => ({ id, type: 'wall', geometry: { start: [5, 0], end: [5, 10], thickness: 0.2, height: 3, fire }, story_id: 's0' });
+  const duct: any = { id: 'd1', type: 'duct', geometry: { start: [0, 4], end: [10, 4], w_mm: 600, h_mm: 300, elevation_m: 2.6 }, library_item_id: null, story_id: 's0' };
+  const pipe: any = { id: 'p1', type: 'pipe', geometry: { start: [0, 6], end: [10, 6], dia_mm: 110, elevation_m: 2.5 }, library_item_id: null, story_id: 's0' };
+  ok('segments that cross are found, parallel ones are not', JSON.stringify(segCross([0, 4], [10, 4], [5, 0], [5, 10])) === '[5,4]' && segCross([0, 0], [10, 0], [0, 1], [10, 1]) === null);
+  const f = findFireCrossings([wall('w', 60), duct, pipe], [], st as any);
+  ok('a duct through a 60 minute wall needs a damper and a pipe a fire-stopped sleeve', f.length === 2 && f[0].kind === 'damper' && f[1].kind === 'sleeve' && f[0].rating === 60 && f[0].size === '600 x 300 mm', JSON.stringify(f));
+  ok('a wall with no fire rating needs nothing', findFireCrossings([wall('w', 0), duct, pipe], [], st as any).length === 0);
+  ok('a duct above the wall top is not a crossing', findFireCrossings([wall('w', 60), { ...duct, geometry: { ...duct.geometry, elevation_m: 3.4 } }], [], st as any).length === 0);
+  ok('a duct on another storey is not a crossing', findFireCrossings([wall('w', 60), { ...duct, story_id: 's1' }], [], [...st, { id: 's1', name: 'First', elevation_m: 3, height_m: 3 }] as any).length === 0);
+  const sch = buildSchedules([wall('w', 60), duct, pipe], [], st as any).find(t => t.id === 'fire')!;
+  ok('the schedule lists FD1 and FS2 with the rating and wall thickness', sch.rows.length === 2 && sch.rows[0][0] === 'FD1' && sch.rows[1][0] === 'FS2' && sch.rows[0][4] === 60 && sch.rows[0][5] === 200, JSON.stringify(sch.rows));
+  ok('without fire walls there is no fire table', !buildSchedules([wall('w', 0), duct], [], st as any).some(t => t.id === 'fire'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
