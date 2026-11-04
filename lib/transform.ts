@@ -16,6 +16,8 @@ export function transformGeometry(g: any, c: Pt, xf: Xf): any {
   if (g.at) o.at = M(g.at);
   if (g.poly) o.poly = g.poly.map(M);
   if (g.rect) { const a = M([g.rect[0], g.rect[1]]), b = M([g.rect[2], g.rect[3]]); o.rect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]; }
+  if (Array.isArray(g.holes)) o.holes = g.holes.map((h: number[]) => { const a = M([h[0], h[1]]), b = M([h[2], h[3]]); return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])]; });
+  if (Array.isArray(g.rounds)) o.rounds = g.rounds.map((q: any) => ({ ...q, c: M(q.c) }));
   if (xf.kind === 'rot' && g.at && g.b != null && g.h != null) { o.b = g.h; o.h = g.b; }      // a column turned a quarter swaps its sides
   if (g.flip != null && xf.kind === 'mirror') o.flip = !g.flip;
   return o;

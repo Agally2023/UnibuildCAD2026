@@ -1,7 +1,7 @@
 // DXF export (AutoCAD R12 ASCII, which every CAD program reads; DWG itself is a closed format).
 // Units: millimetres. The plan's y axis points down the screen, so y is flipped to the CAD convention (y up).
 import type { El, Lib, Story } from './engineering';
-import { footprint, holesOf, polyArea, stairSteps, wallT } from './model';
+import { footprint, holesOf, roundsOf, polyArea, stairSteps, wallT } from './model';
 import { isPitched, roofLines, roofPlanBox } from './roof';
 import type { View2D } from './views';
 
@@ -45,6 +45,7 @@ export function planDxf(els: El[], lib: Lib[], stories: Story[], storyId: string
     const pitched = e.type === 'roof' && isPitched(e.geometry), pb = pitched ? roofPlanBox(e.geometry) : null, layer = e.type === 'roof' ? 'A-ROOF' : 'S-SLAB';
     const fp: Pt[] | null = pb ? [[pb[0], pb[1]], [pb[2], pb[1]], [pb[2], pb[3]], [pb[0], pb[3]]] : footprint(e.geometry);
     if (fp) d.poly(fp, layer);
+    for (const q of roundsOf(e.geometry)) d.circle(q.c, q.r, layer);
     for (const h of holesOf(e.geometry)) d.poly([[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]], layer);
     if (pitched) for (const [a, b] of roofLines(e.geometry)) d.line(a, b, 'A-ROOF-RIDGE');
   }

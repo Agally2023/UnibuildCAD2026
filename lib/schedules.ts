@@ -3,7 +3,7 @@
 import type { El, Lib, Story } from './engineering';
 import { findFireCrossings, fireOf } from './firedamper';
 import { isPitched, roofLabel, roofPlanBox } from './roof';
-import { beamSec, footprint, holesOf, netArea, polyArea, stairSteps, wallT } from './model';
+import { beamSec, footprint, openingCount, netArea, polyArea, stairSteps, wallT } from './model';
 
 export type Cell = string | number;
 export type Table = { id: string; title: string; note?: string; head: string[]; rows: Cell[][]; foot?: Cell[] };
@@ -63,7 +63,7 @@ export function buildSchedules(els: El[], lib: Lib[], stories: Story[]): Table[]
   out.push({ id: 'beams', title: 'Beams', head: ['Storey', 'Section mm', 'Count', 'Length m', 'Volume m³'], rows: bRows, foot: ['Total', '', bRows.reduce((a, x) => a + (x[2] as number), 0), sum(bRows, 3), r(bRows.reduce((a, x) => a + (x[4] as number), 0))] });
 
   // slabs and roofs
-  const sl = [...of('slab'), ...of('roof')].sort(byStorey).map(e => { const pb = e.type === 'roof' && isPitched(e.geometry) ? roofPlanBox(e.geometry) : null, a = pb ? (pb[2] - pb[0]) * (pb[3] - pb[1]) : netArea(e.geometry), t = (e.geometry.z1 - e.geometry.z0); return [sName(e), e.type === 'roof' ? 'Roof' : 'Slab', (e.type === 'roof' && isPitched(e.geometry) ? roofLabel(e.geometry) : e.geometry.poly ? 'Polygon' : 'Rectangle') + (holesOf(e.geometry).length ? ` + ${holesOf(e.geometry).length} opening(s)` : ''), r(a, 1), Math.round(t * 1000), r(a * t)] as Cell[]; });
+  const sl = [...of('slab'), ...of('roof')].sort(byStorey).map(e => { const pb = e.type === 'roof' && isPitched(e.geometry) ? roofPlanBox(e.geometry) : null, a = pb ? (pb[2] - pb[0]) * (pb[3] - pb[1]) : netArea(e.geometry), t = (e.geometry.z1 - e.geometry.z0); return [sName(e), e.type === 'roof' ? 'Roof' : 'Slab', (e.type === 'roof' && isPitched(e.geometry) ? roofLabel(e.geometry) : e.geometry.poly ? 'Polygon' : 'Rectangle') + (openingCount(e.geometry) ? ` + ${openingCount(e.geometry)} opening(s)` : ''), r(a, 1), Math.round(t * 1000), r(a * t)] as Cell[]; });
   out.push({ id: 'slabs', title: 'Slabs and roofs', head: ['Storey', 'Kind', 'Shape', 'Area m²', 'Thickness mm', 'Volume m³'], rows: sl, foot: ['Total', '', '', sum(sl, 3), '', r(sl.reduce((a, x) => a + (x[5] as number), 0))] });
 
   // rooms
