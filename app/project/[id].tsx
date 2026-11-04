@@ -1,4 +1,5 @@
 import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanBox, RoofForm } from '../../lib/roof';
+import { planDxf } from '../../lib/dxf';
 import { centreOf, transformGeometry, Xf } from '../../lib/transform';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, useWindowDimensions, Platform } from 'react-native';
@@ -611,6 +612,10 @@ export default function Plan() {
     try { const { data: pr } = await supabase.from('projects').select('name').eq('id', id).single(); const nm = pr?.name ?? 'Unibuild'; await saveFile(`${nm.replace(/[^A-Za-z0-9_-]+/g, '_')}.ifc`, toIfc(nm, els, lib, stories)); setErr('IFC exported'); }
     catch (e: any) { setErr('IFC export failed: ' + (e?.message ?? e)); }
   };
+  const exportDxf = async () => {
+    try { const { data: pr } = await supabase.from('projects').select('name').eq('id', id).single(); const nm = (pr?.name ?? 'Unibuild').replace(/[^A-Za-z0-9_-]+/g, '_'); await saveFile(`${nm}-${(story?.name ?? 'plan').replace(/[^A-Za-z0-9_-]+/g, '_')}.dxf`, planDxf(els, lib, stories, story?.id ?? '')); setErr(`Plan of ${story?.name ?? 'this storey'} saved as DXF (millimetres, opens in AutoCAD and other CAD programs)`); }
+    catch (e: any) { setErr('DXF export failed: ' + (e?.message ?? e)); }
+  };
   const stepStorey = (d: number) => { const i = stories.findIndex(x => x.id === story?.id), n = stories[i + d]; if (n) { setCur(n.id); setStart(null); setSelId(null); } };
   // fit the drawing in the window
   const fit = () => {
@@ -662,7 +667,7 @@ export default function Plan() {
   const mi = (label: string, onPress?: () => void, extra: Partial<{ checked: boolean; disabled: boolean }> = {}) => ({ label, onPress, ...extra });
   const SEP = { label: '', sep: true };
   const menus: Menu[] = [
-    { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc)] },
+    { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc), mi('Export DXF (this storey)', exportDxf)] },
     { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Rotate right 90° (E)', () => doTurn({ kind: 'rot', quarter: 1 }), { disabled: !selEls.length }), mi('Rotate left 90° (Q)', () => doTurn({ kind: 'rot', quarter: -1 }), { disabled: !selEls.length }), mi('Mirror left-right (H)', () => doTurn({ kind: 'mirror', axis: 'x' }), { disabled: !selEls.length }), mi('Mirror top-bottom (F)', () => doTurn({ kind: 'mirror', axis: 'y' }), { disabled: !selEls.length }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
     { key: 'design', label: 'Design', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true))] },

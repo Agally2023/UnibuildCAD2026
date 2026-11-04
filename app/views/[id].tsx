@@ -4,6 +4,7 @@ import Svg, { Rect, Line, Polygon, Text as SText } from 'react-native-svg';
 import { useLocalSearchParams } from 'expo-router';
 import { useModel } from '../../lib/useModel';
 import { buildView, modelExtent, VCOL, viewSvg, Side, ViewSpec } from '../../lib/views';
+import { viewDxf } from '../../lib/dxf';
 import { saveFile } from '../../components/saveFile';
 
 export default function Views() {
@@ -25,6 +26,7 @@ export default function Views() {
   const X = (u: number) => (u - v.u0) * sc + 56, Y = (z: number) => (v.zmax - z) * sc + 10;
   const Chip = ({ on, label, go }: { on: boolean; label: string; go: () => void }) => <Pressable onPress={go} style={[s.chip, on && s.on]}><Text style={[s.ct, on && { color: '#fff' }]}>{label}</Text></Pressable>;
   const save = async () => { try { await saveFile(`${v.title.replace(/[^A-Za-z0-9]+/g, '_')}.svg`, viewSvg(v).svg); setMsg('Saved as SVG'); } catch (e: any) { setMsg('Could not save: ' + (e?.message ?? e)); } };
+  const saveDxf = async () => { try { await saveFile(`${v.title.replace(/[^A-Za-z0-9]+/g, '_')}.dxf`, viewDxf(v)); setMsg('Saved as DXF (millimetres)'); } catch (e: any) { setMsg('Could not save: ' + (e?.message ?? e)); } };
   return (
     <ScrollView contentContainerStyle={s.wrap}>
       <Text style={s.h1}>Elevations and sections</Text>
@@ -52,7 +54,7 @@ export default function Views() {
         {v.shapes.map((p, i) => p.poly ? <Polygon key={i} points={p.poly.map(q => `${X(q[0])},${Y(q[1])}`).join(' ')} fill={p.cut ? '#2b3a33' : VCOL.roof} stroke="#0a2e1f" strokeWidth={p.cut ? 1.5 : 0.6} /> : <Rect key={i} x={X(p.u0)} y={Y(p.z1)} width={Math.max((p.u1 - p.u0) * sc, 1)} height={Math.max((p.z1 - p.z0) * sc, 1)} fill={p.open ? VCOL[p.type] : p.cut ? '#2b3a33' : VCOL[p.type] ?? '#ccc'} stroke="#0a2e1f" strokeWidth={p.cut ? 1.5 : 0.6} />)}
       </Svg></ScrollView>
       <Text style={s.k}>{v.note} Levels are the storey elevations.</Text>
-      <Pressable onPress={save}><Text style={s.link}>Download SVG</Text></Pressable>
+      <View style={s.row}><Pressable onPress={save}><Text style={s.link}>Download SVG</Text></Pressable><Pressable onPress={saveDxf}><Text style={s.link}>Download DXF</Text></Pressable></View>
       {!!msg && <Text style={s.msg}>{msg}</Text>}
     </ScrollView>
   );

@@ -28,10 +28,11 @@ One codebase for Android, iOS, Windows, macOS and web (Expo, React Native, TypeS
 - **Calculation report:** Markdown with every input, assumption, intermediate value and clause (`lib/report.ts`).
 - **MEP routing and sizing (`lib/mep.ts`):** Plant and Outlet tools (outlets carry a kW load); the MEP screen routes ducts and, optionally, chilled-water pipes on a 0.5 m grid (columns avoided, wall crossings minimised, turns penalised, outlets join the existing tree), sizes every segment from accumulated flow, lowers the network under beams using the clash engine, and reports clear height, penetrations and remaining clashes. Results are written as editable duct and pipe elements.
 - **MEP fittings and pressure drop (`lib/mepfit.ts`):** elbows, tees, reducers and vertical offsets are found where segments meet; Darcy-Weisbach friction (Swamee-Jain) plus fitting losses are summed along the path from the plant to the most remote outlet, giving fan static pressure (Pa) and pump pressure (kPa) with a 10% allowance.
+- **DXF export (`lib/dxf.ts`):** the plan of a storey, or an elevation or section, as AutoCAD R12 DXF in millimetres with named layers (A-WALL, S-COLS, ...); validated by reading it back with ezdxf. DWG is closed, so open the DXF in a CAD program and save as DWG.
 - **IFC:** export (multi-storey IFC4 with openings and property sets) and import (IFC2x3/IFC4; extruded solids read exactly, meshes and B-reps fitted with an oriented bounding box; all storeys with elevations, units converted).
 
 ## Not built yet
-Fire dampers for MEP, fuller 3D lateral analysis (walls, cores, P-delta), ductile seismic detailing, raft footings, deflection of slabs by calculation (the span/depth method is used), DWG output, background-thread parsing and web-ifc for very large IFC files, resizing of columns on the plan, and testing against real ArchiCAD, Revit and Tekla exports.
+Fire dampers for MEP, fuller 3D lateral analysis (walls, cores, P-delta), ductile seismic detailing, raft footings, deflection of slabs by calculation (the span/depth method is used), direct DWG output (DXF is exported), background-thread parsing and web-ifc for very large IFC files, resizing of columns on the plan, and testing against real ArchiCAD, Revit and Tekla exports.
 
 All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.
 

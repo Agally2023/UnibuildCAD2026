@@ -12,6 +12,7 @@ import { toIfc } from '../lib/ifc';
 import { buildSchedules, schedulesCsv } from '../lib/schedules';
 import { buildView, cutIntervals } from '../lib/views';
 import { drag, IDENTITY, qAxis, qMul, qRotate, turn, VIEWS } from '../lib/orbit';
+import { planDxf, viewDxf } from '../lib/dxf';
 import { overhangOf, roofPlanBox } from '../lib/roof';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { holesOf, netArea } from '../lib/model';
@@ -607,6 +608,34 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('two faces give two B-rep solids', (ifc.match(/IFCFACETEDBREP/g) ?? []).length === 2);
   const back = parseIfc(ifc).extractAll().stories[0].result.elements.find(x => x.kind === 'roof' || x.kind === 'slab');
   ok('the roof re-imports as a roof or slab with roughly the right plan size', !!back && Math.abs(back.geometry.rect[2] - back.geometry.rect[0] - 11) < 0.3, JSON.stringify(back?.geometry));
+}
+
+// ===== DXF export =====
+{
+  const st = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const els: any[] = [
+    { id: 'w1', type: 'wall', geometry: { start: [0, 0], end: [10, 0], thickness: 0.2, height: 3 }, story_id: 's0' },
+    { id: 'd1', type: 'door', geometry: { wall_id: 'w1', offset_m: 3, width_m: 1 }, story_id: 's0' },
+    { id: 'n1', type: 'window', geometry: { wall_id: 'w1', offset_m: 7, width_m: 2 }, story_id: 's0' },
+    { id: 'c1', type: 'column', geometry: { at: [0, 5], b: 0.3, h: 0.3, height: 3 }, story_id: 's0' },
+    { id: 'z1', type: 'zone', geometry: { poly: [[0, 0], [10, 0], [10, 8], [0, 8]], rect: [0, 0, 10, 8], name: 'Hall' }, story_id: 's0' },
+    { id: 'g1', type: 'grid', geometry: { start: [0, -2], end: [0, 10], label: 'A' }, story_id: null },
+    { id: 'm1', type: 'dimension', geometry: { start: [0, 0], end: [10, 0], offset: 1 }, story_id: 's0' },
+  ];
+  const dxf = planDxf(els, [], st as any, 's0'), pairs = dxf.trim().split('\n'), vals = (code: string) => pairs.map((v, i) => (i % 2 === 0 && v === code ? pairs[i + 1] : null)).filter(x => x !== null) as string[];
+  ok('the file is a complete DXF: sections, entities and EOF', dxf.startsWith('0\nSECTION') && /ENTITIES/.test(dxf) && dxf.trim().endsWith('EOF') && pairs.length % 2 === 0);
+  ok('layers for walls, doors, windows, columns, rooms, grid and dimensions are declared', ['A-WALL', 'A-DOOR', 'A-WIND', 'S-COLS', 'A-ROOM', 'S-GRID', 'A-DIMS'].every(n => dxf.includes(`LAYER\n2\n${n}\n`)));
+  const xs = vals('10').map(Number), ys = vals('20').map(Number);
+  ok('a 10 m wall is 10 000 mm long and the units are millimetres', Math.max(...xs) >= 10000 && xs.includes(10000));
+  ok('the wall is 200 mm thick and y is flipped to CAD (y up)', ys.includes(100) && ys.includes(-100) && ys.includes(-8000), JSON.stringify([...new Set(ys)].slice(0, 12)));
+  ok('the door has a swing arc and the dimension says 10000', dxf.includes('\n0\nARC\n') && vals('1').includes('10000'));
+  ok('the room is labelled with its area', vals('1').some(v => v.startsWith('Hall') && v.includes('80.0')));
+  ok('another storey still gets the grid but not this storey walls', !planDxf(els, [], [...st, { id: 's1', name: 'First', elevation_m: 3, height_m: 3 }] as any, 's1').includes('A-WALL') && planDxf(els, [], [...st, { id: 's1', name: 'First', elevation_m: 3, height_m: 3 }] as any, 's1').includes('S-GRID'));
+  const v = viewDxf(buildView(els, [], st as any, { kind: 'elevation', side: 'S' }));
+  ok('an elevation exports as outlines with level lines', v.includes('POLYLINE') && v.includes('V-LEVEL') && v.includes('Ground 0.00'));
+  const vy = viewDxf(buildView(els, [], st as any, { kind: 'elevation', side: 'S' })).split('\n');
+  const zs = vy.map((x, i) => (i % 2 === 0 && x === '20' ? Number(vy[i + 1]) : null)).filter(x => x !== null) as number[];
+  ok('in the elevation the heights come out positive (z up) in mm', Math.max(...zs) >= 3000 && Math.min(...zs) >= -1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
