@@ -158,7 +158,7 @@ export const manual: Section[] = [
       { t: 'ul', x: [
         'A storey with columns and slabs but **no beams** is treated as a **flat slab**: bending by the equivalent-frame method (column and middle strips), and punching shear at every column, with the thickness that needs no links.',
         'A storey **with beams** is designed as slab panels (interior, edge and corner bays), with shear, span/depth and cracking checks.',
-        'Footings: pads, which become **combined or strip footings** where pads would overlap. Two-dimensional clusters are flagged for a raft, which is not designed yet.',
+        'Footings: pads, which become **combined or strip footings** where pads would overlap. Two-dimensional clusters are flagged for a raft: tick **Use one raft** to replace the pads and strips with a single raft under all the lowest-storey columns (`lib/raft.ts`). It is centred on the load resultant so the soil pressure is uniform, cut into strips along each column row in both directions (conventional rigid method, each direction carrying the full load), and thickened in 50 mm steps until strip shear and punching (interior, edge and corner columns) pass; the projection is chosen for the least concrete within the bearing capacity. You get plan size, thickness, bars on each face in each direction and the strip moments. It is a preliminary size: confirm with a flexible (spring) analysis and a settlement check. Lateral actions are not in the raft check yet.',
         'With **ground beams** switched on, they carry the base moments and the tie force and the footings take axial load only.',
         'You can bring the wind and earthquake column-base actions into the footing checks (bearing with eccentricity, uplift, sliding).',
       ] },
@@ -246,7 +246,7 @@ export const manual: Section[] = [
         'Everything is in metres and millimetres.',
         'Curved walls are chains of straight walls. Roofs are rectangles when pitched, and stairs are straight flights; there are no railings, curtain walls, or free-form shapes. Slab openings are rectangles or circles (in IFC a circle is a 48-sided outline), and rotation is in quarter turns only. Sections do not show slab openings.',
         'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
-        'There are no raft footings, and slab deflection uses the span/depth method rather than a calculation for slabs.',
+        'The raft ignores lateral base actions and uses the rigid method (no soil springs, no settlement), and slab deflection uses the span/depth method rather than a calculation for slabs.',
         'Elevations and sections are simple box drawings with no material hatching. PDF comes from the browser print window (web only); there is no direct DWG output (use DXF) and the grid layout of several views is automatic (no free placement or resizing of individual views).',
         'Not yet tested against real Revit, ArchiCAD or Tekla exports.',
       ] },

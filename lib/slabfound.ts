@@ -1,4 +1,5 @@
 // Eurocode 2 slab and pad-footing design: simplified, preliminary. Units: mm, N, MPa unless noted.
+import { designRaft } from './raft';
 import type { El, Lib } from './engineering';
 import { designAll, Mat, Status } from './design';
 import { Group, planBox } from './model';
@@ -99,7 +100,7 @@ export function designFooting(id: string, NEd: number, c1: number, c2: number, q
   return { steps, id, NEd, B, h: pick.h, pULS, pSLS, bars: `${bars.txt} each way`, AsReq: pick.As, status, notes, concreteM3: B * B * pick.h, steelKg: (2 * (area(bars.phi) * 1000 / bars.s) * B * Bmm * 7850) / 1e9 };
 }
 
-export function designFoundations(groups: Group[], lib: Lib[], m: Mat, o: { imposed: number; defaultTrib: number; qAllow: number; lateral?: LateralResult; groundBeams?: boolean }) {
+export function designFoundations(groups: Group[], lib: Lib[], m: Mat, o: { imposed: number; defaultTrib: number; qAllow: number; lateral?: LateralResult; groundBeams?: boolean; raft?: boolean }) {
   const base = designAll(groups, lib, m, { imposed: o.imposed, defaultTrib: o.defaultTrib });
   const gs = [...groups].sort((a, b) => a.story.elevation_m - b.story.elevation_m), low = gs[0];
   const cols = low.els.filter(e => e.type === 'column'), at = Object.fromEntries(cols.map(c => [c.id, c.geometry.at as number[]]));
@@ -116,9 +117,11 @@ export function designFoundations(groups: Group[], lib: Lib[], m: Mat, o: { impo
     cols.sort((a, b) => a.s - b.s);
     strips.push(designStrip(`S${++si}`, cl.axis, cols, o.qAllow, m, o.lateral ? stripCombos(m.code, cl.axis, cols.map(k => k.id), actP) : [])); cl.ids.forEach(cid => used.add(cid));
   }
-  const footings = pads.filter(f => !used.has(f.id));
+  const raft = o.raft && padIn.length >= 2 ? designRaft(padIn.map(p => ({ id: p.id, x: p.x, y: p.y, N: p.N, c1: p.c1, c2: p.c2 })), o.qAllow, m) : null;
+  const footings = raft ? [] : pads.filter(f => !used.has(f.id));
+  if (raft) strips.length = 0;
   const gbCols = base.cols.filter(c => at[c.id]).map(c => ({ id: c.id, x: at[c.id][0], y: at[c.id][1], b: c.b, h: c.h, G: c.Gk ?? 0, Q: c.Qk ?? 0, NEd: c.NEd, effs: act0[c.id]?.effs ?? [] }));
-  const si0 = o.lateral?.seismicInput, groundBeams: GroundBeam[] = o.groundBeams ? designGroundBeams(gbCols, low.els.filter(e => e.type === 'wall').map(w => ({ start: w.geometry.start, end: w.geometry.end, height: w.geometry.height, thickness: w.geometry.thickness ?? 0.2 })), m, { seismic: si0 ? { agG: si0.agG, ground: si0.ground, psi2: si0.psi2 } : undefined }) : [];
+  const si0 = o.lateral?.seismicInput, groundBeams: GroundBeam[] = o.groundBeams && !raft ? designGroundBeams(gbCols, low.els.filter(e => e.type === 'wall').map(w => ({ start: w.geometry.start, end: w.geometry.end, height: w.geometry.height, thickness: w.geometry.thickness ?? 0.2 })), m, { seismic: si0 ? { agG: si0.agG, ground: si0.ground, psi2: si0.psi2 } : undefined }) : [];
   const uniq = (v: number[]) => [...new Set(v.map(x => Math.round(x * 2) / 2))].sort((a, b) => a - b);
   const gaps = (v: number[]) => v.slice(1).map((x, i) => x - v[i]);
   const gx = gaps(uniq(cols.map(c => c.geometry.at[0]))), gy = gaps(uniq(cols.map(c => c.geometry.at[1])));
@@ -128,5 +131,5 @@ export function designFoundations(groups: Group[], lib: Lib[], m: Mat, o: { impo
   const slab = designSlab(lx, ly, o.imposed, m, planBox(low.els).area, hFixed);
   const slabs = gs.map(g => designSlabPanels(g, lib, m, { imposed: o.imposed }));
   const panelSteelT = slabs.reduce((a, s) => a + s.steelKg, 0) / 1000;
-  return { slab, slabs, footings, strips, groundBeams, base, foundConcrete: footings.reduce((a, f) => a + f.concreteM3, 0) + strips.reduce((a, s) => a + s.concreteM3, 0) + groundBeams.reduce((a, g) => a + g.concreteM3, 0), foundSteelT: (footings.reduce((a, f) => a + f.steelKg, 0) + strips.reduce((a, s) => a + s.steelKg, 0) + groundBeams.reduce((a, g) => a + g.steelKg, 0)) / 1000, slabSteelT: panelSteelT > 0 ? panelSteelT : (slab.steelKg * gs.length) / 1000 };
+  return { slab, slabs, footings, strips, groundBeams, raft, base, foundConcrete: (raft?.concreteM3 ?? 0) + footings.reduce((a, f) => a + f.concreteM3, 0) + strips.reduce((a, s) => a + s.concreteM3, 0) + groundBeams.reduce((a, g) => a + g.concreteM3, 0), foundSteelT: ((raft?.steelKg ?? 0) + footings.reduce((a, f) => a + f.steelKg, 0) + strips.reduce((a, s) => a + s.steelKg, 0) + groundBeams.reduce((a, g) => a + g.steelKg, 0)) / 1000, slabSteelT: panelSteelT > 0 ? panelSteelT : (slab.steelKg * gs.length) / 1000 };
 }

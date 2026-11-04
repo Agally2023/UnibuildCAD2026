@@ -34,12 +34,13 @@ export default function SlabFoundations() {
   const [ag, setAg] = useState(lat.ag);
   const [base, setBase] = useState<'fixed' | 'pinned'>(lat.base);
   const [gbOn, setGbOn] = useState(false);
+  const [raftOn, setRaftOn] = useState(false);
   const lateral = useMemo(() => {
     if (!latOn || !els.some(e => e.type === 'column')) return undefined;
     const grav = designAll(groups, lib, mat, { imposed: IMPOSED[use][1], defaultTrib: trib });
     return lateralAnalysis(groups, lib, mat, grav, { imposed: IMPOSED[use][1], wind: lat.wind ? { vb, terrain: lat.terrain as 0 | 1 | 2 | 3 | 4 } : undefined, seismic: lat.seis ? { agG: ag, ground: (['A', 'B', 'C', 'D', 'E'] as const)[lat.ground], q: lat.q, psi2: 0.3 } : undefined, base });
   }, [groups, lib, fck, code, use, trib, latOn, vb, ag, base]);
-  const r = useMemo(() => designFoundations(groups, lib, mat, { imposed: IMPOSED[use][1], defaultTrib: trib, qAllow: q , lateral, groundBeams: gbOn }), [gbOn, groups, lib, fck, use, trib, q, code, lateral]);
+  const r = useMemo(() => designFoundations(groups, lib, mat, { imposed: IMPOSED[use][1], defaultTrib: trib, qAllow: q , lateral, groundBeams: gbOn, raft: raftOn }), [gbOn, raftOn, groups, lib, fck, use, trib, q, code, lateral]);
   const sl = r.slab;
   // flat-slab bending by equivalent frame, one result per flat storey
   const eq = useMemo(() => {
@@ -83,6 +84,7 @@ export default function SlabFoundations() {
         <Pressable onPress={() => { const b = base === 'fixed' ? 'pinned' : 'fixed'; setBase(b); setLat({ base: b }); }}><Text style={s.l}>Column bases: {base === 'fixed' ? 'fixed (ground beams or raft restrain rotation)' : 'pinned (isolated pads, no base moment)'} · tap to change</Text></Pressable>
         <Text style={s.k}>Terrain, ground type and behaviour factor come from the Wind & quake screen. Bearing pressure under lateral combinations may be 25% higher.</Text>
       </>}
+      <Pressable testID="raft-toggle" onPress={() => setRaftOn(v => !v)}><Text style={s.l}>{raftOn ? '✓ ' : '○ '}Use one raft (mat) foundation under all the columns instead of pads and strips</Text></Pressable>
       <Pressable onPress={() => setGbOn(v => !v)}><Text style={s.l}>{gbOn ? '✓ ' : '○ '}Ground beams between the footings (tie the pads and restrain the column bases)</Text></Pressable>
       <Text style={s.warn}>Set the allowable bearing pressure from your site soil investigation. 150 kPa is only a placeholder.</Text>
 
@@ -111,6 +113,28 @@ export default function SlabFoundations() {
           {st.mode === 'flat' && eq[st.story]?.notes.map(n => <Text key={n} style={s.k}>{n}</Text>)}
         </View>
       ))}
+      {raftOn && !r.raft && <Text style={s.k}>A raft needs at least two columns on the lowest storey.</Text>}
+      {r.raft && (() => {
+        const rf = r.raft, W = 300, sc = W / Math.max(rf.L, rf.B), H = rf.B * sc + 20, px = (x: number) => 10 + (x - rf.x0) * sc, py = (y: number) => 10 + (y - rf.y0) * sc;
+        return (
+          <View style={{ gap: 6 }}>
+            <Text style={s.t}>Raft foundation</Text>
+            <Card title={`Raft ${rf.L.toFixed(1)} × ${rf.B.toFixed(1)} × ${Math.round(rf.h * 1000)} mm`} status={rf.status} notes={rf.notes}
+              rows={[['Columns / total load (ULS)', `${r.base.cols.length} / ${Math.round(r.base.cols.reduce((a, c) => a + c.NEd, 0))} kN`], ['Projection beyond the outer columns', `${rf.overhang.toFixed(2)} m`], ['ULS / service pressure', `${Math.round(rf.pULS)} / ${Math.round(rf.pSLS)} kPa (allowable ${rf.qAllow})`], ['Punching / strip shear ratio', `${rf.punchRatio.toFixed(2)} / ${rf.shearRatio.toFixed(2)}`], ['Bars, x direction (bottom / top)', `${rf.bars.xBottom} / ${rf.bars.xTop}`], ['Bars, y direction (bottom / top)', `${rf.bars.yBottom} / ${rf.bars.yTop}`], ['Concrete / steel', `${rf.concreteM3.toFixed(1)} m³ / ${(rf.steelKg / 1000).toFixed(2)} t`]]} />
+            <Svg width={W + 20} height={H}>
+              <SRect x={10} y={10} width={rf.L * sc} height={rf.B * sc} fill="#eaf3ee" stroke="#146c43" strokeWidth={2} />
+              {r.base.cols.map(c => { const g = els.find(e => e.id === c.id)?.geometry.at as number[] | undefined; return g ? <SRect key={c.id} x={px(g[0]) - 4} y={py(g[1]) - 4} width={8} height={8} fill="#0a2e1f" /> : null; })}
+              <SLine x1={px(rf.resultant[0]) - 6} y1={py(rf.resultant[1])} x2={px(rf.resultant[0]) + 6} y2={py(rf.resultant[1])} stroke="#c62828" strokeWidth={1.5} />
+              <SLine x1={px(rf.resultant[0])} y1={py(rf.resultant[1]) - 6} x2={px(rf.resultant[0])} y2={py(rf.resultant[1]) + 6} stroke="#c62828" strokeWidth={1.5} />
+            </Svg>
+            <Text style={s.k}>Red cross: resultant of the column loads (the raft is centred on it, so the soil pressure is uniform).</Text>
+            {rf.strips.map(st => (
+              <Text key={`${st.dir}${st.index}`} style={s.k}>{st.dir.toUpperCase()} strip {st.index + 1} ({st.width.toFixed(1)} m wide, {st.cols.length} columns): sagging {Math.round(st.Msag)} kNm, hogging {Math.round(st.Mhog)} kNm, shear {Math.round(st.Vmax)} kN</Text>
+            ))}
+            {rf.steps.map(x => <Text key={x} style={s.k}>• {x}</Text>)}
+          </View>
+        );
+      })()}
       {r.strips.length > 0 && <Text style={s.t}>Combined and strip footings ({r.strips.length})</Text>}
       {r.strips.map(st => {
         const sbar = st.columns.reduce((a, k) => a + k.N * k.s, 0) / st.columns.reduce((a, k) => a + k.N, 0), s0 = sbar - st.L / 2, mx = Math.max(...st.diagram.map(p => Math.abs(p.M)), 1), W = 300, sx = W / st.L;

@@ -23,6 +23,7 @@ import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
 import { planMep, sizeDuct, sizePipe } from '../lib/mep';
 import { designStrip, groupPads } from '../lib/stripfoot';
+import { designRaft, rows, stripStatics } from '../lib/raft';
 import { designPadLateral, padPressure } from '../lib/footlateral';
 import { designGroundBeams, groundBeamLayout } from '../lib/groundbeam';
 import { foundationCombos } from '../lib/combos';
@@ -675,6 +676,32 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('rotating the slab turns its openings with it (round centre and rectangle)', JSON.stringify(turned.rounds[0].c) === '[5,6]' && turned.holes.length === 1 && JSON.stringify(turned.holes[0]) === '[4,1,7,3]', JSON.stringify([turned.rounds, turned.holes]));
   const sheet = makeDrawing(els, [], st as any, { kind: 'plan', storyId: 's0' }, 100);
   ok('sheet plan draws the round opening as a circle', sheet.inner.includes('<circle'));
+}
+
+// ---- raft footing (rigid method) ----
+{
+  const grid = (nx: number, ny: number, sp: number, N: number) => { const c: any[] = []; for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) c.push({ id: `c${i}${j}`, x: i * sp, y: j * sp, N, c1: 400, c2: 400 }); return c; };
+  const ss = stripStatics(8, [1, 4, 7], [600, 900, 300]);
+  const eL = ss.at(8, 'l');
+  ok('raft strip statics close: moment and shear are zero at the far end', Math.abs(eL.M) < 1e-6 && Math.abs(eL.V) < 1e-6, `M ${eL.M} V ${eL.V}`);
+  const sym = stripStatics(6, [1, 5], [500, 500]);
+  ok('symmetric strip has uniform reaction (w1 = 0) and the textbook midspan moment', Math.abs(sym.w1) < 1e-9 && Math.abs(sym.at(3, 'l').M - (1000 / 6 * 9 / 2 - 500 * 2)) < 1e-6);
+  const rw = rows([0, 0.2, 5, 5.3, 10]);
+  ok('rows clusters coordinates within tolerance', rw.centres.length === 3 && rw.index[0] === rw.index[1] && rw.index[2] === rw.index[3] && rw.index[4] === 2);
+  const r3 = designRaft(grid(3, 3, 6, 1500), 150, mat);
+  ok('3 x 3 grid raft is centred on the grid with a projection', Math.abs(r3.x0 + r3.L / 2 - 6) < 1e-9 && Math.abs(r3.y0 + r3.B / 2 - 6) < 1e-9 && r3.L >= 12);
+  ok('raft thickness is plausible (0.4 to 1.5 m) and passes', r3.h >= 0.4 && r3.h <= 1.5 && r3.punchRatio <= 1 && r3.shearRatio <= 1 && r3.status !== 'bad', `h ${r3.h} punch ${r3.punchRatio}`);
+  ok('raft bearing pressure within allowable', r3.pSLS <= 150 + 1e-6, `${r3.pSLS}`);
+  ok('3 x 3 grid gives 3 strips each way', r3.strips.filter(s => s.dir === 'x').length === 3 && r3.strips.filter(s => s.dir === 'y').length === 3);
+  const ecc = grid(3, 3, 6, 1000); ecc[8].N = 3000;
+  const re = designRaft(ecc, 150, mat), NT = ecc.reduce((a, c) => a + c.N, 0), xr = ecc.reduce((a, c) => a + c.N * c.x, 0) / NT;
+  ok('eccentric loads: raft is centred on the load resultant (uniform pressure)', Math.abs(re.x0 + re.L / 2 - xr) < 1e-9 && re.resultant[0] === xr);
+  const soft = designRaft(grid(3, 3, 6, 1500), 60, mat);
+  ok('weaker soil needs a bigger raft or is flagged', soft.L * soft.B > r3.L * r3.B || soft.status !== 'ok');
+  ok('BS 8110 raft runs and passes', designRaft(grid(3, 3, 6, 1500), 150, { fck: 25, fyk: 500, code: 'BS8110' } as any).status !== 'bad');
+  const tot = r3.strips.filter(s => s.dir === 'x').reduce((a, s) => a + s.width, 0);
+  ok('x strips together span the raft width', Math.abs(tot - r3.B) < 1e-9);
+  ok('steel is reported for both faces and both directions', !!r3.bars.xBottom && !!r3.bars.xTop && !!r3.bars.yBottom && !!r3.bars.yTop && r3.steelKg > 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
