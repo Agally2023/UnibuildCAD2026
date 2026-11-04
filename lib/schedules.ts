@@ -1,6 +1,7 @@
 // Schedules: tables of what is in the model, built from the elements. Pure functions so they can be tested.
 // Units: metres, square metres, cubic metres unless a heading says otherwise.
 import type { El, Lib, Story } from './engineering';
+import { findFireCrossings, fireOf } from './firedamper';
 import { isPitched, roofLabel, roofPlanBox } from './roof';
 import { beamSec, footprint, holesOf, netArea, polyArea, stairSteps, wallT } from './model';
 
@@ -83,6 +84,10 @@ export function buildSchedules(els: El[], lib: Lib[], stories: Story[]): Table[]
   const kw = of('fixture').reduce((a, e) => a + (e.geometry.kw ?? 0), 0);
   out.push({ id: 'services', title: 'Services', note: `${of('equipment').length} plant item(s) and ${of('fixture').length} outlet(s), total cooling load ${r(kw, 1)} kW.`, head: ['Kind', 'Size', 'Segments', 'Length m'], rows: sv, foot: ['Total', '', sv.reduce((a, x) => a + (x[2] as number), 0), sum(sv, 3)] });
 
+  // fire dampers and fire-stopped sleeves where services pass through fire-rated walls
+  const fx = findFireCrossings(els, lib, stories).sort((a, b) => (list.findIndex(s => s.id === a.storyId) - list.findIndex(s => s.id === b.storyId)) || a.at[1] - b.at[1] || a.at[0] - b.at[0]);
+  const fireWalls = of('wall').filter(w => fireOf(w.geometry) > 0).length;
+  out.push({ id: 'fire', title: 'Fire dampers and sleeves', note: `${fireWalls} wall(s) have a fire rating. A duct crossing one needs a fire damper rated for the wall; a pipe needs a fire-stopped sleeve. Slabs are not checked.`, head: ['Mark', 'Storey', 'Item', 'Size', 'Rating min', 'Wall mm', 'At x, y m'], rows: fx.map((c, i) => [`${c.kind === 'damper' ? 'FD' : 'FS'}${i + 1}`, list.find(s => s.id === c.storyId)?.name ?? '-', c.kind === 'damper' ? 'Fire damper' : 'Fire-stopped sleeve', c.size, c.rating, Math.round(c.wallT * 1000), `${c.at[0].toFixed(1)}, ${c.at[1].toFixed(1)}`]), foot: ['Total', '', `${fx.filter(c => c.kind === 'damper').length} dampers, ${fx.filter(c => c.kind === 'sleeve').length} sleeves`, '', '', '', ''] });
   // concrete summary
   const cv = (rows: Cell[][], i: number) => rows.reduce((a, x) => a + (x[i] as number), 0);
   const parts: Cell[][] = [['Columns', r(cv(colRows, 4))], ['Beams', r(cv(bRows, 4))], ['Slabs and roofs', r(cv(sl, 5))]];

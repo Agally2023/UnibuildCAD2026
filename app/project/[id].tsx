@@ -1,4 +1,5 @@
 import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanBox, RoofForm } from '../../lib/roof';
+import { findFireCrossings, fireOf, RATINGS } from '../../lib/firedamper';
 import { planDxf } from '../../lib/dxf';
 import { centreOf, transformGeometry, Xf } from '../../lib/transform';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -135,6 +136,8 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
       })}
       {here.filter(e => (e.type === 'slab' || e.type === 'roof') && holesOf(e.geometry).length).flatMap(e => holesOf(e.geometry).map((h, i) => <G key={e.id + 'h' + i}><Rect x={Math.min(h[0], h[2]) * PX} y={Math.min(h[1], h[3]) * PX} width={Math.abs(h[2] - h[0]) * PX} height={Math.abs(h[3] - h[1]) * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={h[0] * PX} y1={h[1] * PX} x2={h[2] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={h[2] * PX} y1={h[1] * PX} x2={h[0] * PX} y2={h[3] * PX} stroke={c.dim} strokeWidth={1} /></G>))}
       {here.filter(e => e.type === 'roof' && isPitched(e.geometry)).flatMap(e => roofLines(e.geometry).map(([a, b], i) => <Line key={e.id + 'r' + i} x1={a[0] * PX} y1={a[1] * PX} x2={b[0] * PX} y2={b[1] * PX} stroke={c.dim} strokeWidth={1.5} strokeDasharray="10 5" />))}
+      {findFireCrossings(here, Object.values(libById), []).map((f, i) => <G key={'fd' + i}><Circle cx={f.at[0] * PX} cy={f.at[1] * PX} r={9} fill="none" stroke="#e53935" strokeWidth={2.5} /><SvgText x={f.at[0] * PX + 12} y={f.at[1] * PX - 8} fontSize={11} fill="#e53935" fontWeight="bold">{f.kind === 'damper' ? 'FD' : 'FS'} {f.rating}</SvgText></G>)}
+      {here.filter(e => e.type === 'wall' && fireOf(e.geometry) > 0).map(e => <Line key={e.id + 'fw'} x1={e.geometry.start[0] * PX} y1={e.geometry.start[1] * PX} x2={e.geometry.end[0] * PX} y2={e.geometry.end[1] * PX} stroke="#e53935" strokeWidth={3} strokeOpacity={0.55} strokeDasharray="2 5" />)}
       {here.filter(e => e.type === 'dimension').map(e => <Dim key={e.id} a={e.geometry.start} b={e.geometry.end} off={e.geometry.offset ?? 0.6} c={c} />)}
       {here.filter(e => e.type === 'label').map(e => <SvgText key={e.id} x={e.geometry.at[0] * PX} y={e.geometry.at[1] * PX} fontSize={(e.geometry.h ?? 0.25) * PX} fill={c.dim}>{e.geometry.text ?? ''}</SvgText>)}
       {here.filter(e => e.type === 'zone' && e.geometry.poly).map(e => {
@@ -565,8 +568,9 @@ export default function Plan() {
     let info = '';
     const len = g.start && g.end ? Math.hypot(g.end[0] - g.start[0], g.end[1] - g.start[1]) : 0;
     if (e.type === 'wall') {
-      info = `${len.toFixed(2)} m long · ${Math.round(wallT(g) * 1000)} mm thick · ${r2(g.height ?? H)} m high`;
+      info = `${len.toFixed(2)} m long · ${Math.round(wallT(g) * 1000)} mm thick · ${r2(g.height ?? H)} m high${fireOf(g) ? ` · ${fireOf(g)} min fire rating` : ''}`;
       steps.push(['Thickness', `${Math.round(wallT(g) * 1000)} mm`, () => edit(e, { ...g, thickness: Math.max(0.1, r2(wallT(g) - 0.025)) }), () => edit(e, { ...g, thickness: Math.min(0.6, r2(wallT(g) + 0.025)) })]);
+      steps.push(['Fire rating', fireOf(g) ? `${fireOf(g)} min` : 'none', () => edit(e, { ...g, fire: RATINGS[Math.max(0, RATINGS.indexOf(fireOf(g)) - 1)] }), () => edit(e, { ...g, fire: RATINGS[Math.min(RATINGS.length - 1, RATINGS.indexOf(fireOf(g)) + 1)] })]);
       steps.push(['Height', `${r2(g.height ?? H)} m`, () => edit(e, { ...g, height: Math.max(1, r2((g.height ?? H) - 0.1)) }), () => edit(e, { ...g, height: r2((g.height ?? H) + 0.1) })]);
     } else if (e.type === 'beam') {
       const sec = beamSec(g, libById[e.library_item_id ?? '']?.specs), b = Math.round(sec.b * 1000), h = Math.round(sec.d * 1000);

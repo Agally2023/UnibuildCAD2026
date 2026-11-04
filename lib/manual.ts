@@ -195,6 +195,17 @@ export const manual: Section[] = [
     ],
   },
   {
+    id: 'fire', title: 'Fire dampers', blurb: 'Fire-rated walls and where services cross them.',
+    blocks: [
+      { t: 'ul', x: [
+        'Select a wall and set its **Fire rating** in Properties (none, 30, 60, 90 or 120 minutes). Rated walls are drawn with a red dotted line on the plan.',
+        'Wherever a duct or pipe on the same storey crosses a rated wall, the plan shows a red ring: **FD** for a fire damper (ducts) or **FS** for a fire-stopped sleeve (pipes), with the wall rating. A service that runs along a wall, or passes above its top, is not counted.',
+        'The MEP screen lists the dampers and sleeves for the services already in the model, and for a routed result before you add it, so you can see what the routing will need. The Schedules page has a Fire dampers and sleeves table with marks FD1, FS2 and so on, the size, the rating and the wall thickness.',
+      ] },
+      { t: 'note', x: 'Only walls are checked. Services passing through fire-rated floors or slabs, damper actuators, access panels and the damper type are not covered, and a wall must be given its rating by you: the program does not decide which walls need one.' },
+    ],
+  },
+  {
     id: 'clashes', title: 'Clash detection', blurb: 'Finding things that occupy the same space.',
     blocks: [
       { t: 'p', x: 'Each element becomes a footprint with a height range. Two elements clash when both overlap by more than a small tolerance. Clashes are listed per storey, saved, and marked on the plan with red rings. Run it after every round of changes; chained segments of one duct or pipe run are not counted as clashes with each other.' },
