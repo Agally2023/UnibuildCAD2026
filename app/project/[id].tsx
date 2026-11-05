@@ -138,6 +138,7 @@ const Layer = memo(function Layer({ here, libById, wallById, dims, c }: { here: 
       {here.filter(e => (e.type === 'slab' || e.type === 'roof') && roundsOf(e.geometry).length).flatMap(e => roundsOf(e.geometry).map((q, i) => <G key={e.id + 'r' + i}><Circle cx={q.c[0] * PX} cy={q.c[1] * PX} r={q.r * PX} fill={c.bg} stroke={c.dim} strokeWidth={1.5} strokeDasharray="6 4" /><Line x1={(q.c[0] - q.r) * PX} y1={q.c[1] * PX} x2={(q.c[0] + q.r) * PX} y2={q.c[1] * PX} stroke={c.dim} strokeWidth={1} /><Line x1={q.c[0] * PX} y1={(q.c[1] - q.r) * PX} x2={q.c[0] * PX} y2={(q.c[1] + q.r) * PX} stroke={c.dim} strokeWidth={1} /></G>))}
       {here.filter(e => e.type === 'roof' && isPitched(e.geometry)).flatMap(e => roofLines(e.geometry).map(([a, b], i) => <Line key={e.id + 'r' + i} x1={a[0] * PX} y1={a[1] * PX} x2={b[0] * PX} y2={b[1] * PX} stroke={c.dim} strokeWidth={1.5} strokeDasharray="10 5" />))}
       {findFireCrossings(here, Object.values(libById), []).map((f, i) => <G key={'fd' + i}><Circle cx={f.at[0] * PX} cy={f.at[1] * PX} r={9} fill="none" stroke="#e53935" strokeWidth={2.5} /><SvgText x={f.at[0] * PX + 12} y={f.at[1] * PX - 8} fontSize={11} fill="#e53935" fontWeight="bold">{f.kind === 'damper' ? 'FD' : 'FS'} {f.rating}</SvgText></G>)}
+      {here.filter(e => e.type === 'wall' && e.geometry.core).map(e => <Line key={e.id + 'cw'} x1={e.geometry.start[0] * PX} y1={e.geometry.start[1] * PX} x2={e.geometry.end[0] * PX} y2={e.geometry.end[1] * PX} stroke="#1565c0" strokeWidth={5} strokeOpacity={0.35} />)}
       {here.filter(e => e.type === 'wall' && fireOf(e.geometry) > 0).map(e => <Line key={e.id + 'fw'} x1={e.geometry.start[0] * PX} y1={e.geometry.start[1] * PX} x2={e.geometry.end[0] * PX} y2={e.geometry.end[1] * PX} stroke="#e53935" strokeWidth={3} strokeOpacity={0.55} strokeDasharray="2 5" />)}
       {here.filter(e => e.type === 'dimension').map(e => <Dim key={e.id} a={e.geometry.start} b={e.geometry.end} off={e.geometry.offset ?? 0.6} c={c} />)}
       {here.filter(e => e.type === 'label').map(e => <SvgText key={e.id} x={e.geometry.at[0] * PX} y={e.geometry.at[1] * PX} fontSize={(e.geometry.h ?? 0.25) * PX} fill={c.dim}>{e.geometry.text ?? ''}</SvgText>)}
@@ -519,6 +520,8 @@ export default function Plan() {
   };
   const remove = (e: El) => removeMany([e]);
   const edit = async (e: El, geometry: any) => { await run({ add: [], del: [], mod: [[e, { ...e, geometry }]] }); };
+  // mark or clear walls as structural core walls (used by the 3D core and P-delta analysis)
+  const setCore = async (list: El[], on: boolean) => { const w = list.filter(x => x.type === 'wall' && !!x.geometry.core !== on); if (w.length) await run({ add: [], del: [], mod: w.map(x => [x, { ...x, geometry: { ...x.geometry, core: on || undefined } }] as [El, El]) }); };
 
   // move or copy the selection by (dx, dy) metres; doors and windows follow their wall
   const shiftG = (g: any, dx: number, dy: number) => {
@@ -596,6 +599,7 @@ export default function Plan() {
       steps.push(['Thickness', `${Math.round(wallT(g) * 1000)} mm`, () => edit(e, { ...g, thickness: Math.max(0.1, r2(wallT(g) - 0.025)) }), () => edit(e, { ...g, thickness: Math.min(0.6, r2(wallT(g) + 0.025)) })]);
       steps.push(['Fire rating', fireOf(g) ? `${fireOf(g)} min` : 'none', () => edit(e, { ...g, fire: RATINGS[Math.max(0, RATINGS.indexOf(fireOf(g)) - 1)] }), () => edit(e, { ...g, fire: RATINGS[Math.min(RATINGS.length - 1, RATINGS.indexOf(fireOf(g)) + 1)] })]);
       steps.push(['Height', `${r2(g.height ?? H)} m`, () => edit(e, { ...g, height: Math.max(1, r2((g.height ?? H) - 0.1)) }), () => edit(e, { ...g, height: r2((g.height ?? H) + 0.1) })]);
+      actions.push([g.core ? '✓ Structural core wall (tap to clear)' : '○ Mark as structural core wall', () => setCore([e], !g.core)]);
     } else if (e.type === 'beam') {
       const sec = beamSec(g, libById[e.library_item_id ?? '']?.specs), b = Math.round(sec.b * 1000), h = Math.round(sec.d * 1000);
       info = `${len.toFixed(2)} m long · ${b} × ${h} mm`;
@@ -800,6 +804,7 @@ export default function Plan() {
     <View style={s.insp}>
       <View style={s.ir}><Text style={s.it}>{selEls.length} elements selected</Text><Pressable onPress={() => setSelIds([])}><Text style={s.l}>Done</Text></Pressable></View>
       <View style={s.ir}><Pressable onPress={() => startXf('move')}><Text style={s.l}>Move</Text></Pressable><Pressable onPress={() => startXf('copy')}><Text style={s.l}>Copy</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'rot', quarter: 1 })}><Text style={s.l}>Rotate</Text></Pressable><Pressable onPress={() => doTurn({ kind: 'mirror', axis: 'x' })}><Text style={s.l}>Mirror</Text></Pressable></View>
+      {selEls.some(x => x.type === 'wall') && <View style={s.ir}><Pressable onPress={() => setCore(selEls, true)}><Text style={s.l}>Mark walls as core</Text></Pressable><Pressable onPress={() => setCore(selEls, false)}><Text style={s.l}>Clear core</Text></Pressable></View>}
       <Pressable onPress={() => removeMany(selEls)}><Text style={s.del}>Delete {selEls.length} elements</Text></Pressable>
     </View>
   ) : null;

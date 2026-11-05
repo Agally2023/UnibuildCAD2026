@@ -33,8 +33,10 @@ One codebase for Android, iOS, Windows, macOS and web (Expo, React Native, TypeS
 - **DXF export (`lib/dxf.ts`):** the plan of a storey, or an elevation or section, as AutoCAD R12 DXF in millimetres with named layers (A-WALL, S-COLS, ...); validated by reading it back with ezdxf. DWG is closed, so open the DXF in a CAD program and save as DWG.
 - **IFC:** export (multi-storey IFC4 with openings and property sets) and import (IFC2x3/IFC4; extruded solids read exactly, meshes and B-reps fitted with an oriented bounding box; all storeys with elevations, units converted).
 
+**3D cores and P-delta (`lib/core3d.ts`):** walls marked as structural core walls form cantilever cores (Ix, Iy, Ixy, J, closed boxes by Bredt) on rigid floors with the frame columns; second-order solution (K − KG), elastic buckling factor, EN 1998-1 stability coefficient θ, torsional irregularity, shear shared between frame and cores. Verified against cantilever deflection and Euler buckling.
+
 ## Not built yet
-Fire dampers through floors, fuller 3D lateral analysis (walls, cores, P-delta), ductile seismic detailing, deflection of slabs by calculation (the span/depth method is used), direct DWG output (DXF is exported), background-thread parsing and web-ifc for very large IFC files, resizing of columns on the plan, and testing against real ArchiCAD, Revit and Tekla exports.
+Fire dampers through floors, full finite-element lateral analysis (flexible floors, soil springs, warping of open cores), ductile seismic detailing, deflection of slabs by calculation (the span/depth method is used), direct DWG output (DXF is exported), background-thread parsing and web-ifc for very large IFC files, resizing of columns on the plan, and testing against real ArchiCAD, Revit and Tekla exports.
 
 All design output is preliminary and must be reviewed by a registered engineer before construction. Soil bearing pressure must come from a site investigation.
 

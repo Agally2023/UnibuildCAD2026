@@ -166,7 +166,8 @@ export const manual: Section[] = [
       { t: 'ul', x: [
         'Wind to EN 1991-1-4 and equivalent-static earthquake to EN 1998-1. Forces go to the columns by the Muto D-value method with a rigid diaphragm and accidental torsion.',
         'You get storey shears, drifts, overturning stability, column moments and overturning axial forces, and every column is checked under the combinations.',
-        'It is a shear-building model, not a 3D analysis. Verify it with a full frame model.',
+        '**Cores and P-delta:** select walls on the plan and choose **Mark as structural core wall** (or Mark walls as core for a selection). Walls that touch form one core (box, C, L or single wall), carried from storey to storey. Each core is modelled as a cantilever with its own bending in both directions (Ix, Iy, Ixy) and twisting (J), sharing the lateral load with the frame columns through rigid floors. The result shows the elastic buckling factor of the whole structure, top displacement before and after P-delta, the stability coefficient θ of each storey (EN 1998-1: below 0.1 ignore, 0.1 to 0.2 amplify, above 0.3 not allowed), torsional irregularity and how much of the base shear the cores take. The solver is checked against the cantilever deflection and the Euler buckling load.',
+        'Other limits: the cores are fixed at the base, warping of open sections is ignored, there is no soil or raft flexibility and no shear deformation. Verify with a full frame model.',
       ] },
     ],
   },
@@ -245,7 +246,7 @@ export const manual: Section[] = [
       { t: 'ul', x: [
         'Everything is in metres and millimetres.',
         'Curved walls are chains of straight walls. Roofs are rectangles when pitched, and stairs are straight flights; there are no railings, curtain walls, or free-form shapes. Slab openings are rectangles or circles (in IFC a circle is a 48-sided outline), and rotation is in quarter turns only. Sections do not show slab openings.',
-        'The lateral analysis is a shear-building model; there is no 3D core or P-delta analysis and no ductile seismic detailing.',
+        'The lateral analysis is a shear-building model; the 3D core and P-delta analysis is a preliminary rigid-floor model (fixed core bases, no warping, no soil flexibility) and there is no ductile seismic detailing.',
         'The raft ignores lateral base actions and uses the rigid method (no soil springs, no settlement), and slab deflection uses the span/depth method rather than a calculation for slabs.',
         'Elevations and sections are simple box drawings with no material hatching. PDF comes from the browser print window (web only); there is no direct DWG output (use DXF) and the grid layout of several views is automatic (no free placement or resizing of individual views).',
         'Not yet tested against real Revit, ArchiCAD or Tekla exports.',

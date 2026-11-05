@@ -31,9 +31,9 @@ export function planBox(els: El[]) {
     if (g.at) { xs.push(g.at[0]); ys.push(g.at[1]); }
     if (g.rect) { xs.push(g.rect[0], g.rect[2]); ys.push(g.rect[1], g.rect[3]); }
   }
-  if (!xs.length) return { w: 0, d: 0, area: 0 };
+  if (!xs.length) return { w: 0, d: 0, area: 0, x0: 0, y0: 0 };
   const w = Math.max(...xs) - Math.min(...xs), d = Math.max(...ys) - Math.min(...ys);
-  return { w, d, area: w * d };
+  return { w, d, area: w * d, x0: Math.min(...xs), y0: Math.min(...ys) };
 }
 
 const dist = (a: Pt, b: Pt) => Math.hypot(a[0] - b[0], a[1] - b[1]);

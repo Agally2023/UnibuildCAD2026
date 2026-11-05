@@ -60,7 +60,8 @@ export function buildReport(o: { project: string; mat: Mat; imposed: number; def
 
 // Lateral-load report: inputs, storey forces, drifts, stability and the column checks under each combination.
 import type { LateralInput, LateralResult } from './lateral';
-export function buildLateralReport(o: { project: string; mat: Mat; input: LateralInput; result: LateralResult; date?: Date }): string {
+import type { Result3D } from './core3d';
+export function buildLateralReport(o: { project: string; mat: Mat; input: LateralInput; result: LateralResult; date?: Date; core3d?: Result3D }): string {
   const { result: r, input: i, mat: m } = o, bs = m.code === 'BS8110', L: string[] = [];
   L.push(`# Lateral load report: ${o.project}`, '', `Generated ${(o.date ?? new Date()).toISOString().slice(0, 10)} by Unibuild. Preliminary. **Not for construction without review by a registered engineer.**`, '');
   L.push('## 1. Basis', '', `- Section design code: ${bs ? 'BS 8110-1:1997' : 'EN 1992-1-1'}, concrete ${cname(m.fck)}`);
@@ -77,6 +78,13 @@ export function buildLateralReport(o: { project: string; mat: Mat; input: Latera
   });
   L.push('## 4. Columns under the lateral combinations', '');
   r.columns.slice().sort((a, b) => b.util - a.util).forEach(c => L.push(`- ${c.story} ${c.b}×${c.h} mm: governing ${c.combo}; N ${c.N.toFixed(0)} kN, Mx ${c.Mx.toFixed(0)} kNm, My ${c.My.toFixed(0)} kNm; utilisation at the gravity steel ${c.util.toFixed(2)}; steel needed ${Math.round(c.AsReq)} mm² (${c.bars}) against ${Math.round(c.AsProv)} mm² from the gravity design${c.notes.length ? '. ' + c.notes.join('. ') : ''}`));
+  if (o.core3d) {
+    const c3 = o.core3d;
+    L.push('', '## 5. 3D core and P-delta analysis', '', `- Elastic buckling factor of the whole structure: ${c3.lambda.toFixed(1)} (${c3.lambdaStatus === 'ok' ? 'above 10, P-delta effects small' : c3.lambdaStatus === 'warn' ? 'between 3 and 10, P-delta effects count' : 'below 3, too flexible'})`);
+    c3.cores.forEach((c, i) => L.push(`- Core ${i + 1} at (${c.x.toFixed(1)}, ${c.y.toFixed(1)}) m, ${c.storeys} storeys: Ix ${c.Ix.toFixed(2)} m⁴, Iy ${c.Iy.toFixed(2)} m⁴, Ixy ${c.Ixy.toFixed(2)} m⁴, J ${c.J.toFixed(2)} m⁴ (${c.closed ? 'closed box' : 'open section'})`));
+    c3.cases.forEach(k => L.push(`- ${k.name}: ${k.status === 'ok' ? 'PASS' : k.status === 'warn' ? 'CHECK' : 'FAIL'}; top displacement ${(k.topFirst * 1000).toFixed(1)} mm first order, ${(k.topSecond * 1000).toFixed(1)} mm with P-delta; stability coefficient θ = ${k.thetaMax.toFixed(3)}; torsion ratio ${k.torsionRatio.toFixed(2)}; cores carry ${Math.round(100 * k.shearShare.cores.reduce((a, v) => a + v, 0) / Math.max(1e-9, k.shearShare.cores.reduce((a, v) => a + v, 0) + k.shearShare.frame))}% of the base shear`, ...k.notes.map(n => `  - ${n}`)));
+    L.push(...c3.notes.map(n => `- ${n}`));
+  }
   L.push('', '## Notes and limitations', '', ...r.notes.map(n => `- ${n}`), '- Shear-building model only: confirm with a 3D frame analysis. Walls, cores, bracing, P-delta effects, vertical irregularity, diaphragm flexibility and foundation flexibility are not modelled. Column interaction is checked as Mx/Mrx + My/Mry ≤ 1 (conservative).');
   return L.join('\n');
 }
