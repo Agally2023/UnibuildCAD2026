@@ -34,10 +34,12 @@ export function seismicSd(T: number, agG: number, ground: keyof typeof GROUND, q
   return Math.max(T <= TD ? ((a * 2.5) / q) * (TC / T) : ((a * 2.5) / q) * ((TC * TD) / (T * T)), 0.2 * agG);
 }
 
+// what the 3D core and P-delta analysis (lib/core3d.ts) needs from this model
+export type Model3D = { h: number[]; P: number[]; xm: number[]; ym: number[]; r2: number[]; box: [number, number, number, number][]; ref: [number, number]; E: number; frame: { id: string; k: number; x: number; y: number; Dx: number; Dy: number }[] };
 type CInfo = { id: string; k: number; x: number; y: number; b: number; h: number };
-export type CaseRes = { name: string; dir: 'x' | 'y'; kind: 'wind' | 'seismic'; forces: number[]; shears: number[]; drift: number[]; driftRatio: number[]; topDrift: number; maxRatio: number; limitText: string; status: Status; baseShear: number; baseMoment: number; stability: number };
+export type CaseRes = { name: string; dir: 'x' | 'y'; kind: 'wind' | 'seismic'; forces: number[]; shears: number[]; drift: number[]; driftRatio: number[]; topDrift: number; maxRatio: number; limitText: string; status: Status; baseShear: number; baseMoment: number; stability: number; limit: number };
 export type ColCheck = { lat: { Vx: number; Vy: number; dN: number }; id: string; story: string; b: number; h: number; N: number; Mx: number; My: number; combo: string; util: number; AsProv: number; AsReq: number; bars: string; status: Status; notes: string[] };
-export type LateralResult = { foundation: Record<string, { G: number; Q: number; effs: Eff[] }>; storeys: { name: string; top: number; height: number; W: number }[]; cases: CaseRes[]; columns: ColCheck[]; wind?: { qpTop: number; cf: { x: number; y: number }; vb: number }; seismic?: { T1: number; Sd: number; lambda: number; Fb: number; W: number }; seismicInput?: SeismicInput; notes: string[] };
+export type LateralResult = { foundation: Record<string, { G: number; Q: number; effs: Eff[] }>; storeys: { name: string; top: number; height: number; W: number }[]; cases: CaseRes[]; columns: ColCheck[]; wind?: { qpTop: number; cf: { x: number; y: number }; vb: number }; seismic?: { T1: number; Sd: number; lambda: number; Fb: number; W: number }; seismicInput?: SeismicInput; model3d: Model3D; notes: string[] };
 
 export function lateralAnalysis(groups: Group[], lib: Lib[], m: Mat, grav: Design, o: LateralInput): LateralResult {
   const gs = [...groups].sort((a, b) => a.story.elevation_m - b.story.elevation_m), n = gs.length, notes: string[] = [];
@@ -99,7 +101,7 @@ export function lateralAnalysis(groups: Group[], lib: Lib[], m: Mat, grav: Desig
     const maxRatio = Math.max(...ratio), moment = F.reduce((a, f, j) => a + f * tops[j], 0), restoring = (kind === 'wind' ? (bs ? 1.0 : 0.9) : 1.0) * W.reduce((a, w) => a + w.dead, 0) * ((dir === 'x' ? ext.w : ext.d) / 2);
     const gamma = kind === 'wind' ? (bs ? 1.4 : 1.5) : 1.0, stab = restoring / Math.max(gamma * moment, 1e-9);
     const status: Status = maxRatio > lim * 1.25 || stab < 1 ? 'bad' : maxRatio > lim ? 'warn' : 'ok';
-    return { col, res: { name, dir, kind, forces: F, shears, drift, driftRatio: ratio, topDrift: top, maxRatio, limitText: kind === 'wind' ? 'h/500' : 'ν q d_e ≤ 0.005h', status, baseShear: shears[0], baseMoment: moment, stability: stab } };
+    return { col, res: { name, dir, kind, forces: F, shears, drift, driftRatio: ratio, topDrift: top, maxRatio, limitText: kind === 'wind' ? 'h/500' : 'ν q d_e ≤ 0.005h', status, baseShear: shears[0], baseMoment: moment, stability: stab, limit: lim } };
   };
 
   const cases: CaseRes[] = [], effects: { name: string; kind: 'wind' | 'seismic'; dir: 'x' | 'y'; col: Map<string, { Vx: number; Vy: number; dN: number; dNs: number; Mb: number; Mbase: number }> }[] = [];
@@ -162,5 +164,11 @@ export function lateralAnalysis(groups: Group[], lib: Lib[], m: Mat, grav: Desig
   }
   const foundation: LateralResult['foundation'] = {};
   for (const c of infos) if (c.k === 0 && dsg[c.id]?.Gk !== undefined) foundation[c.id] = { G: dsg[c.id].Gk!, Q: dsg[c.id].Qk ?? 0, effs: effects.map(ef => { const f = ef.col.get(c.id)!; return { name: ef.name, kind: ef.kind, dir: ef.dir, dNs: f.dNs, Vx: f.Vx, Vy: f.Vy, Mb: f.Mbase }; }) };
-  return { seismicInput: o.seismic, foundation, storeys: gs.map((g, k) => ({ name: g.story.name, top: tops[k], height: Hs[k], W: W[k].dead })), cases, columns, wind: windInfo, seismic: seisInfo, notes };
+  const psiP = o.seismic?.psi2 ?? 0.3, boxes = gs.map(g => planBox(g.els));
+  const model3d: Model3D = {
+    h: Hs, P: W.map(w => w.dead + psiP * w.live), xm: boxes.map(b => b.x0 + b.w / 2), ym: boxes.map(b => b.y0 + b.d / 2), r2: boxes.map(b => (b.w ** 2 + b.d ** 2) / 12),
+    box: boxes.map(b => [b.x0, b.y0, b.x0 + b.w, b.y0 + b.d] as [number, number, number, number]), ref: [ext.x0 + ext.w / 2, ext.y0 + ext.d / 2], E: E * EIf,
+    frame: infos.map((c, i) => ({ id: c.id, k: c.k, x: c.x, y: c.y, Dx: Dx[i], Dy: Dy[i] })),
+  };
+  return { model3d, seismicInput: o.seismic, foundation, storeys: gs.map((g, k) => ({ name: g.story.name, top: tops[k], height: Hs[k], W: W[k].dead })), cases, columns, wind: windInfo, seismic: seisInfo, notes };
 }

@@ -28,6 +28,7 @@ import { designPadLateral, padPressure } from '../lib/footlateral';
 import { designGroundBeams, groundBeamLayout } from '../lib/groundbeam';
 import { foundationCombos } from '../lib/combos';
 import { lateralAnalysis, seismicSd, windCf, windQp } from '../lib/lateral';
+import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
 import { buildLateralReport } from '../lib/report';
 import { ecm } from '../lib/serviceability';
 import { bays, classify, designSlabPanels, punching } from '../lib/slabpanels';
@@ -702,6 +703,69 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const tot = r3.strips.filter(s => s.dir === 'x').reduce((a, s) => a + s.width, 0);
   ok('x strips together span the raft width', Math.abs(tot - r3.B) < 1e-9);
   ok('steel is reported for both faces and both directions', !!r3.bars.xBottom && !!r3.bars.xTop && !!r3.bars.yBottom && !!r3.bars.yTop && r3.steelKg > 0);
+}
+
+// ---- 3D core and P-delta analysis ----
+{
+  const el2 = (id: string, type: string, geometry: any, sid: string) => ({ id, type, geometry, library_item_id: null, story_id: sid }) as any;
+  const building = (nSt: number, xs: number[], ys: number[], beam: number) => {
+    const sts = [...Array(nSt)].map((_, k) => ({ id: `s${k}`, name: k ? `Level ${k}` : 'Ground', elevation_m: k * 3.6, height_m: 3.6 }));
+    return sts.map(s => { const els: any[] = []; xs.forEach(x => ys.forEach(y => els.push(el2(`${s.id}c${x}_${y}`, 'column', { at: [x, y], b: 0.4, h: 0.4, height: 3.6 }, s.id))));
+      xs.forEach(x => ys.slice(1).forEach((y, j) => els.push(el2(`${s.id}by${x}${j}`, 'beam', { start: [x, ys[j]], end: [x, y], b_mm: beam, h_mm: beam }, s.id))));
+      ys.forEach(y => xs.slice(1).forEach((x, j) => els.push(el2(`${s.id}bx${y}${j}`, 'beam', { start: [xs[j], y], end: [x, y], b_mm: beam, h_mm: beam }, s.id)))); return { story: s, els }; }) as any;
+  };
+  const bx = (cx: number, cy: number, a: number, t: number) => [{ sx: cx - a / 2, sy: cy - a / 2, ex: cx + a / 2, ey: cy - a / 2, t }, { sx: cx + a / 2, sy: cy - a / 2, ex: cx + a / 2, ey: cy + a / 2, t }, { sx: cx + a / 2, sy: cy + a / 2, ex: cx - a / 2, ey: cy + a / 2, t }, { sx: cx - a / 2, sy: cy + a / 2, ex: cx - a / 2, ey: cy - a / 2, t }];
+  const wall = coreSection([{ sx: 0, sy: 0, ex: 4, ey: 0, t: 0.3 }]);
+  near('section: wall 4 m × 0.3 m, Iy (bending in x) = t L³/12', wall.Iy, 0.3 * 64 / 12 + 4 * 0.3 ** 3 * 0 + 0, 0.001);
+  ok('section: wall Ix is tiny (L t³/12) and Ixy is zero', Math.abs(wall.Ix - 4 * 0.3 ** 3 / 12) < 1e-9 && Math.abs(wall.Ixy) < 1e-9 && !wall.closed);
+  const sq = coreSection(bx(0, 0, 4, 0.3));
+  ok('section: square box core is closed, Ix = Iy, Ixy = 0, centroid at the centre', sq.closed && Math.abs(sq.Ix - sq.Iy) < 1e-9 && Math.abs(sq.Ixy) < 1e-9 && Math.abs(sq.cx) < 1e-9);
+  near('section: closed box J = 4 A² / Σ(L/t) (midline area 16 m², perimeter 16 m)', sq.J, 4 * 256 / (16 / 0.3), 0.001);
+  const Lc = coreSection([{ sx: 0, sy: 0, ex: 4, ey: 0, t: 0.3 }, { sx: 0, sy: 0, ex: 0, ey: 3, t: 0.3 }]);
+  ok('section: L-shaped core has a non-zero product of inertia and is open', Math.abs(Lc.Ixy) > 0.5 && !Lc.closed);
+  near('section: inclined wall at 45° has Ixy = (Il − It)/2 in magnitude', Math.abs(coreSection([{ sx: 0, sy: 0, ex: 3, ey: 3, t: 0.3 }]).Ixy), ((0.3 * (3 * Math.SQRT2) ** 3) / 12 - (3 * Math.SQRT2 * 0.3 ** 3) / 12) / 2, 0.001);
+  ok('walls groups: two separate cores found', wallGroups([...bx(0, 0, 4, 0.3), ...bx(20, 0, 4, 0.3)]).length === 2 && wallGroups([...bx(0, 0, 4, 0.3)]).length === 1);
+
+  const mk = (n: number, P: number[], frame: any[] = [], x = 0, y = 0) => ({ h: Array(n).fill(3), P, xm: Array(n).fill(x), ym: Array(n).fill(y), r2: Array(n).fill(2), box: Array(n).fill([x - 2, y - 2, x + 2, y + 2]), ref: [x, y] as [number, number], E: 15e6, frame });
+  const n = 20, H = 3 * n, EI = 15e6 * sq.Iy, Ptop = 1000, Pcr = Math.PI ** 2 * EI / (4 * H * H);
+  const P = Array(n).fill(0); P[n - 1] = Ptop; const F = Array(n).fill(0); F[n - 1] = 100;
+  const rc = analyse3D(mk(n, P) as any, [{ x: 0, y: 0, levels: Array(n).fill(sq) }], [{ name: 'tip', dir: 'x', F, limit: 1 / 500, kind: 'wind' }]);
+  near('cantilever core: tip deflection = P H³ / 3EI', rc.cases[0].topFirst, 100 * H ** 3 / (3 * EI), 0.01);
+  near('cantilever core: elastic buckling load matches Euler π² EI / 4H² (P on the top)', rc.lambda * Ptop, Pcr, 0.01);
+  near('P-delta amplification of the top displacement = 1 / (1 − P/Pcr)', rc.cases[0].topSecond / rc.cases[0].topFirst, 1 / (1 - Ptop / Pcr), 0.01);
+  ok('stability coefficient θ is small for a light load and the case passes', rc.cases[0].thetaMax < 0.1 && rc.cases[0].status !== 'bad', `${rc.cases[0].thetaMax}`);
+  const heavy = analyse3D(mk(n, P.map(v => v * 0.9 * Pcr / Ptop)) as any, [{ x: 0, y: 0, levels: Array(n).fill(sq) }], [{ name: 'tip', dir: 'x', F, limit: 1 / 500, kind: 'wind' }]);
+  ok('a load at 90% of the buckling load: λ ≈ 1.1, drift grows by about 10 times, case fails', Math.abs(heavy.lambda - 1 / 0.9) < 0.02 && heavy.cases[0].topSecond / heavy.cases[0].topFirst > 8 && heavy.cases[0].status === 'bad');
+  ok('a core only reaching half the height leaves the upper floors without stiffness unless a frame is there', analyse3D(mk(n, P) as any, [{ x: 0, y: 0, levels: Array(10).fill(sq) }], [{ name: 'tip', dir: 'x', F, limit: 1 / 500, kind: 'wind' }]).stable === false);
+
+  // frame plus core in parallel: the shear is shared by stiffness, and the shares add to the applied base shear
+  const fr = [[-6, -6], [6, -6], [-6, 6], [6, 6]].map(([x, y], i) => ({ id: `c${i}`, k: 0, x, y, Dx: 3000, Dy: 3000 }));
+  const fr2 = Array.from({ length: 3 }, (_, k) => fr.map(c => ({ ...c, k })));
+  const Fs = [20, 30, 40], mf = { ...mk(3, [3000, 3000, 3000]), box: Array(3).fill([-8, -8, 8, 8]), frame: fr2.flat() };
+  const rf = analyse3D(mf as any, [{ x: 0, y: 0, levels: Array(3).fill(sq) }], [{ name: 'f', dir: 'x', F: Fs, limit: 1 / 500, kind: 'seismic' }]);
+  const sh = rf.cases[0].shearShare; near('frame + core share of the base shear add up to the applied 90 kN', sh.frame + sh.cores[0], 90, 0.03);
+  ok('the stiff core takes most of the shear', sh.cores[0] > sh.frame);
+  // a core off the centre makes the building twist
+  const off = analyse3D({ ...mf, frame: [] } as any, [{ x: 6, y: 0, levels: Array(3).fill(sq) }], [{ name: 'e', dir: 'y', F: Fs, limit: 1 / 500, kind: 'seismic' }]);
+  ok('an eccentric core twists the floor plates and is flagged for torsional irregularity', Math.abs(off.cases[0].twistTop) > 1e-7 && off.cases[0].torsionRatio > 1.2, `${off.cases[0].torsionRatio}`);
+  ok('a single central core in a wide plan is torsionally flexible (EC8): accidental eccentricity twists it and it is flagged', rf.cases[0].torsionRatio > 1.2, String(rf.cases[0].torsionRatio));
+  const cs4 = [[-6, -6], [6, -6], [-6, 6], [6, 6]].map(([x, y]) => ({ x, y, levels: Array(3).fill(coreSection(bx(x, y, 3, 0.3))) }));
+  const r4 = analyse3D({ ...mf, frame: [] } as any, cs4, [{ name: 'f', dir: 'x', F: Fs, limit: 1 / 500, kind: 'seismic' }]);
+  ok('four corner cores resist twist: torsion ratio below 1.2 and the case is not flagged for it', r4.cases[0].torsionRatio < 1.2 && !r4.cases[0].notes.some(n => /Torsional/.test(n)), String(r4.cases[0].torsionRatio));
+  ok('no cores and no frame: reports no stiffness without throwing', analyse3D({ ...mf, frame: [] } as any, [], []).cases.length === 0);
+
+  // from the plan model: walls marked as core are picked up and run through lateralAnalysis
+  const bld = building(3, [0, 6, 12], [0, 6, 12], 300);
+  bld.forEach((g: any, k: number) => bx(6, 6, 3, 0.25).forEach((w, i) => g.els.push(el2(`k${k}${i}`, 'wall', { start: [w.sx, w.sy], end: [w.ex, w.ey], thickness: 0.25, height: 3.6, core: true }, g.story.id))));
+  const { cores } = coresFromGroups(bld);
+  ok('cores are read from the walls marked as structural, continuous over all storeys', cores.length === 1 && cores[0].levels.length === 3 && !!cores[0].levels[2]);
+  const rl = lateralAnalysis(bld, [], mat, designAll(bld, [], mat, { imposed: 3, defaultTrib: 3 }), { imposed: 3, wind: { vb: 28, terrain: 2 }, seismic: { agG: 0.15, ground: 'B', q: 2, psi2: 0.3 } });
+  const r3 = analyse3D(rl.model3d, cores, loadsOf(rl.cases));
+  ok('3D analysis runs on the lateral model and returns each load case', r3.cases.length === rl.cases.length && r3.lambda > 3 && r3.cores.length === 1, `${r3.lambda}`);
+  const none = analyse3D(rl.model3d, [], loadsOf(rl.cases));
+  ok('adding the core stiffens the building: smaller drift than the frame alone', r3.cases[0].topFirst < none.cases[0].topFirst, `${r3.cases[0].topFirst} vs ${none.cases[0].topFirst}`);
+  ok('second-order drift is never smaller than first-order drift', r3.cases.every(c => c.topSecond >= c.topFirst * 0.999));
+  ok('a core that stops at the first storey (not continuous) is dropped with a note', (() => { const b2 = building(2, [0, 6], [0, 6], 300); bx(3, 3, 3, 0.25).forEach((w, i) => b2[1].els.push(el2(`u${i}`, 'wall', { start: [w.sx, w.sy], end: [w.ex, w.ey], thickness: 0.25, core: true }, b2[1].story.id))); const x = coresFromGroups(b2); return x.cores.length === 0 && x.notes.length === 1; })());
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

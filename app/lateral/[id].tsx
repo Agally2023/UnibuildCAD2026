@@ -7,6 +7,7 @@ import { useModel } from '../../lib/useModel';
 import { groupByStory } from '../../lib/model';
 import { CLASSES, designAll, Status } from '../../lib/design';
 import { lateralAnalysis, TERRAIN_NAMES } from '../../lib/lateral';
+import { analyse3D, coresFromGroups, loadsOf } from '../../lib/core3d';
 import { lat, setLat, dsn, setDsn } from '../../lib/settings';
 import { buildLateralReport } from '../../lib/report';
 import { saveFile } from '../../components/saveFile';
@@ -43,10 +44,16 @@ export default function Lateral() {
     return lateralAnalysis(groups, lib, mat, grav, input);
   }, [groups, lib, fck, code, input]);
 
+  const c3 = useMemo(() => {
+    if (!r) return null;
+    const { cores, notes } = coresFromGroups(groups), res = analyse3D(r.model3d, cores, loadsOf(r.cases));
+    return { ...res, notes: [...notes, ...res.notes] };
+  }, [r, groups]);
+
   const report = async () => {
     if (!r) return;
     const { data: pr } = await supabase.from('projects').select('name').eq('id', id).single(), name = pr?.name ?? 'Unibuild';
-    await saveFile(`${name.replace(/[^A-Za-z0-9_-]+/g, '_')}-lateral-report.md`, buildLateralReport({ project: name, mat, input, result: r }));
+    await saveFile(`${name.replace(/[^A-Za-z0-9_-]+/g, '_')}-lateral-report.md`, buildLateralReport({ project: name, mat, input, result: r, core3d: c3 ?? undefined }));
     setMsg('Report exported');
   };
   const save = async () => {
@@ -91,6 +98,22 @@ export default function Lateral() {
         ))}
         {r.wind && <Text style={s.k}>Wind: peak pressure at the top {Math.round(r.wind.qpTop)} Pa, net force coefficients {r.wind.cf.x.toFixed(2)} (along x) and {r.wind.cf.y.toFixed(2)} (along y).</Text>}
         {r.seismic && <Text style={s.k}>Earthquake: T1 = {r.seismic.T1.toFixed(2)} s, Sd = {r.seismic.Sd.toFixed(3)} g, base shear {n0(r.seismic.Fb)} kN on a seismic weight of {n0(r.seismic.W)} kN.</Text>}
+        {c3 && <>
+          <Text style={s.t}>3D cores and P-delta</Text>
+          <View style={[s.card, { borderLeftColor: COL[c3.lambdaStatus] }]}>
+            <Text style={s.h}>Elastic buckling factor {c3.lambda.toFixed(1)}</Text>
+            <Text style={s.k}>{c3.lambda >= 10 ? 'Above 10: second-order effects are small.' : c3.lambda >= 3 ? 'Between 3 and 10: second-order effects count and are included below.' : 'Below 3: the structure is too flexible for its weight.'}</Text>
+            {c3.cores.map((c, i) => <Text key={i} style={s.k}>Core {i + 1} at ({c.x.toFixed(1)}, {c.y.toFixed(1)}) m, {c.storeys} storeys: Ix {c.Ix.toFixed(2)}, Iy {c.Iy.toFixed(2)}, Ixy {c.Ixy.toFixed(2)}, J {c.J.toFixed(2)} m⁴ ({c.closed ? 'closed box' : 'open section'})</Text>)}
+          </View>
+          {c3.cases.map(k => (
+            <View key={k.name} style={[s.card, { borderLeftColor: COL[k.status] }]}>
+              <Text style={s.h}>{k.name}</Text>
+              {([['Top displacement, first order', `${(k.topFirst * 1000).toFixed(1)} mm`], ['Top displacement with P-delta', `${(k.topSecond * 1000).toFixed(1)} mm`], ['Stability coefficient θ (worst storey)', k.thetaMax.toFixed(3)], ['Worst drift with P-delta', `h/${n0(1 / Math.max(k.maxSecondRatio, 1e-9))}`], ['Torsion: largest to mean drift', k.torsionRatio.toFixed(2)], ['Base shear in the cores', `${Math.round(100 * k.shearShare.cores.reduce((a, v) => a + v, 0) / Math.max(1e-9, k.shearShare.cores.reduce((a, v) => a + v, 0) + k.shearShare.frame))}%`]] as [string, string][]).map(([a, b]) => <View key={a} style={s.row}><Text style={s.k}>{a}</Text><Text style={s.v}>{b}</Text></View>)}
+              {k.notes.map(n => <Text key={n} style={{ color: COL[k.status] }}>{n}</Text>)}
+            </View>
+          ))}
+          {c3.notes.map(n => <Text key={n} style={s.k}>{n}</Text>)}
+        </>}
         <Text style={s.t}>Columns under lateral combinations</Text>
         {flagged.map(c => (
           <View key={c.id} style={[s.card, { borderLeftColor: COL[c.status] }]}>
