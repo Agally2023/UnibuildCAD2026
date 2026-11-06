@@ -48,5 +48,6 @@ export default function Layout() {
     <Stack.Screen name="import/[id]" options={{ title: 'Import IFC' }} />
     <Stack.Screen name="mep/[id]" options={{ title: 'MEP routing and sizing' }} />
     <Stack.Screen name="lateral/[id]" options={{ title: 'Wind and earthquake' }} />
+    <Stack.Screen name="parts/[id]" options={{ title: 'Parts and mechanical design' }} />
   </Stack>;
 }

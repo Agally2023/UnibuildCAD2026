@@ -139,6 +139,7 @@ export const manual: Section[] = [
         ['Slab and foundations', 'Needs columns. Designs slab panels or the flat slab, and pad, combined and strip footings from the soil bearing pressure.'],
         ['Wind and earthquake', 'For anything taller than a couple of storeys, or in a seismic zone.'],
         ['MEP routing and sizing', 'After placing one plant and the outlets with kW loads.'],
+        ['Parts', 'Brackets, plates, connections and machine parts: sketch with constraints and parameters, extrude, revolve, cut, STL export.'],
         ['Clash detection', 'After every round of changes.'],
         ['Dashboard', 'Quantities, cost, structural status and MEP loads across all storeys; save snapshots to compare options.'],
       ] },
@@ -194,6 +195,30 @@ export const manual: Section[] = [
         '**Drawing sheets** (Analyze > Drawing sheets): choose a storey plan, an elevation or a section, a paper size (A4 to A1) and a scale (or Best fit), fill in the title block, and check the preview. **Print / save this sheet as PDF** opens the browser print window: choose Save as PDF, margins none, scale 100%, and it prints at true scale. Tap several drawings to put them together on one sheet: they are laid out in a grid at one common scale (best fit, or the scale you choose), each with a caption, and you give the sheet its own title. **Print the full set** makes one sheet for every plan, elevation and the two middle sections. Plans show walls, columns, beams, doors with swings, windows, stairs, rooms, grid lines, dimensions and text.',
       ] },
       { t: 'note', x: 'These drawings show the model as boxes. There is no hatching by material, no door swings, and no stair or roof slope detail yet.' },
+    ],
+  },
+  {
+    id: 'parts', title: 'Parts and mechanical design', blurb: 'Sketches, solids and parameters for brackets, connections and machine parts.',
+    blocks: [
+      { t: 'p', x: 'Open **Parts** from the Modules screen. It works in millimetres, away from the building storeys, and is the base for steel connections, plant supports, machine parts and vehicle components. Parts are kept on this device; use **Save part file** and **Export STL** to keep or share them (STL opens in slicers, CAM and other CAD tools).' },
+      { t: 'h', x: 'The timeline' },
+      { t: 'ul', x: [
+        'A part is a list of steps replayed from the top: **sketches** and the **extrude** or **revolve** features that use them. Click a step to edit it. Use the arrows to reorder, the dot to switch a feature off, and **Roll back / Roll forward** to see the part at an earlier step.',
+        '**Operation:** New body, Join (adds to the last body) or Cut (removes from every body).',
+        '**Extrude** takes a depth (negative goes the other way, Symmetric centres it on the sketch plane). **Revolve** turns the profile about an axis line you draw with the Axis line tool.',
+      ] },
+      { t: 'h', x: 'Sketching' },
+      { t: 'ul', x: [
+        'Pick a plane (XY, XZ or YZ), then Line, Rectangle or Circle and tap the canvas. Points snap to the grid (1, 5 or 10 mm) and to existing points. Closed shapes become solid profiles, and a closed shape inside another becomes a hole.',
+        'Switch to **Select**, tap lines, points or circles, then apply constraints: Horizontal, Vertical, Parallel, Perpendicular, Equal, Coincident, Fix, and dimensions (Length, Angle, Radius, horizontal and vertical distance). The sketch solves as you go and tells you how many degrees of freedom are left, or that the constraints conflict.',
+        'Dimensions are expressions: type `width/2` or `depth + 5` and they follow the **Parameters**. Change a parameter and the whole part rebuilds.',
+      ] },
+      { t: 'h', x: 'Results and limits' },
+      { t: 'ul', x: [
+        'The Part card shows volume, surface, size and mass for steel, aluminium, cast iron, brass or a density you type.',
+        'Solids are triangle meshes: joins and cuts are exact to the facets, but curved faces are faceted (circles are 48-sided, revolves 64 segments). There are no fillets, chamfers, shells, patterns, assemblies, sheet metal, STEP export or drawings yet.',
+        'Sketches support lines and circles (no arcs or splines yet). Parts are not yet placed into the building model or its IFC export.',
+      ] },
     ],
   },
   {

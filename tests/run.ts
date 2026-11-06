@@ -28,6 +28,9 @@ import { designPadLateral, padPressure } from '../lib/footlateral';
 import { designGroundBeams, groundBeamLayout } from '../lib/groundbeam';
 import { foundationCombos } from '../lib/combos';
 import { lateralAnalysis, seismicSd, windCf, windQp } from '../lib/lateral';
+import { addCircle, addLine, addRect, calc, circlePolygon as cpoly, emptySketch, evalParams, profiles, solveSketch } from '../lib/sketch';
+import { boolean, extrude as extrudeR, isClosed, revolve as revolveR, toStl, volume as vol3, bounds as bnds } from '../lib/solid';
+import { newPart, rebuild, sampleBracket } from '../lib/parts';
 import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
 import { buildLateralReport } from '../lib/report';
 import { ecm } from '../lib/serviceability';
@@ -766,6 +769,70 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('adding the core stiffens the building: smaller drift than the frame alone', r3.cases[0].topFirst < none.cases[0].topFirst, `${r3.cases[0].topFirst} vs ${none.cases[0].topFirst}`);
   ok('second-order drift is never smaller than first-order drift', r3.cases.every(c => c.topSecond >= c.topFirst * 0.999));
   ok('a core that stops at the first storey (not continuous) is dropped with a note', (() => { const b2 = building(2, [0, 6], [0, 6], 300); bx(3, 3, 3, 0.25).forEach((w, i) => b2[1].els.push(el2(`u${i}`, 'wall', { start: [w.sx, w.sy], end: [w.ex, w.ey], thickness: 0.25, core: true }, b2[1].story.id))); const x = coresFromGroups(b2); return x.cores.length === 0 && x.notes.length === 1; })());
+}
+
+// ---- parametric parts: sketches, solids, timeline ----
+{
+  const a48 = 0.5 * 48 * Math.sin((2 * Math.PI) / 48);   // area of a 48-sided polygon of radius 1
+  near('expressions: precedence, powers, functions and names', calc('2*(w+10)^2/4-sin(30)+sqrt(16)', { w: 5 }), 116, 1e-9);
+  ok('expressions: unknown names and division by zero are errors, not NaN', (() => { try { calc('x+1'); return false; } catch { /* expected */ } try { calc('1/0'); return false; } catch { return true; } })());
+  const ep = evalParams([{ name: 'b', expr: 'a*2' }, { name: 'a', expr: '10' }, { name: 'bad', expr: 'zzz' }]);
+  ok('parameters may refer to ones defined later; broken ones are reported', ep.values.b === 20 && ep.errors.length === 1 && /bad/.test(ep.errors[0]));
+
+  let sk = addRect(emptySketch(), [0, 0], [97, 41]);
+  sk = { ...sk, cons: [...sk.cons, { id: 'f', t: 'fix', p: sk.pts[0].id }, { id: 'w', t: 'length', l: sk.lines[0].id, v: 'W' }, { id: 'h', t: 'length', l: sk.lines[1].id, v: 'W/2' }] };
+  const sv = solveSketch(sk, { W: 120 });
+  ok('solver: a rough rectangle snaps to its dimensions (120 × 60) and reports fully constrained', sv.info.ok && sv.info.dof === 0 && Math.abs(sv.sketch.pts[2].x - 120) < 1e-6 && Math.abs(sv.sketch.pts[2].y - 60) < 1e-6, JSON.stringify(sv.info));
+  const sv2 = solveSketch({ ...sk, cons: sk.cons.slice(0, -2) }, {});
+  ok('solver: free dimensions are counted as degrees of freedom', sv2.info.ok && sv2.info.dof === 2, JSON.stringify(sv2.info));
+  const clash = solveSketch({ ...sk, cons: [...sk.cons, { id: 'x', t: 'length', l: sk.lines[0].id, v: '50' }] }, { W: 120 });
+  ok('solver: conflicting dimensions are reported', !clash.info.ok);
+  // a triangle with parallel / perpendicular / equal constraints
+  let tr = addLine(addLine(addLine(emptySketch(), [0, 0], [100, 5], { snap: 1 }).sketch, [100, 5], [95, 80], { snap: 1 }).sketch, [95, 80], [0, 0], { snap: 1 }).sketch;
+  tr = { ...tr, cons: [{ id: '1', t: 'fix', p: tr.pts[0].id }, { id: '2', t: 'horizontal', l: tr.lines[0].id }, { id: '3', t: 'perpendicular', l1: tr.lines[0].id, l2: tr.lines[1].id }, { id: '4', t: 'equal', l1: tr.lines[0].id, l2: tr.lines[1].id }] };
+  const st = solveSketch(tr, {}); const [p0, p1, p2] = st.sketch.pts;
+  ok('solver: perpendicular and equal legs make a right isosceles triangle', st.info.ok && Math.abs(p1.y - p0.y) < 1e-6 && Math.abs(p2.x - p1.x) < 1e-6 && Math.abs(Math.hypot(p1.x - p0.x, p1.y - p0.y) - Math.abs(p2.y - p1.y)) < 1e-6, JSON.stringify(st.sketch.pts));
+  const ang = solveSketch({ ...addLine(emptySketch(), [0, 0], [50, 10]).sketch, cons: [] }, {});
+  const al = addLine(emptySketch(), [0, 0], [50, 10]).sketch; const sa = solveSketch({ ...al, cons: [{ id: 'a', t: 'fix', p: al.pts[0].id }, { id: 'b', t: 'length', l: al.lines[0].id, v: '100' }, { id: 'c', t: 'angle', l: al.lines[0].id, v: '30' }] }, {});
+  ok('solver: line at 30° and 100 long ends at (86.6, 50)', sa.info.ok && Math.abs(sa.sketch.pts[1].x - 86.6025) < 1e-3 && Math.abs(sa.sketch.pts[1].y - 50) < 1e-3 && ang.info.ok);
+
+  const withHole = addCircle(addRect(emptySketch(), [0, 0], [100, 50]), [50, 25], 10).sketch, pr = profiles(withHole);
+  ok('profiles: a circle inside a rectangle is a hole, not a second region', pr.regions.length === 1 && pr.regions[0].holes.length === 1);
+  ok('profiles: an unclosed chain of lines is reported as open', profiles(addLine(emptySketch(), [0, 0], [10, 0]).sketch).open === 1);
+  const bar = extrudeR(pr.regions, 'XY', 0, 20);
+  near('extrude: plate with a round hole, volume = (b h − polygon area) × depth', vol3(bar), (5000 - a48 * 100) * 20, 1e-9);
+  ok('extrude: surface is watertight and sits on 0..20 in z', isClosed(bar) && bnds(bar).max[2] === 20 && bnds(bar).min[2] === 0);
+  ok('extrude: XZ and YZ planes put the solid on the right side (normal −y and +x)', (() => { const b1 = bnds(extrudeR(pr.regions, 'XZ', 0, 20)), b2 = bnds(extrudeR(pr.regions, 'YZ', 0, 20)); return Math.abs(b1.min[1] + 20) < 1e-9 && Math.abs(b2.max[0] - 20) < 1e-9; })());
+  near('extrude: symmetric about the plane gives the same volume centred on it', vol3(extrudeR(pr.regions, 'XY', 0, 20, true)), vol3(bar), 1e-9);
+  near('extrude: negative depth goes the other way with the same volume', vol3(extrudeR(pr.regions, 'XY', 0, -20)), vol3(bar), 1e-9);
+  const axis: [[number, number], [number, number]] = [[0, 0], [0, 100]], ring = profiles(addRect(emptySketch(), [10, 0], [30, 40])).regions;
+  near('revolve: hollow cylinder (r 10 to 30, 40 high) = Pappus π (30² − 10²) × 40, within the 64-segment polygon error', vol3(revolveR(ring, 'XY', 0, axis, 360)), Math.PI * 800 * 40, 0.004);
+  near('revolve: a quarter turn has a quarter of the volume and is watertight', vol3(revolveR(ring, 'XY', 0, axis, 90)) * 4, Math.PI * 800 * 40, 0.004);
+  ok('revolve: partial turns have flat end caps (closed surface), on either side of the axis', isClosed(revolveR(ring, 'XY', 0, axis, 120)) && isClosed(revolveR(profiles(addRect(emptySketch(), [-30, 0], [-10, 40])).regions, 'XZ', 0, axis, 120)));
+  const cutM = boolean(bar, extrudeR([{ outer: cpoly(20, 25, 5), holes: [] }], 'XY', -5, 40), 'cut');
+  near('cut: a drilled hole removes polygon area × thickness', vol3(cutM), vol3(bar) - a48 * 25 * 20, 1e-6);
+  const joinM = boolean(extrudeR(ring.length ? profiles(addRect(emptySketch(), [0, 0], [10, 10])).regions : [], 'XY', 0, 10), extrudeR(profiles(addRect(emptySketch(), [5, 0], [15, 10])).regions, 'XY', 0, 10), 'join');
+  near('join: two overlapping blocks make the union (15 × 10 × 10)', vol3(joinM), 1500, 1e-6);
+  ok('STL export has one facet per triangle', (toStl('x y', bar).match(/facet normal/g) ?? []).length === bar.f.length / 3 && toStl('x y', bar).startsWith('solid x_y'));
+
+  const br = sampleBracket(), rb = rebuild(br);
+  const legs = (80 * 8 + 8 * 52) * 40, holeV = a48 * 36 * 8;
+  ok('part: sample bracket rebuilds without errors', rb.errors.length === 0, JSON.stringify(rb.errors));
+  near('part: L bracket with a drilled bolt hole, volume = L section × depth − hole', rb.stats!.volume, legs - holeV, 1e-4);
+  near('part: mass in steel = volume × 7850 kg/m³', rb.stats!.mass, (legs - holeV) * 1e-9 * 7850, 1e-6);
+  ok('part: bounding size is 80 × 60 × 40 mm', rb.stats!.size.every((v, i) => Math.abs(v - [80, 60, 40][i]) < 1e-6), JSON.stringify(rb.stats!.size));
+  const wide = rebuild({ ...br, params: br.params.map(p => (p.name === 'width' ? { ...p, expr: '100' } : p)) });
+  near('part: changing the named parameter width from 80 to 100 rebuilds the model (bigger volume by 20 × 8 × 40)', wide.stats!.volume - rb.stats!.volume, 20 * 8 * 40, 1e-4);
+  const rolled = rebuild({ ...br, upTo: 2 });
+  near('part: rolling the timeline back to before the cut gives the solid without the hole', rolled.stats!.volume, legs, 1e-6);
+  const supp = rebuild({ ...br, steps: br.steps.map(s => (s.id === 'f2' ? { ...s, off: true } : s)) });
+  near('part: a suppressed feature is skipped', supp.stats!.volume, legs, 1e-6);
+  const bad = rebuild({ ...br, steps: br.steps.map(s => (s.id === 'f1' ? { ...s, depth: 'nope' } : s)) });
+  ok('part: a broken expression is reported on its feature and later cuts do not crash', bad.errors.some(e => e.step === 'f1') && bad.stats === null);
+  const open = rebuild({ ...newPart(), steps: [{ id: 's', type: 'sketch', name: 'S', plane: 'XY', offset: '0', sk: addLine(emptySketch(), [0, 0], [10, 0]).sketch }, { id: 'f', type: 'extrude', name: 'E', sketch: 's', op: 'new', depth: '5', angle: '360' }] });
+  ok('part: extruding an open sketch gives a clear message', open.errors.some(e => /not closed/.test(e.msg)));
+  const rev = rebuild({ ...newPart(), steps: [{ id: 's', type: 'sketch', name: 'S', plane: 'XY', offset: '0', sk: addLine(addRect(emptySketch(), [10, 0], [30, 40]), [0, 0], [0, 100], { axis: true }).sketch }, { id: 'f', type: 'revolve', name: 'R', sketch: 's', op: 'new', depth: '0', angle: '360' }] });
+  near('part: revolve feature about the axis line makes the ring', rev.stats?.volume ?? 0, Math.PI * (900 - 100) * 40, 0.004);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
