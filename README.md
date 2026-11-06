@@ -35,6 +35,8 @@ One codebase for Android, iOS, Windows, macOS and web (Expo, React Native, TypeS
 
 **3D cores and P-delta (`lib/core3d.ts`):** walls marked as structural core walls form cantilever cores (Ix, Iy, Ixy, J, closed boxes by Bredt) on rigid floors with the frame columns; second-order solution (K − KG), elastic buckling factor, EN 1998-1 stability coefficient θ, torsional irregularity, shear shared between frame and cores. Verified against cantilever deflection and Euler buckling.
 
+**Parts and mechanical design (`lib/sketch.ts`, `lib/solid.ts`, `lib/parts.ts`, `app/parts`):** parametric 2D sketches (lines, circles, dimensions and constraints solved by Levenberg-Marquardt, with degrees-of-freedom reporting), named parameters and expressions, extrude and revolve with boolean join and cut (three-bvh-csg), a history timeline with rollback and suppress, volume, mass and STL export. Meant as the base for steel connections, plant, machine and vehicle parts. Not yet: arcs and splines, fillets and chamfers, patterns, assemblies, sheet metal, STEP export, drawings from parts, placing parts in the building model. Planned next on the same base: a roads module (alignment, long section, cross-section, earthworks) and vehicle-specific tools.
+
 ## Not built yet
 Fire dampers through floors, full finite-element lateral analysis (flexible floors, soil springs, warping of open cores), ductile seismic detailing, deflection of slabs by calculation (the span/depth method is used), direct DWG output (DXF is exported), background-thread parsing and web-ifc for very large IFC files, resizing of columns on the plan, and testing against real ArchiCAD, Revit and Tekla exports.
 
