@@ -131,7 +131,7 @@ export function piston(): PartDoc {
   return d;
 }
 
-export type Template = { key: string; label: string; group: 'mechanical' | 'automotive' | 'vehicle' | 'component'; blurb: string; make: () => PartDoc };
+export type Template = { key: string; label: string; group: 'mechanical' | 'automotive' | 'vehicle' | 'component' | 'brand'; brand?: string; blurb: string; make: () => PartDoc };
 export const TEMPLATES: Template[] = [
   { key: 'shaft', label: 'Stepped shaft', group: 'mechanical', blurb: 'Three diameters and lengths, turned from a half section', make: shaft },
   { key: 'flange', label: 'Bolted flange', group: 'mechanical', blurb: 'Plate with a bore and a circle of bolt holes', make: flange },

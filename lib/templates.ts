@@ -1,3 +1,4 @@
 import { TEMPLATES } from './partlib';
 import { VEHICLE_TEMPLATES } from './vehicles';
-export const ALL_TEMPLATES = [...TEMPLATES, ...VEHICLE_TEMPLATES];
+import { BRAND_TEMPLATES } from './brands';
+export const ALL_TEMPLATES = [...TEMPLATES, ...VEHICLE_TEMPLATES, ...BRAND_TEMPLATES];
