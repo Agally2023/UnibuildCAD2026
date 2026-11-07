@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, PanResponder, Platform, useWindowDimensions } from 'react-native';
-import Svg, { Circle, G as SvgG, Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G as SvgG, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams } from 'expo-router';
 import { drag, Q, turn, VIEWS } from '../../lib/orbit';
 import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
 import { TEMPLATES } from '../../lib/partlib';
 import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
-import { toStl } from '../../lib/solid';
+import { featureEdges, toStl } from '../../lib/solid';
+import { wirePath } from '../../lib/wire';
 import PartScene from '../../components/PartScene';
 import { saveFile } from '../../components/saveFile';
 
@@ -28,14 +29,15 @@ const Chip = ({ label, on, go, testID, danger }: { label: string; on?: boolean; 
 );
 
 const Grp = ({ title, children }: { title: string; children: any }) => (<View style={s.grp}><View style={s.grpRow}>{children}</View><Text style={s.grpT}>{title}</Text></View>);
-const B = ({ icon, label, go, on, testID, danger, sub, wide }: { icon: string; label: string; go: () => void; on?: boolean; testID?: string; danger?: boolean; sub?: string; wide?: boolean }) => (
-  <Pressable testID={testID} onPress={go} style={[s.rb, wide && { width: 138 }, on && s.rbOn, danger && s.rbDanger]}>
-    <Text style={[s.rbI, on && { color: '#fff' }]}>{icon}</Text><Text style={[s.rbT, on && { color: '#fff' }]}>{label}</Text>{!!sub && <Text style={[s.rbS, on && { color: '#dff' }]} numberOfLines={3}>{sub}</Text>}
+const THUMBS = new Map<string, string>();   // wireframe previews of the templates, drawn once
+const B = ({ icon, label, go, on, testID, danger, sub, wide, thumb }: { icon: string; label: string; go: () => void; on?: boolean; testID?: string; danger?: boolean; sub?: string; wide?: boolean; thumb?: string }) => (
+  <Pressable testID={testID} onPress={go} style={[s.rb, wide && { width: 150 }, on && s.rbOn, danger && s.rbDanger]}>
+    {wide ? <Svg width={130} height={76} style={s.thumb}><Path d={thumb ?? ''} stroke="#146c43" strokeWidth={1} fill="none" /></Svg> : <Text style={[s.rbI, on && { color: '#fff' }]}>{icon}</Text>}<Text style={[s.rbT, on && { color: '#fff' }]}>{label}</Text>{!!sub && <Text style={[s.rbS, on && { color: '#dff' }]} numberOfLines={3}>{sub}</Text>}
   </Pressable>
 );
 
 export default function Parts() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tpl, tab: tabQ } = useLocalSearchParams<{ id: string; tpl?: string; tab?: string }>();
   const { width } = useWindowDimensions(), wide = width >= 900;
   const key = `unibuild.parts.${id}`;
   const [parts, setParts] = useState<PartDoc[]>([sampleBracket()]), [ci, setCi] = useState(0), [ready, setReady] = useState(false);
@@ -71,6 +73,8 @@ export default function Parts() {
   // ----- sketch editing -----
   const [tool, setTool] = useState<Tool>('select'), [pend, setPend] = useState<[number, number][]>([]), [sel, setSel] = useState<string[]>([]);
   const [snap, setSnap] = useState(5), [cur, setCur] = useState<[number, number] | null>(null), [dimv, setDimv] = useState('');
+  const [thumbTick, setThumbTick] = useState(0), [wire, setWire] = useState(false);
+  const glOk = useMemo(() => Platform.OS !== 'web' || (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })(), []);
   const [tab, setTab] = useState<Tab>('sketch'), [opt, setOpt] = useState({ sides: '6', chamfer: '2', bn: '6', pcd: '100', bd: '10', pc: '4', pd: '20', pa: '360' }), [paste, setPaste] = useState<string | null>(null);
   const setO = (k: keyof typeof opt) => (v: string) => setOpt(o => ({ ...o, [k]: v }));
   const [box, setBox] = useState({ w: 600, h: 420 }), [vw, setVw] = useState({ cx: 40, cy: 30, k: 4 });
@@ -137,6 +141,17 @@ export default function Parts() {
 
   // ----- 3D view -----
   const [quat, setQuat] = useState<Q>(VIEWS.iso.q), [zoom, setZoom] = useState(1), last = useRef({ x: 0, y: 0 }), wrap = useRef<any>(null);
+  useEffect(() => {
+    if (tab !== 'mech' && tab !== 'auto') return;
+    const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (tab === 'mech' ? x.group === 'mechanical' : x.group === 'automotive') && !THUMBS.has(x.key));
+    let dead = false;
+    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { THUMBS.set(todo[i].key, wirePath(rebuild(todo[i].make()).mesh, VIEWS.iso.q, 130, 76, 6)); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
+    next(0); return () => { dead = true; };
+  }, [tab]);
+  const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
+  const showWire = wire || !glOk;
+  const wireD = useMemo(() => (showWire ? wirePath(R.mesh, quat, 700, 460, 30, edges) : ''), [showWire, R.mesh, quat, edges]);
+
   const pan = useMemo(() => PanResponder.create({ onStartShouldSetPanResponder: () => true, onPanResponderGrant: () => { last.current = { x: 0, y: 0 }; }, onPanResponderMove: (_e, g) => { const dx = g.dx - last.current.x, dy = g.dy - last.current.y; last.current = { x: g.dx, y: g.dy }; setQuat(q => drag(q, dx, dy)); } }), []);
   useEffect(() => {
     if (Platform.OS !== 'web') return; const node = wrap.current as HTMLElement | null;
@@ -275,8 +290,8 @@ export default function Parts() {
 
   const Viewport = (
     <View ref={wrap} testID="viewport3d" style={s.canvas} {...pan.panHandlers}>
-      {R.mesh.f.length ? <PartScene mesh={R.mesh} quat={quat} zoom={zoom} /> : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
-      <View style={s.vbtns}>{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <Chip key={k} label={v.label} go={() => setQuat(v.q)} />)}<Chip label="Turn 15° ↻" go={() => setQuat(q => turn(q, 'y', Math.PI / 12))} /></View>
+      {R.mesh.f.length ? (showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
+      <View style={s.vbtns}>{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <Chip key={k} label={v.label} go={() => setQuat(v.q)} />)}<Chip label="Turn 15° ↻" go={() => setQuat(q => turn(q, 'y', Math.PI / 12))} />{glOk && <Chip label={wire ? 'Solid view' : 'Wire view'} go={() => setWire(w => !w)} />}</View>
     </View>
   );
 
@@ -302,6 +317,14 @@ export default function Parts() {
     commit(d => ({ ...d, upTo: undefined, steps: [...d.steps, { id: pid, type: 'pattern', name: mode === 'linear' ? 'Linear pattern' : 'Circular pattern', of: f, mode, count: mode === 'linear' ? '3' : '4', dx: '20', dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' } as PatternStep] })); setSelStep(pid); setView('3d');
   };
   const finishSketch = () => { setView('3d'); setTool('select'); };
+  const tplDone = useRef('');
+  useEffect(() => {
+    if (!ready) return;
+    const k = `${tpl ?? ''}|${tabQ ?? ''}`; if (tplDone.current === k) return; tplDone.current = k;
+    const x = TEMPLATES.find(q => q.key === tpl);
+    if (x) { newDoc(x.make()); setTab(x.group === 'automotive' ? 'auto' : 'mech'); setMsg(`${x.label} opened. Change its parameters on the left or any step in the timeline.`); }
+    else if (tabQ === 'mech' || tabQ === 'auto') setTab(tabQ);
+  }, [ready, tpl, tabQ]);
   const fromTemplate = (mk: () => PartDoc) => { newDoc(mk()); setTab('solid'); setMsg('Template opened as a new part. Change its parameters on the left, or any step in the timeline.'); };
   const TAB_HINT: Record<Tab, string> = {
     sketch: '1 New sketch on a plane. 2 Draw a closed shape. 3 Select lines or points and constrain them. 4 Type a value and dimension. Then Solid > Extrude.',
@@ -345,8 +368,8 @@ export default function Parts() {
           {step && (step.type === 'extrude' || step.type === 'revolve') && <Grp title={`Operation: ${step.name}`}>{(['new', 'join', 'cut'] as Op[]).map(o => <B key={o} testID={`op-${o}`} icon={o === 'new' ? '＋' : o === 'join' ? '∪' : '−'} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</Grp>}
           <Grp title="History"><B testID="undo" icon="↶" label="Undo" go={undo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
         </>}
-        {tab === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} go={() => fromTemplate(x.make)} wide />)}<B icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" go={() => fromTemplate(sampleBracket)} wide /></Grp>}
-        {tab === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} go={() => fromTemplate(x.make)} wide />)}</Grp>}
+        {tab === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
+        {tab === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'inspect' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
           <Grp title="Material">{[['Steel', 7850], ['Stainless', 8000], ['Aluminium', 2700], ['Titanium', 4500], ['Cast iron', 7200], ['Brass', 8500], ['ABS', 1050]].map(([n, v]) => <B key={n as string} icon="◼" label={n as string} on={doc.density === v} go={() => commit(d => ({ ...d, density: v as number }))} />)}</Grp>
@@ -408,6 +431,7 @@ const s = StyleSheet.create({
   rb: { minWidth: 64, paddingHorizontal: 6, paddingVertical: 5, borderRadius: 6, alignItems: 'center', gap: 2 },
   rbOn: { backgroundColor: '#146c43' },
   rbDanger: { backgroundColor: '#fdf3f3' },
+  thumb: { backgroundColor: '#f4f9f6', borderRadius: 6 },
   rbI: { fontSize: 20, color: '#146c43', height: 26 },
   rbT: { fontSize: 11, fontWeight: '700', color: '#0a2e1f', textAlign: 'center' },
   rbS: { fontSize: 10, color: '#5f7a6b', textAlign: 'center' },

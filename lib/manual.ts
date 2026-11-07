@@ -200,7 +200,7 @@ export const manual: Section[] = [
   {
     id: 'parts', title: 'Parts and mechanical design', blurb: 'Sketches, solids and parameters for brackets, connections and machine parts.',
     blocks: [
-      { t: 'p', x: 'Open **Parts** from the Modules screen. It works in millimetres, away from the building storeys, and is the base for steel connections, plant supports, machine parts and vehicle components. Parts are kept on this device; use **Save part file** and **Export STL** to keep or share them (STL opens in slicers, CAM and other CAD tools).' },
+      { t: 'p', x: 'Open **Parts** from the Modules screen. It works in millimetres, away from the building storeys, and is the base for steel connections, plant supports, machine parts and vehicle components. The main ribbon on the plan screen has **Mechanical** and **Automotive** menus that list ready-made parts (shaft, flange, bolt, hollow section, gear, wheel rim, brake disc, piston) and open them here. Inside, the ribbon tabs Sketch, Solid, Mechanical, Automotive, Inspect and File hold every tool; template buttons show a small picture of the part, and **Wire view** draws the part as lines if 3D graphics are unavailable. Parts are kept on this device; use **Save part file** and **Export STL** to keep or share them (STL opens in slicers, CAM and other CAD tools).' },
       { t: 'h', x: 'The ribbon' },
       { t: 'ul', x: [
         '**Sketch:** New sketch on a plane, Draw (select, line, rectangle, circle, polygon, axis line), Constrain, Dimension, and Modify (chamfer a corner, bolt circle, delete, fit, snap). A hint line under the ribbon says what to do next.',
@@ -226,7 +226,7 @@ export const manual: Section[] = [
       { t: 'ul', x: [
         'The Part card shows volume, surface, size and mass for steel, aluminium, cast iron, brass or a density you type.',
         'Solids are triangle meshes: joins and cuts are exact to the facets, but curved faces are faceted (circles are 48-sided, revolves 64 segments). There are no fillets, chamfers, shells, patterns, assemblies, sheet metal, STEP export or drawings yet.',
-        'Sketches support lines and circles (no arcs or splines yet). Parts are not yet placed into the building model or its IFC export.',
+        'Sketches support lines and circles (no arcs or splines yet; no 3D fillets). Parts are not yet placed into the building model or its IFC export.',
       ] },
     ],
   },
