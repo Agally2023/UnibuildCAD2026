@@ -1,6 +1,8 @@
 // Run with:  npx tsx tests/run.ts
 // Analytical benchmarks and regression checks. Closed-form results are exact textbook values, not approximations.
 import { readFileSync } from 'fs';
+import { VEHICLE_TEMPLATES } from '../lib/vehicles';
+import { rebuild as rebuildPart } from '../lib/parts';
 import { envelope } from '../lib/frame';
 import { equivalentFrame } from '../lib/eqframe';
 import { analyseNetwork, dynamicPressure, frictionFactor, frictionPerMetre, hydraulicDiameter } from '../lib/mepfit';
@@ -902,6 +904,14 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const front = wirePath(cube, VIEWS.front.q, 100, 100, 0), segs = (front.match(/M/g) ?? []).length;
   ok('wire view: a cube seen from the front is a square drawn edge to edge in the box', segs === 12 && /M0\.0 100\.0|M0\.0 0\.0|M100\.0/.test(front), `${segs} ${front.slice(0, 60)}`);
   ok('wire view: an empty part draws nothing', wirePath({ v: [], f: [] }, VIEWS.iso.q, 100, 100) === '');
+}
+
+// ---- vehicles ----
+{
+  for (const x of VEHICLE_TEMPLATES) { const r = rebuildPart(x.make()); ok(`vehicle template ${x.key} builds without errors`, r.errors.length === 0 && !!r.stats); }
+  const sed = rebuildPart(VEHICLE_TEMPLATES[0].make());
+  ok('sedan is 4.6 m long and 1.8 m wide', Math.abs(sed.stats!.size[0] - 4600) < 1 && Math.abs(sed.stats!.size[1] - 1800) < 1);
+  ok('sedan mass is its kerb weight, about 1400 kg', Math.abs(sed.stats!.mass - 1400) < 20);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

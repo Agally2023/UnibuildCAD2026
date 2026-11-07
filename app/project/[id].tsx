@@ -1,5 +1,5 @@
 import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanBox, RoofForm } from '../../lib/roof';
-import { TEMPLATES } from '../../lib/partlib';
+import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { findFireCrossings, fireOf, RATINGS } from '../../lib/firedamper';
 import { planDxf } from '../../lib/dxf';
 import { centreOf, transformGeometry, Xf } from '../../lib/transform';
@@ -707,6 +707,7 @@ export default function Plan() {
     { key: 'civil', label: 'Construction & Civil', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true)), SEP, mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Schedules', go('schedules')), mi('Elevations and sections', go('views')), mi('Drawing sheets', go('sheets')), mi('Dashboard', go('dashboard'))] },
     { key: 'mech', label: 'Mechanical', items: [mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=mech` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'mechanical').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
     { key: 'auto', label: 'Automotive', items: [mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=auto` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'automotive').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
+    { key: 'veh', label: 'Vehicles', items: [mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=veh` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'vehicle').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any))), SEP, ...TEMPLATES.filter(x => x.group === 'component').map(x => mi(`Component: ${x.label}`, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
     { key: 'help', label: 'Help', items: [mi('Manual and guides', () => router.push('/manual' as any)), mi('Quick start', () => router.push('/manual?s=start' as any)), mi('Keyboard shortcuts', () => router.push('/manual?s=shortcuts' as any)), mi('Limits and assumptions', () => router.push('/manual?s=limits' as any))] },
     { key: 'options', label: 'Options', items: [
       ...[0.1, 0.25, 0.5, 1].map(v => mi(`Snap ${v} m`, () => setSnap(v), { checked: snap === v })), mi('Object snap (ends, middles, crossings)', () => setOsnap(!osnap), { checked: osnap }), mi('Ortho lock (or hold Shift)', () => setOrtho(!ortho), { checked: ortho }), SEP,
@@ -749,6 +750,7 @@ export default function Plan() {
     { key: 'more', title: 'Civil · Analyze', items: [{ key: 'md', label: 'Members', icon: 'design', onPress: go('design') }, { key: 'sf', label: 'Slab, found.', icon: 'foundation', onPress: go('foundations') }, { key: 'wq', label: 'Wind, quake', icon: 'wind', onPress: go('lateral') }, { key: 'mep', label: 'MEP', icon: 'mep', onPress: go('mep') }] },
     { key: 'mech', title: 'Mechanical', items: [{ key: 'pw', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=mech` as any) }, ...TEMPLATES.filter(x => x.group === 'mechanical').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
     { key: 'auto', title: 'Automotive', items: [{ key: 'pa', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=auto` as any) }, ...TEMPLATES.filter(x => x.group === 'automotive').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
+    { key: 'veh', title: 'Vehicles', items: [{ key: 'pv', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=veh` as any) }, ...TEMPLATES.filter(x => x.group === 'vehicle' || x.group === 'component').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
   ];
 
   // keyboard on the web: V select, tool letters, Esc, Delete, Ctrl+Z
