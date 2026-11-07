@@ -30,6 +30,7 @@ import { foundationCombos } from '../lib/combos';
 import { lateralAnalysis, seismicSd, windCf, windQp } from '../lib/lateral';
 import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, calc, circlePolygon as cpoly, emptySketch, evalParams, profiles, solveSketch } from '../lib/sketch';
 import { boolean, featureEdges, extrude as extrudeR, isClosed, revolve as revolveR, toStl, volume as vol3, bounds as bnds } from '../lib/solid';
+import { wirePath } from '../lib/wire';
 import { newPart, rebuild, sampleBracket, type PartDoc } from '../lib/parts';
 import { TEMPLATES } from '../lib/partlib';
 import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
@@ -894,6 +895,13 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const holed = boolean(cube, extrudeR([{ outer: [[3, 3], [7, 3], [7, 7], [3, 7]], holes: [] }], 'XY', -1, 12), 'cut');
   const he = featureEdges(holed); let axisOnly = true; for (let i = 0; i < he.length; i += 6) { const d = [Math.abs(he[i + 3] - he[i]), Math.abs(he[i + 4] - he[i + 1]), Math.abs(he[i + 5] - he[i + 2])]; if (d.filter(v => v > 1e-6).length > 1) axisOnly = false; }
   ok('viewport edges: a cube with a square hole made by boolean draws only real, axis-aligned edges (no diagonals across flat faces)', he.length > 0 && axisOnly);
+}
+
+{
+  const cube = extrudeR(profiles(addRect(emptySketch(), [0, 0], [10, 10])).regions, 'XY', 0, 10);
+  const front = wirePath(cube, VIEWS.front.q, 100, 100, 0), segs = (front.match(/M/g) ?? []).length;
+  ok('wire view: a cube seen from the front is a square drawn edge to edge in the box', segs === 12 && /M0\.0 100\.0|M0\.0 0\.0|M100\.0/.test(front), `${segs} ${front.slice(0, 60)}`);
+  ok('wire view: an empty part draws nothing', wirePath({ v: [], f: [] }, VIEWS.iso.q, 100, 100) === '');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
