@@ -34,6 +34,23 @@ export function isClosed(m: Mesh): boolean {
   return true;
 }
 
+export const translateMesh = (m: Mesh, d: V3): Mesh => ({ v: m.v.map((x, i) => x + d[i % 3]), f: m.f });
+// turn about the world axis x, y or z through a centre point (right-handed, degrees)
+export function rotateMesh(m: Mesh, axis: 'x' | 'y' | 'z', deg: number, c: V3 = [0, 0, 0]): Mesh {
+  const a = (deg * Math.PI) / 180, co = Math.cos(a), si = Math.sin(a), i = axis === 'x' ? 1 : axis === 'y' ? 2 : 0, j = (i + 1) % 3, v = [...m.v];
+  for (let n = 0; n < v.length; n += 3) { const p = v[n + i] - c[i], q = v[n + j] - c[j]; v[n + i] = c[i] + p * co - q * si; v[n + j] = c[j] + p * si + q * co; }
+  return { v, f: m.f };
+}
+// centre of mass of a uniform solid
+export function centroid(m: Mesh): V3 {
+  let vol = 0; const s: V3 = [0, 0, 0];
+  for (let i = 0; i < m.f.length; i += 3) {
+    const a = m.f[i] * 3, b = m.f[i + 1] * 3, c = m.f[i + 2] * 3, d = (m.v[a] * (m.v[b + 1] * m.v[c + 2] - m.v[b + 2] * m.v[c + 1]) - m.v[a + 1] * (m.v[b] * m.v[c + 2] - m.v[b + 2] * m.v[c]) + m.v[a + 2] * (m.v[b] * m.v[c + 1] - m.v[b + 1] * m.v[c])) / 6;
+    vol += d; for (let k = 0; k < 3; k++) s[k] += (d * (m.v[a + k] + m.v[b + k] + m.v[c + k])) / 4;
+  }
+  return vol ? [s[0] / vol, s[1] / vol, s[2] / vol] : [0, 0, 0];
+}
+
 const flip = (m: Mesh): Mesh => { const f = [...m.f]; for (let i = 0; i < f.length; i += 3) { const t = f[i + 1]; f[i + 1] = f[i + 2]; f[i + 2] = t; } return { v: m.v, f }; };
 const outward = (m: Mesh) => (volume(m) < 0 ? flip(m) : m);
 
@@ -128,4 +145,26 @@ export function toStl(name: string, m: Mesh): string {
   }
   out.push(`endsolid ${name.replace(/[^A-Za-z0-9_-]+/g, '_') || 'part'}`);
   return out.join('\n');
+}
+
+// Edges to draw in the viewport: edges between two faces that meet at more than the threshold angle (default 30°), as x,y,z pairs.
+// Edges that only one triangle touches (T-junctions left by boolean operations) are skipped, so flat faces stay clean.
+export function featureEdges(m: Mesh, thresholdDeg = 30): number[] {
+  const q = (i: number) => [Math.round(m.v[i * 3] * 1e3), Math.round(m.v[i * 3 + 1] * 1e3), Math.round(m.v[i * 3 + 2] * 1e3)];
+  const ek = (a: number[], b: number[]) => { const A = a.join(','), B = b.join(','); return A < B ? `${A}|${B}` : `${B}|${A}`; };
+  const seen = new Map<string, { n: V3; seg: number[] }[]>(), cosT = Math.cos((thresholdDeg * Math.PI) / 180);
+  for (let i = 0; i < m.f.length; i += 3) {
+    const ia = m.f[i], ib = m.f[i + 1], ic = m.f[i + 2], A = q(ia), B = q(ib), C = q(ic);
+    const u = [m.v[ib * 3] - m.v[ia * 3], m.v[ib * 3 + 1] - m.v[ia * 3 + 1], m.v[ib * 3 + 2] - m.v[ia * 3 + 2]], w = [m.v[ic * 3] - m.v[ia * 3], m.v[ic * 3 + 1] - m.v[ia * 3 + 1], m.v[ic * 3 + 2] - m.v[ia * 3 + 2]];
+    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]], l = Math.hypot(n[0], n[1], n[2]);
+    if (l < 1e-12) continue;
+    const nn: V3 = [n[0] / l, n[1] / l, n[2] / l];
+    for (const [a, b, ja, jb] of [[A, B, ia, ib], [B, C, ib, ic], [C, A, ic, ia]] as [number[], number[], number, number][]) {
+      if (a.join() === b.join()) continue;
+      const k = ek(a, b), arr = seen.get(k) ?? []; arr.push({ n: nn, seg: [m.v[ja * 3], m.v[ja * 3 + 1], m.v[ja * 3 + 2], m.v[jb * 3], m.v[jb * 3 + 1], m.v[jb * 3 + 2]] }); seen.set(k, arr);
+    }
+  }
+  const out: number[] = [];
+  for (const arr of seen.values()) if (arr.length === 2 && arr[0].n[0] * arr[1].n[0] + arr[0].n[1] * arr[1].n[1] + arr[0].n[2] * arr[1].n[2] < cosT) out.push(...arr[0].seg);
+  return out;
 }

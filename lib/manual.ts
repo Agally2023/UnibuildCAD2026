@@ -201,6 +201,15 @@ export const manual: Section[] = [
     id: 'parts', title: 'Parts and mechanical design', blurb: 'Sketches, solids and parameters for brackets, connections and machine parts.',
     blocks: [
       { t: 'p', x: 'Open **Parts** from the Modules screen. It works in millimetres, away from the building storeys, and is the base for steel connections, plant supports, machine parts and vehicle components. Parts are kept on this device; use **Save part file** and **Export STL** to keep or share them (STL opens in slicers, CAM and other CAD tools).' },
+      { t: 'h', x: 'The ribbon' },
+      { t: 'ul', x: [
+        '**Sketch:** New sketch on a plane, Draw (select, line, rectangle, circle, polygon, axis line), Constrain, Dimension, and Modify (chamfer a corner, bolt circle, delete, fit, snap). A hint line under the ribbon says what to do next.',
+        '**Solid:** Extrude, Revolve, Linear and Circular pattern of any feature, the New body / Join / Cut choice for the selected feature, undo and roll back.',
+        '**Mechanical:** ready-made parametric stepped shaft, bolted flange, hex bolt, hollow section and spur gear (simplified trapezoid teeth, not involute).',
+        '**Automotive:** 16 in wheel rim with a 5-stud circle, brake disc, and piston with ring grooves and pin bore. Each opens as a new part: change its parameters to resize it, or open its steps to see how it was built.',
+        '**Inspect:** Sketch / 3D, standard views, material (steel, stainless, aluminium, titanium, cast iron, brass, ABS) and the measurements: volume, mass, size, centre of mass.',
+        '**File:** new part, delete, export STL, save a part file, and paste a saved part file to open it.',
+      ] },
       { t: 'h', x: 'The timeline' },
       { t: 'ul', x: [
         'A part is a list of steps replayed from the top: **sketches** and the **extrude** or **revolve** features that use them. Click a step to edit it. Use the arrows to reorder, the dot to switch a feature off, and **Roll back / Roll forward** to see the part at an earlier step.',

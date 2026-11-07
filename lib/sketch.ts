@@ -213,3 +213,30 @@ export function addCircle(sk: Sketch, c: [number, number], r: number): { sketch:
   const p = { id: uid('p'), x: c[0], y: c[1] }, circle = { id: uid('o'), c: p.id, r };
   return { sketch: { ...sk, pts: [...sk.pts, p], circles: [...sk.circles, circle] }, circle: circle.id };
 }
+
+// Regular polygon from its centre and one corner (n sides). The corners are left free so they can be dimensioned.
+export function addPolygon(sk: Sketch, c: [number, number], corner: [number, number], n: number): Sketch {
+  const r = Math.hypot(corner[0] - c[0], corner[1] - c[1]), a0 = Math.atan2(corner[1] - c[1], corner[0] - c[0]);
+  const pts = Array.from({ length: Math.max(3, Math.round(n)) }, (_, i) => ({ id: uid('p'), x: c[0] + r * Math.cos(a0 + (2 * Math.PI * i) / Math.max(3, Math.round(n))), y: c[1] + r * Math.sin(a0 + (2 * Math.PI * i) / Math.max(3, Math.round(n))) }));
+  const lines = pts.map((p, i) => ({ id: uid('l'), a: p.id, b: pts[(i + 1) % pts.length].id }));
+  return { ...sk, pts: [...sk.pts, ...pts], lines: [...sk.lines, ...lines] };
+}
+
+// Cut a corner where exactly two lines meet at a point: both lines are shortened by d and joined by a new line.
+export function chamferCorner(sk: Sketch, pointId: string, d: number): Sketch | null {
+  const at = sk.pts.find(p => p.id === pointId), two = sk.lines.filter(l => !l.axis && (l.a === pointId || l.b === pointId));
+  if (!at || two.length !== 2 || d <= 0) return null;
+  const ends = two.map(l => sk.pts.find(p => p.id === (l.a === pointId ? l.b : l.a))!), news: Pt[] = [];
+  for (const e of ends) { const L = Math.hypot(e.x - at.x, e.y - at.y); if (L <= d + 1e-9) return null; news.push({ id: uid('p'), x: at.x + ((e.x - at.x) / L) * d, y: at.y + ((e.y - at.y) / L) * d }); }
+  const lines = sk.lines.map(l => (l.id === two[0].id ? { ...l, a: l.a === pointId ? news[0].id : l.a, b: l.b === pointId ? news[0].id : l.b } : l.id === two[1].id ? { ...l, a: l.a === pointId ? news[1].id : l.a, b: l.b === pointId ? news[1].id : l.b } : l));
+  const gone = new Set(two.map(l => l.id));
+  const cons = sk.cons.filter(c => !(('p' in c && c.p === pointId) || ('a' in c && 'b' in c && (c.a === pointId || c.b === pointId)) || (c.t === 'length' && gone.has(c.l)) || (('l' in c) && gone.has((c as any).l) && ['horizontal', 'vertical', 'angle'].includes(c.t)) || (('l1' in c) && (gone.has(c.l1) || gone.has(c.l2)))));
+  return { ...sk, pts: [...sk.pts.filter(p => p.id !== pointId), ...news], lines: [...lines, { id: uid('l'), a: news[0].id, b: news[1].id }], circles: sk.circles, cons };
+}
+
+// n circles of diameter dia, evenly spaced on a pitch circle of diameter pcd about the centre c, the first at angle start (degrees).
+export function boltCircle(sk: Sketch, c: [number, number], pcd: number, n: number, dia: number, start = 0): Sketch {
+  let out = sk; const k = Math.max(1, Math.round(n));
+  for (let i = 0; i < k; i++) { const a = ((start + (360 * i) / k) * Math.PI) / 180; out = addCircle(out, [c[0] + (pcd / 2) * Math.cos(a), c[1] + (pcd / 2) * Math.sin(a)], dia / 2).sketch; }
+  return out;
+}
