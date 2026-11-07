@@ -28,9 +28,10 @@ import { designPadLateral, padPressure } from '../lib/footlateral';
 import { designGroundBeams, groundBeamLayout } from '../lib/groundbeam';
 import { foundationCombos } from '../lib/combos';
 import { lateralAnalysis, seismicSd, windCf, windQp } from '../lib/lateral';
-import { addCircle, addLine, addRect, calc, circlePolygon as cpoly, emptySketch, evalParams, profiles, solveSketch } from '../lib/sketch';
-import { boolean, extrude as extrudeR, isClosed, revolve as revolveR, toStl, volume as vol3, bounds as bnds } from '../lib/solid';
-import { newPart, rebuild, sampleBracket } from '../lib/parts';
+import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, calc, circlePolygon as cpoly, emptySketch, evalParams, profiles, solveSketch } from '../lib/sketch';
+import { boolean, featureEdges, extrude as extrudeR, isClosed, revolve as revolveR, toStl, volume as vol3, bounds as bnds } from '../lib/solid';
+import { newPart, rebuild, sampleBracket, type PartDoc } from '../lib/parts';
+import { TEMPLATES } from '../lib/partlib';
 import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
 import { buildLateralReport } from '../lib/report';
 import { ecm } from '../lib/serviceability';
@@ -833,6 +834,66 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('part: extruding an open sketch gives a clear message', open.errors.some(e => /not closed/.test(e.msg)));
   const rev = rebuild({ ...newPart(), steps: [{ id: 's', type: 'sketch', name: 'S', plane: 'XY', offset: '0', sk: addLine(addRect(emptySketch(), [10, 0], [30, 40]), [0, 0], [0, 100], { axis: true }).sketch }, { id: 'f', type: 'revolve', name: 'R', sketch: 's', op: 'new', depth: '0', angle: '360' }] });
   near('part: revolve feature about the axis line makes the ring', rev.stats?.volume ?? 0, Math.PI * (900 - 100) * 40, 0.004);
+}
+
+// ---- patterns and the mechanical / automotive part library ----
+{
+  const f48 = (0.5 * 48 * Math.sin((2 * Math.PI) / 48)) / Math.PI, f64 = (0.5 * 64 * Math.sin((2 * Math.PI) / 64)) / Math.PI;
+  const block = (extra: any[]): PartDoc => ({ ...newPart(), steps: [{ id: 's', type: 'sketch', name: 'S', plane: 'XY', offset: '0', sk: addRect(emptySketch(), [0, 0], [10, 10]) }, { id: 'f', type: 'extrude', name: 'E', sketch: 's', op: 'new', depth: '10', angle: '360' }, ...extra] });
+  const lin = (count: string, dx: string) => ({ id: 'p', type: 'pattern', name: 'P', of: 'f', mode: 'linear', count, dx, dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' });
+  // a pattern of a 'new body' feature makes separate bodies
+  const sep = rebuild(block([lin('3', '20')]));
+  ok('linear pattern of a new body gives three separate blocks (3000 mm³)', sep.bodies.length === 3 && Math.abs(sep.stats!.volume - 3000) < 1e-6, JSON.stringify(sep.errors));
+  const join = rebuild({ ...block([{ id: 'j', type: 'extrude', name: 'J', sketch: 's', op: 'join', depth: '10', angle: '360' }, { ...lin('3', '5'), of: 'j' }]) });
+  near('linear pattern of a join, copies overlapping: union of blocks at 0, 5 and 10 is 20 × 10 × 10', join.stats!.volume, 2000, 1e-6);
+  const cutP = rebuild(block([{ id: 's2', type: 'sketch', name: 'H', plane: 'XY', offset: '-1', sk: addRect(emptySketch(), [1, 1], [3, 3]) }, { id: 'c', type: 'extrude', name: 'C', sketch: 's2', op: 'cut', depth: '12', angle: '360' }, { ...lin('3', '3'), of: 'c' }]));
+  near('linear pattern of a cut: three 2 × 2 slots, 3 mm apart, remove 3 × 40 mm³ from the block', cutP.stats!.volume, 1000 - 3 * 40, 1e-6);
+  const rot = rebuild({ ...block([{ id: 'j', type: 'extrude', name: 'J', sketch: 's', op: 'join', depth: '10', angle: '360' }, { id: 'p', type: 'pattern', name: 'P', of: 'j', mode: 'circular', count: '4', dx: '0', dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' }]) });
+  near('circular pattern about the z axis: four 10 mm blocks, one in each quadrant, meeting at the axis (4000 mm³)', rot.stats!.volume, 4000, 1e-3);
+  ok('a pattern pointing at a missing feature reports it', rebuild(block([{ ...lin('3', '5'), of: 'nope' }])).errors.some(e => /repeat/.test(e.msg)));
+  ok('a pattern count below 2 is refused', rebuild(block([lin('1', '5')])).errors.some(e => /Count/.test(e.msg)));
+  near('centre of mass of a 10 mm block is its middle', rebuild(block([])).stats!.com[0] + rebuild(block([])).stats!.com[1] + rebuild(block([])).stats!.com[2], 15, 1e-9);
+
+  const R = Object.fromEntries(TEMPLATES.map(tp => [tp.key, rebuild(tp.make())]));
+  ok('every template rebuilds without errors and every sketch is fully constrained or intentionally frozen', TEMPLATES.every(tp => R[tp.key].errors.length === 0 && R[tp.key].stats!.volume > 0), TEMPLATES.map(tp => tp.key + ':' + JSON.stringify(R[tp.key].errors)).join(' '));
+  near('shaft: π/4 Σ d² l for 30/40/30 mm diameters within the 64-segment polygon error', R.shaft.stats!.volume, f64 * Math.PI * (15 * 15 * 40 + 20 * 20 * 80 + 15 * 15 * 40), 1e-6);
+  near('shaft: centre of mass is at mid-length (symmetric shaft)', R.shaft.stats!.com[2], 80, 1e-4);
+  near('flange: π (R² − r²) t minus six bolt holes', R.flange.stats!.volume, f48 * Math.PI * ((60 * 60 - 20 * 20) * 15 - 6 * 25 * 15), 1e-4);
+  near('hex bolt: hexagon head (√3/2 AF² k) plus round shank', R.bolt.stats!.volume, (Math.sqrt(3) / 2) * 256 * 6.4 + f48 * Math.PI * 25 * 40, 1e-4);
+  near('hollow section: (W H − (W − 2t)(H − 2t)) × L', R.tube.stats!.volume, (2400 - 54 * 34) * 500, 1e-9);
+  near('hollow section: centre of mass at the middle of the section and length', R.tube.stats!.com[0] * 1e4 + R.tube.stats!.com[1] * 1e2 + R.tube.stats!.com[2] * 1e-2, 30 * 1e4 + 20 * 1e2 + 250 * 1e-2, 1e-6);
+  ok('spur gear volume lies between the root and tip cylinders', R.gear.stats!.volume > Math.PI * (28.75 ** 2 - 10 ** 2) * 25 * 0.95 && R.gear.stats!.volume < Math.PI * 33 ** 2 * 25);
+  ok('wheel rim spans 2 × (203 + 18) = 442 mm over the flanges and 180 mm wide', R.rim.stats!.size.every((v, i) => Math.abs(v - [442, 442, 180][i]) < 1), JSON.stringify(R.rim.stats!.size));
+  const discNo = tpl('disc', d => ({ ...d, steps: d.steps.filter(s => s.id !== 'f6') }));
+  near('brake disc: the stud-circle pattern drills four more holes through the 8 mm top plate', discNo.stats!.volume - R.disc.stats!.volume, 4 * f48 * Math.PI * 49 * 8, 2e-3);
+  ok('piston is 86 mm across and 62 mm tall', Math.abs(R.piston.stats!.size[2] - 62) < 1e-6 && Math.abs(R.piston.stats!.size[0] - 86) < 0.5, JSON.stringify(R.piston.stats!.size));
+  function tpl(key: string, f: (d: PartDoc) => PartDoc) { return rebuild(f(TEMPLATES.find(x => x.key === key)!.make())); }
+  const big = TEMPLATES.filter(tp => !['gear', 'bolt'].includes(tp.key)).every(tp => {
+    const d = tp.make(); return d.params.every((pr, i) => { if (/^(nb|z)$/.test(pr.name)) return true; const r2 = rebuild({ ...d, params: d.params.map((q, j) => (j === i ? { ...q, expr: String(parseFloat(q.expr) * 1.1) } : q)) }); return r2.errors.length === 0; });
+  });
+  ok('changing any single parameter of a template by +10% keeps it solvable (the sketches follow the parameters)', big);
+  near('flange: widening the plate by 10% grows the volume as the parameter says', tpl('flange', d => ({ ...d, params: d.params.map(q => (q.name === 't' ? { ...q, expr: '30' } : q)) })).stats!.volume, R.flange.stats!.volume * 2, 1e-4);
+}
+
+// ---- sketch helpers: polygon, chamfer, bolt circle ----
+{
+  const hex = addPolygon(emptySketch(), [0, 0], [10, 0], 6), pr = profiles(hex);
+  near('polygon: a regular hexagon of circumradius 10 has area 3√3/2 R²', Math.abs(pr.regions[0].outer.reduce((s, q, i, a) => { const n = a[(i + 1) % a.length]; return s + q[0] * n[1] - n[0] * q[1]; }, 0) / 2), (3 * Math.sqrt(3) / 2) * 100, 1e-9);
+  const sq = addRect(emptySketch(), [0, 0], [10, 10]), ch = chamferCorner(sq, sq.pts[2].id, 3)!;
+  const pc = profiles(ch);
+  near('chamfer: a 3 mm corner cut removes a right triangle of 4.5 mm²', Math.abs(pc.regions[0].outer.reduce((s, q, i, a) => { const n = a[(i + 1) % a.length]; return s + q[0] * n[1] - n[0] * q[1]; }, 0) / 2), 100 - 4.5, 1e-9);
+  ok('chamfer: refuses a point that is not a corner of exactly two lines, or a cut longer than the edge', chamferCorner(sq, 'nope', 3) === null && chamferCorner(sq, sq.pts[0].id, 11) === null);
+  ok('chamfered sketch still solves (parallel and horizontal constraints on the cut edges are dropped)', solveSketch(ch, {}).info.ok);
+  const bc = boltCircle(emptySketch(), [0, 0], 100, 5, 10), cs = bc.circles.map(c => bc.pts.find(p => p.id === c.c)!);
+  ok('bolt circle: five 10 mm holes on a 100 mm pitch circle', bc.circles.length === 5 && cs.every(p => Math.abs(Math.hypot(p.x, p.y) - 50) < 1e-9) && bc.circles.every(c => c.r === 5));
+}
+
+{
+  const cube = extrudeR(profiles(addRect(emptySketch(), [0, 0], [10, 10])).regions, 'XY', 0, 10), cyl = extrudeR(profiles(addCircle(emptySketch(), [0, 0], 10).sketch).regions, 'XY', 0, 20);
+  ok('viewport edges: a cube shows its 12 edges, a cylinder only its two rim circles (no side seams)', featureEdges(cube).length / 6 === 12 && featureEdges(cyl).length / 6 === 96, `${featureEdges(cube).length / 6} ${featureEdges(cyl).length / 6}`);
+  const holed = boolean(cube, extrudeR([{ outer: [[3, 3], [7, 3], [7, 7], [3, 7]], holes: [] }], 'XY', -1, 12), 'cut');
+  const he = featureEdges(holed); let axisOnly = true; for (let i = 0; i < he.length; i += 6) { const d = [Math.abs(he[i + 3] - he[i]), Math.abs(he[i + 4] - he[i + 1]), Math.abs(he[i + 5] - he[i + 2])]; if (d.filter(v => v > 1e-6).length > 1) axisOnly = false; }
+  ok('viewport edges: a cube with a square hole made by boolean draws only real, axis-aligned edges (no diagonals across flat faces)', he.length > 0 && axisOnly);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

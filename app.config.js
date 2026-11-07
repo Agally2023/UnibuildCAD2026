@@ -3,7 +3,7 @@ const baseUrl = process.env.EXPO_BASE_URL || undefined;
 module.exports = {
   expo: {
     name: 'Unibuild', slug: 'unibuild', scheme: 'unibuild', version: '0.1.0',
-    orientation: 'default', userInterfaceStyle: 'automatic', plugins: ['expo-router'],
+    orientation: 'default', userInterfaceStyle: 'automatic', plugins: [['expo-router', { asyncRoutes: { web: true, default: false } }]],
     android: { package: 'com.unibuild.app' }, ios: { bundleIdentifier: 'com.unibuild.app' },
     web: { bundler: 'metro' },
     experiments: baseUrl ? { baseUrl } : {},
