@@ -5,11 +5,11 @@ import { newPart, type FeatureStep, type PartDoc, type PatternStep, type SketchS
 import type { Plane } from './solid';
 
 type P2 = [number, number];
-const num = (n: number) => String(Math.round(n * 1e6) / 1e6);
+export const num = (n: number) => String(Math.round(n * 1e6) / 1e6);
 
 // A closed polygon whose edges are all horizontal or vertical (or free), fully dimensioned. dims[i] is the expression for edge i
 // (from point i to point i+1); a missing one is frozen at its drawn length. anchor places the first point from the origin by expressions.
-function poly(id: string, name: string, plane: Plane, offset: string, pts: P2[], dims: (string | undefined)[], opt: { anchor?: { dx: string; dy: string }; axisLen?: number } = {}): SketchStep {
+export function poly(id: string, name: string, plane: Plane, offset: string, pts: P2[], dims: (string | undefined)[], opt: { anchor?: { dx: string; dy: string }; axisLen?: number } = {}): SketchStep {
   const sk: Sketch = { pts: [{ id: 'o', x: 0, y: 0 }], lines: [], circles: [], cons: [{ id: 'fo', t: 'fix', p: 'o' }] };
   pts.forEach((p, i) => sk.pts.push({ id: `p${i}`, x: p[0], y: p[1] }));
   pts.forEach((p, i) => {
@@ -25,7 +25,7 @@ function poly(id: string, name: string, plane: Plane, offset: string, pts: P2[],
 }
 
 // Circles with their centres placed from the origin: c = [x, y] expressions, r = radius expression.
-function circles(id: string, name: string, plane: Plane, offset: string, list: { c: [string, string]; r: string }[]): SketchStep {
+export function circles(id: string, name: string, plane: Plane, offset: string, list: { c: [string, string]; r: string }[]): SketchStep {
   const sk: Sketch = { pts: [{ id: 'o', x: 0, y: 0 }], lines: [], circles: [], cons: [{ id: 'fo', t: 'fix', p: 'o' }] };
   list.forEach((q, i) => {
     let cx = 0, cy = 0; try { cx = parseFloat(q.c[0]) || 0; cy = parseFloat(q.c[1]) || 0; } catch { /* use origin */ }
@@ -35,10 +35,10 @@ function circles(id: string, name: string, plane: Plane, offset: string, list: {
   return { id, type: 'sketch', name, plane, offset, sk };
 }
 
-const ext = (id: string, name: string, sketch: string, op: FeatureStep['op'], depth: string, symmetric = false): FeatureStep => ({ id, type: 'extrude', name, sketch, op, depth, angle: '360', symmetric });
-const rev = (id: string, name: string, sketch: string): FeatureStep => ({ id, type: 'revolve', name, sketch, op: 'new', depth: '0', angle: '360' });
-const ring = (id: string, name: string, of: string, count: string): PatternStep => ({ id, type: 'pattern', name, of, mode: 'circular', count, dx: '0', dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' });
-const params = (o: Record<string, number>) => Object.entries(o).map(([name, v]) => ({ name, expr: String(v) }));
+export const ext = (id: string, name: string, sketch: string, op: FeatureStep['op'], depth: string, symmetric = false): FeatureStep => ({ id, type: 'extrude', name, sketch, op, depth, angle: '360', symmetric });
+export const rev = (id: string, name: string, sketch: string): FeatureStep => ({ id, type: 'revolve', name, sketch, op: 'new', depth: '0', angle: '360' });
+export const ring = (id: string, name: string, of: string, count: string): PatternStep => ({ id, type: 'pattern', name, of, mode: 'circular', count, dx: '0', dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' });
+export const params = (o: Record<string, number | string>) => Object.entries(o).map(([name, v]) => ({ name, expr: String(v) }));
 
 // ---------- mechanical ----------
 export function shaft(): PartDoc {
@@ -131,7 +131,7 @@ export function piston(): PartDoc {
   return d;
 }
 
-export type Template = { key: string; label: string; group: 'mechanical' | 'automotive'; blurb: string; make: () => PartDoc };
+export type Template = { key: string; label: string; group: 'mechanical' | 'automotive' | 'vehicle' | 'component'; blurb: string; make: () => PartDoc };
 export const TEMPLATES: Template[] = [
   { key: 'shaft', label: 'Stepped shaft', group: 'mechanical', blurb: 'Three diameters and lengths, turned from a half section', make: shaft },
   { key: 'flange', label: 'Bolted flange', group: 'mechanical', blurb: 'Plate with a bore and a circle of bolt holes', make: flange },
