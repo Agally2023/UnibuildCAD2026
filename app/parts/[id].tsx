@@ -6,6 +6,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { drag, Q, turn, VIEWS } from '../../lib/orbit';
 import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
+import { BRANDS } from '../../lib/brands';
+import { newVehicleProject, VEHICLE_KINDS } from '../../lib/vproject';
 import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
 import { featureEdges, toStl } from '../../lib/solid';
 import { wirePath } from '../../lib/wire';
@@ -13,7 +15,7 @@ import PartScene from '../../components/PartScene';
 import { saveFile } from '../../components/saveFile';
 
 type Tool = 'select' | 'line' | 'rect' | 'circle' | 'axis' | 'polygon';
-const TABS = [['sketch', 'Sketch'], ['solid', 'Solid'], ['mech', 'Mechanical'], ['auto', 'Automotive'], ['veh', 'Vehicles'], ['inspect', 'Inspect'], ['file', 'File']] as const;
+const TABS = [['sketch', 'Sketch'], ['solid', 'Solid'], ['mech', 'Mechanical'], ['auto', 'Automotive'], ['veh', 'Vehicles'], ['brand', 'Brands'], ['inspect', 'Inspect'], ['file', 'File']] as const;
 type Tab = typeof TABS[number][0];
 const PLANES = ['XY', 'XZ', 'YZ'] as const;
 const r1 = (n: number) => Math.round(n * 100) / 100;
@@ -73,6 +75,7 @@ export default function Parts() {
   // ----- sketch editing -----
   const [tool, setTool] = useState<Tool>('select'), [pend, setPend] = useState<[number, number][]>([]), [sel, setSel] = useState<string[]>([]);
   const [snap, setSnap] = useState(5), [cur, setCur] = useState<[number, number] | null>(null), [dimv, setDimv] = useState('');
+  const [vpName, setVpName] = useState(''), [vpKind, setVpKind] = useState('blank');
   const [thumbTick, setThumbTick] = useState(0), [wire, setWire] = useState(false);
   const glOk = useMemo(() => Platform.OS !== 'web' || (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })(), []);
   const [tab, setTab] = useState<Tab>('sketch'), [opt, setOpt] = useState({ sides: '6', chamfer: '2', bn: '6', pcd: '100', bd: '10', pc: '4', pd: '20', pa: '360' }), [paste, setPaste] = useState<string | null>(null);
@@ -142,8 +145,8 @@ export default function Parts() {
   // ----- 3D view -----
   const [quat, setQuat] = useState<Q>(VIEWS.iso.q), [zoom, setZoom] = useState(1), last = useRef({ x: 0, y: 0 }), wrap = useRef<any>(null);
   useEffect(() => {
-    if (tab !== 'mech' && tab !== 'auto' && tab !== 'veh') return;
-    const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (tab === 'mech' ? x.group === 'mechanical' : tab === 'auto' ? x.group === 'automotive' : x.group === 'vehicle' || x.group === 'component') && !THUMBS.has(x.key));
+    if (tab !== 'mech' && tab !== 'auto' && tab !== 'veh' && tab !== 'brand') return;
+    const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (tab === 'mech' ? x.group === 'mechanical' : tab === 'auto' ? x.group === 'automotive' : tab === 'brand' ? x.group === 'brand' : x.group === 'vehicle' || x.group === 'component') && !THUMBS.has(x.key));
     let dead = false;
     const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { THUMBS.set(todo[i].key, wirePath(rebuild(todo[i].make()).mesh, VIEWS.iso.q, 130, 76, 6)); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
     next(0); return () => { dead = true; };
@@ -322,14 +325,15 @@ export default function Parts() {
     if (!ready) return;
     const k = `${tpl ?? ''}|${tabQ ?? ''}`; if (tplDone.current === k) return; tplDone.current = k;
     const x = TEMPLATES.find(q => q.key === tpl);
-    if (x) { newDoc(x.make()); setTab(x.group === 'automotive' ? 'auto' : x.group === 'vehicle' || x.group === 'component' ? 'veh' : 'mech'); setMsg(`${x.label} opened. Change its parameters on the left or any step in the timeline.`); }
-    else if (tabQ === 'mech' || tabQ === 'auto' || tabQ === 'veh') setTab(tabQ);
+    if (x) { newDoc(x.make()); setTab(x.group === 'automotive' ? 'auto' : x.group === 'brand' ? 'brand' : x.group === 'vehicle' || x.group === 'component' ? 'veh' : 'mech'); setMsg(`${x.label} opened. Change its parameters on the left or any step in the timeline.`); }
+    else if (tabQ === 'mech' || tabQ === 'auto' || tabQ === 'veh' || tabQ === 'brand') setTab(tabQ);
   }, [ready, tpl, tabQ]);
   const fromTemplate = (mk: () => PartDoc) => { newDoc(mk()); setTab('solid'); setMsg('Template opened as a new part. Change its parameters on the left, or any step in the timeline.'); };
   const TAB_HINT: Record<Tab, string> = {
     sketch: '1 New sketch on a plane. 2 Draw a closed shape. 3 Select lines or points and constrain them. 4 Type a value and dimension. Then Solid > Extrude.',
     solid: 'Extrude pushes a sketch into a solid; Revolve turns it about the Axis line. Choose New body, Join or Cut in the properties. Patterns repeat a feature.',
     mech: 'Ready-made parametric machine parts. Each opens as a new part: change the parameters (left) to resize it, or open any step to see how it was built.',
+    brand: 'Production vehicles by maker, using the maker\'s published length, width, height, wheelbase and kerb weight with a generic body style. Edit any parameter. These are dimension-accurate starting points, not the makers\' own designs.',
     veh: 'Complete vehicles and vehicle components. Open one, then change its parameters (length, width, wheelbase, wheel size) and the whole vehicle rebuilds. Mass shows the kerb weight.',
     auto: 'Ready-made vehicle parts. Each opens as a new part with its parameters, sketches and features, so you can adapt it.',
     inspect: 'Material sets the mass. Volume, mass, size and centre of mass update as you edit. Use the view buttons to look at the part from any side.',
@@ -370,6 +374,13 @@ export default function Parts() {
           <Grp title="History"><B testID="undo" icon="↶" label="Undo" go={undo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
         </>}
         {tab === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
+        {tab === 'brand' && BRANDS.map(b => <Grp key={b} title={b}>{TEMPLATES.filter(x => x.group === 'brand' && x.brand === b).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
+        {tab === 'veh' && <Grp title="New vehicle project"><View style={{ gap: 6, width: 250 }}>
+          <TextInput testID="vp-name" value={vpName} onChangeText={setVpName} placeholder="Project name, e.g. City runabout" style={s.inp} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{VEHICLE_KINDS.map(k => <Chip key={k.key} testID={`vp-${k.key}`} label={k.label} on={vpKind === k.key} go={() => setVpKind(k.key)} />)}</View>
+          <Text style={s.hint}>{VEHICLE_KINDS.find(k => k.key === vpKind)?.blurb}</Text>
+          <B testID="vp-create" icon="🚘" label="Create project" go={() => { newDoc(newVehicleProject(vpName, vpKind)); setVpName(''); setMsg('New vehicle project created. It is listed with a car icon below. Change its parameters or any step, and add your own sketches and features.'); }} />
+        </View></Grp>}
         {tab === 'veh' && <Grp title="Complete vehicles">{TEMPLATES.filter(x => x.group === 'vehicle').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'veh' && <Grp title="Build from scratch: vehicle components">{TEMPLATES.filter(x => x.group === 'component').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🔩" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
@@ -399,7 +410,7 @@ export default function Parts() {
       <Text style={s.t1}>Parts</Text>
       <Exp testID="part-name" value={doc.name} width={170} onCommit={v => commit(d => ({ ...d, name: v }))} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>
-        {parts.map((p, i) => <Chip key={i} label={p.name} on={i === Math.min(ci, parts.length - 1)} go={() => { setCi(i); hist.current = []; setSelStep(p.steps[0]?.id ?? null); }} />)}
+        {parts.map((p, i) => <Chip key={i} label={(p.kind === 'vehicle' ? '🚘 ' : '') + p.name} on={i === Math.min(ci, parts.length - 1)} go={() => { setCi(i); hist.current = []; setSelStep(p.steps[0]?.id ?? null); }} />)}
       </ScrollView>
     </View>
   );

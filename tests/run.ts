@@ -2,6 +2,8 @@
 // Analytical benchmarks and regression checks. Closed-form results are exact textbook values, not approximations.
 import { readFileSync } from 'fs';
 import { VEHICLE_TEMPLATES } from '../lib/vehicles';
+import { BRAND_TEMPLATES, SPECS } from '../lib/brands';
+import { newVehicleProject, VEHICLE_KINDS } from '../lib/vproject';
 import { rebuild as rebuildPart } from '../lib/parts';
 import { envelope } from '../lib/frame';
 import { equivalentFrame } from '../lib/eqframe';
@@ -912,6 +914,17 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const sed = rebuildPart(VEHICLE_TEMPLATES[0].make());
   ok('sedan is 4.6 m long and 1.8 m wide', Math.abs(sed.stats!.size[0] - 4600) < 1 && Math.abs(sed.stats!.size[1] - 1800) < 1);
   ok('sedan mass is its kerb weight, about 1400 kg', Math.abs(sed.stats!.mass - 1400) < 20);
+}
+
+// ---- makers and vehicle projects ----
+{
+  ok('34 production models from 11 makers', BRAND_TEMPLATES.length === 34 && new Set(SPECS.map(s => s.brand)).size === 11);
+  let bad = 0;
+  SPECS.forEach((s, i) => { const r = rebuildPart(BRAND_TEMPLATES[i].make()); const z = r.stats; if (r.errors.length || !z || Math.abs(z.size[0] - s.L) > 2 || Math.abs(z.size[1] - s.W) > 2 || Math.abs(z.size[2] - s.H) > 2 || Math.abs(z.mass - s.kg) > s.kg * 0.01) bad++; });
+  ok('every model has its published length, width, height and kerb weight', bad === 0);
+  const vp = newVehicleProject('  City runabout ', 'blank');
+  ok('a new vehicle project keeps its name and is marked as a vehicle', vp.name === 'City runabout' && vp.kind === 'vehicle');
+  ok('every vehicle project kind builds', VEHICLE_KINDS.every(k => { const r = rebuildPart(newVehicleProject('x', k.key)); return r.errors.length === 0 && !!r.stats; }));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
