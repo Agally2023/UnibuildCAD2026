@@ -728,6 +728,7 @@ export default function Plan() {
       ...OCC.map((o, i) => mi(`Occupancy: ${o}`, () => basis({ use: i }), { checked: dsn.use === i })), SEP,
       ...[100, 150, 200, 300, 400].map(q => mi(`Soil bearing ${q} kPa`, () => basis({ q }), { checked: dsn.q === q })),
     ] },
+    { key: 'signout', label: 'Sign out', items: [mi('Sign out of Unibuild', () => { void supabase.auth.signOut(); }), SEP, mi('Back to the launcher', () => router.replace('/launcher' as any)), mi('All projects', () => router.replace('/projects'))] },
   ];
 
   const tbItems: TItem[] = [

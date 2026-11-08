@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, PanResponder, Platform, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G as SvgG, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { supabase } from '../../lib/supabase';
 import { drag, Q, turn, VIEWS } from '../../lib/orbit';
 import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
@@ -15,8 +16,8 @@ import PartScene from '../../components/PartScene';
 import { saveFile } from '../../components/saveFile';
 
 type Tool = 'select' | 'line' | 'rect' | 'circle' | 'axis' | 'polygon';
-const TABS = [['sketch', 'Sketch'], ['solid', 'Solid'], ['mech', 'Mechanical'], ['auto', 'Automotive'], ['veh', 'Vehicles'], ['brand', 'Brands'], ['inspect', 'Inspect'], ['file', 'File']] as const;
-type Tab = typeof TABS[number][0];
+const TABS = [['sketch', 'Sketch'], ['solid', 'Solid'], ['mech', 'Mechanical'], ['auto', 'Automotive'], ['veh', 'Vehicles'], ['brand', 'Brands'], ['inspect', 'Inspect'], ['file', 'File'], ['out', 'Sign out']] as const;
+type Tab = typeof TABS[number][0] | 'out';
 const PLANES = ['XY', 'XZ', 'YZ'] as const;
 const r1 = (n: number) => Math.round(n * 100) / 100;
 
@@ -45,6 +46,7 @@ export default function Parts() {
   const [parts, setParts] = useState<PartDoc[]>([sampleBracket()]), [ci, setCi] = useState(0), [ready, setReady] = useState(false);
   const [selStep, setSelStep] = useState<string | null>('f1'), [view, setView] = useState<'sketch' | '3d'>('3d');
   const doc = parts[Math.min(ci, parts.length - 1)];
+  const router = useRouter();
   const hist = useRef<PartDoc[]>([]);
   const railRef = useRef<ScrollView>(null), railX = useRef(0);
   const rail = (dir: number) => { const x = Math.max(0, railX.current + dir * 420); railX.current = x; railRef.current?.scrollTo({ x, animated: true }); };
@@ -336,6 +338,7 @@ export default function Parts() {
     solid: 'Extrude pushes a sketch into a solid; Revolve turns it about the Axis line. Choose New body, Join or Cut in the properties. Patterns repeat a feature.',
     mech: 'Ready-made parametric machine parts. Each opens as a new part: change the parameters (left) to resize it, or open any step to see how it was built.',
     brand: 'Production vehicles by maker, using the maker\'s published length, width, height, wheelbase and kerb weight with a generic body style. Edit any parameter. These are dimension-accurate starting points, not the makers\' own designs.',
+    out: 'Sign out of Unibuild, or return to the launcher or the project list. Your parts are kept on this device.',
     veh: 'Complete vehicles and vehicle components. Open one, then change its parameters (length, width, wheelbase, wheel size) and the whole vehicle rebuilds. Mass shows the kerb weight.',
     auto: 'Ready-made vehicle parts. Each opens as a new part with its parameters, sketches and features, so you can adapt it.',
     inspect: 'Material sets the mass. Volume, mass, size and centre of mass update as you edit. Use the view buttons to look at the part from any side.',
@@ -393,6 +396,7 @@ export default function Parts() {
           <Grp title="Material">{[['Steel', 7850], ['Stainless', 8000], ['Aluminium', 2700], ['Titanium', 4500], ['Cast iron', 7200], ['Brass', 8500], ['ABS', 1050]].map(([n, v]) => <B key={n as string} icon="◼" label={n as string} on={doc.density === v} go={() => commit(d => ({ ...d, density: v as number }))} />)}</Grp>
           <Grp title="Measure"><View style={{ minWidth: 220 }}>{R.stats ? <><Text style={s.v}>Volume {r1(R.stats.volume / 1000)} cm³</Text><Text style={s.v}>Mass {R.stats.mass < 1 ? `${r1(R.stats.mass * 1000)} g` : `${r1(R.stats.mass)} kg`}</Text><Text style={s.v}>Size {R.stats.size.map(r1).join(' × ')} mm</Text><Text style={s.v}>Centre of mass {R.stats.com.map(r1).join(', ')} mm</Text></> : <Text style={s.k}>No solid yet.</Text>}</View></Grp>
         </>}
+        {tab === 'out' && <Grp title="Account"><B testID="parts-signout" icon="⏻" label="Sign out" sub="Leave Unibuild on this device" danger wide go={() => { void supabase.auth.signOut(); }} /><B testID="parts-launcher" icon="⬡" label="Launcher" go={() => router.replace('/launcher' as any)} /><B icon="▤" label="All projects" go={() => router.replace('/projects' as any)} /></Grp>}
         {tab === 'file' && <>
           <Grp title="Parts"><B testID="new-part" icon="＋" label="New part" go={() => newDoc(newPart(`Part ${parts.length + 1}`))} /><B icon="∟" label="Sample bracket" go={() => newDoc(sampleBracket())} />{parts.length > 1 && <B icon="🗑" label="Delete part" danger go={() => { setParts(ps => ps.filter((_, i) => i !== Math.min(ci, ps.length - 1))); setCi(0); }} />}</Grp>
           <Grp title="Export"><B testID="export-stl" icon="⬇" label="STL (print, CAM)" go={exportStl} /><B icon="💾" label="Part file" go={exportJson} /></Grp>
