@@ -21,7 +21,7 @@ export default function Layout() {
     if (!ready) return;
     const onLogin = (segments as string[]).length === 0;
     if (!signedIn && !onLogin) router.replace('/');
-    if (signedIn && onLogin) router.replace('/projects');
+    if (signedIn && onLogin) router.replace('/launcher');
   }, [ready, signedIn, segments]);
 
   const toHub = ({ route }: { route: { name: string; params?: any } }) => ({
@@ -33,6 +33,7 @@ export default function Layout() {
 
   return <Stack screenOptions={toHub as any}>
     <Stack.Screen name="index" options={{ title: 'Unibuild' }} />
+    <Stack.Screen name="launcher" options={{ title: 'Launcher', headerShown: false }} />
     <Stack.Screen name="manual" options={{ title: 'Manual and guides' }} />
     <Stack.Screen name="schedules/[id]" options={{ title: 'Schedules' }} />
     <Stack.Screen name="views/[id]" options={{ title: 'Elevations and sections' }} />
