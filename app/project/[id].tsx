@@ -1,6 +1,8 @@
 import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanBox, RoofForm } from '../../lib/roof';
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
+import { BUILDINGS, BUILDING_GROUPS } from '../../lib/buildings';
+import { loadBuilding } from '../../lib/loadbuilding';
 import { findFireCrossings, fireOf, RATINGS } from '../../lib/firedamper';
 import { planDxf } from '../../lib/dxf';
 import { centreOf, transformGeometry, Xf } from '../../lib/transform';
@@ -278,7 +280,7 @@ export default function Plan() {
   const [tool, setTool] = useState<Tool>('wall');
   const [pick, setPick] = useState<Record<string, number>>({});
   const [start, setStart] = useState<Pt | null>(null);
-  const [err, setErr] = useState('');
+  const [err, setErr] = useState(''), [info, setInfo] = useState('');
   const [elev, setElev] = useState(3.15);
   const [zoom, setZoom] = useState(0.6);
   const [kw, setKw] = useState(5);
@@ -568,6 +570,14 @@ export default function Plan() {
   const live = useRef<any>({});
   live.current = { tool, zoom, xf, pickBox };
 
+  const addTemplate = async (b: (typeof BUILDINGS)[number]) => {
+    setErr(''); setInfo(`Adding ${b.label}…`);
+    try {
+      const r = await loadBuilding(b, id, stories, els, lib);
+      await reload(); if (r.firstStory) setCur(r.firstStory);
+      setInfo(`${b.label} added: ${r.added} elements on ${b.storeys.length} storey${b.storeys.length > 1 ? 's' : ''}, placed beside anything already drawn. Open the other storeys from the level list.`);
+    } catch (e: any) { setInfo(''); setErr(e?.message ?? 'Could not add the building'); }
+  };
   const addStorey = async (copy: boolean) => {
     if (!story) return;
     const last = stories[stories.length - 1];
@@ -705,7 +715,7 @@ export default function Plan() {
     { key: 'file', label: 'File', items: [mi('Projects', () => router.replace('/projects')), mi('Modules', () => router.push(`/hub/${id}` as any)), SEP, mi('Import IFC…', go('import')), mi('Export IFC', exportIfc), mi('Export DXF (this storey)', exportDxf)] },
     { key: 'edit', label: 'Edit', items: [mi('Undo', undo, { disabled: !hn.u }), mi('Redo', redo, { disabled: !hn.r }), SEP, mi('Rotate right 90° (E)', () => doTurn({ kind: 'rot', quarter: 1 }), { disabled: !selEls.length }), mi('Rotate left 90° (Q)', () => doTurn({ kind: 'rot', quarter: -1 }), { disabled: !selEls.length }), mi('Mirror left-right (H)', () => doTurn({ kind: 'mirror', axis: 'x' }), { disabled: !selEls.length }), mi('Mirror top-bottom (F)', () => doTurn({ kind: 'mirror', axis: 'y' }), { disabled: !selEls.length }), SEP, mi('Select (V)', () => setT('select')), mi('Select all on this storey', () => { setT('select'); setSelIds(all.map(e => e.id)); }), SEP, mi('Move selection (M)', () => startXf('move'), { disabled: !selEls.length }), mi('Copy selection (K)', () => startXf('copy'), { disabled: !selEls.length }), mi('Delete selected', () => removeMany(selEls), { disabled: !selEls.length }), SEP, mi('Finish shape or chain (Enter)', finish, { disabled: !start && !pts.length })] },
     { key: 'view', label: 'View', items: [mi('Zoom in', () => setZoom(z => Math.min(3, z * 1.25))), mi('Zoom out', () => setZoom(z => Math.max(0.15, z / 1.25))), mi('Fit to window', fit), SEP, mi('Full window (F9)', toggleFull, { checked: lay.full }), mi('Tool ribbon', () => setLay({ ribbon: !lay.ribbon }), { checked: lay.ribbon }), mi('Tool palette (left)', () => setLay({ left: !lay.left }), { checked: lay.left }), mi('Properties panel (right)', () => setLay({ right: !lay.right }), { checked: lay.right }), mi('Browser full screen', browserFull), SEP, mi('Grid', () => setGrid(!grid), { checked: grid }), mi('Wall lengths', () => setDims(!dims), { checked: dims }), mi('Deep blue canvas', () => setBlue(!blue), { checked: blue }), SEP, mi('Storey up', () => stepStorey(1)), mi('Storey down', () => stepStorey(-1)), mi('3D view', go('view3d'))] },
-    { key: 'civil', label: 'Construction & Civil', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true)), SEP, mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Schedules', go('schedules')), mi('Elevations and sections', go('views')), mi('Drawing sheets', go('sheets')), mi('Dashboard', go('dashboard'))] },
+    { key: 'civil', label: 'Construction & Civil', items: [...(['grid', 'column', 'beam', 'slab', 'wall', 'arc', 'door', 'window', 'roof', 'hole', 'stair', 'zone', 'dim', 'label', 'duct', 'pipe', 'plant', 'outlet'] as Tool[]).map(k => mi(TOOLS[k].label, () => setT(k), { checked: tool === k })), SEP, mi('Add storey', () => addStorey(false)), mi('Copy storey up', () => addStorey(true)), SEP, mi('Member design', go('design')), mi('Slab and foundations', go('foundations')), mi('Wind and quake', go('lateral')), mi('MEP routing and pressure', go('mep')), SEP, mi(nHere.length ? `Clashes (${nHere.length} here)` : 'Clashes', go('clashes')), mi('Schedules', go('schedules')), mi('Elevations and sections', go('views')), mi('Drawing sheets', go('sheets')), mi('Dashboard', go('dashboard')), SEP, mi('Building templates', undefined, { disabled: true }), ...BUILDING_GROUPS.flatMap(g => [mi(`— ${g} —`, undefined, { disabled: true }), ...BUILDINGS.filter(b => b.group === g).map(b => mi(`${b.label} (${b.blurb})`, () => { void addTemplate(b); }))])] },
     { key: 'mech', label: 'Mechanical', items: [mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=mech` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'mechanical').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
     { key: 'auto', label: 'Automotive', items: [mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=auto` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'automotive').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
     { key: 'veh', label: 'Vehicles', items: [mi('New vehicle project…', () => router.push(`/parts/${id}?tab=veh` as any)), mi('Parts workspace (sketch, extrude, revolve)', () => router.push(`/parts/${id}?tab=veh` as any)), SEP, ...TEMPLATES.filter(x => x.group === 'vehicle').map(x => mi(x.label, () => router.push(`/parts/${id}?tpl=${x.key}` as any))), SEP, ...TEMPLATES.filter(x => x.group === 'component').map(x => mi(`Component: ${x.label}`, () => router.push(`/parts/${id}?tpl=${x.key}` as any)))] },
@@ -750,6 +760,7 @@ export default function Plan() {
     { key: 'view', title: 'Viewpoint', items: [{ key: 'fp', label: 'Floor plan', icon: 'storey', active: true, onPress: () => {} }, { key: 'v3', label: '3D view', icon: 'cube', onPress: go('view3d') }, { key: 'fit', label: 'Fit', icon: 'fit', onPress: fit }] },
     { key: 'doc', title: 'Document', items: [ti('dim'), ti('label'), { key: 'dm', label: 'Lengths', icon: 'dims', active: dims, onPress: () => setDims(!dims) }, { key: 'sch', label: 'Schedules', icon: 'table', onPress: go('schedules') }, { key: 'vw', label: 'Sections & elevations', icon: 'section', onPress: go('views') }, { key: 'sht', label: 'Drawing sheets', icon: 'ifc', onPress: go('sheets') }, { key: 'cl', label: nHere.length ? `Clashes ${nHere.length}` : 'Clashes', icon: 'clash', onPress: go('clashes') }, { key: 'db', label: 'Dashboard', icon: 'dashboard', onPress: go('dashboard') }, { key: 'imp', label: 'Import IFC', icon: 'ifc', onPress: go('import') }, { key: 'exp', label: 'Export IFC', icon: 'ifc', onPress: exportIfc }] },
     { key: 'more', title: 'Civil · Analyze', items: [{ key: 'md', label: 'Members', icon: 'design', onPress: go('design') }, { key: 'sf', label: 'Slab, found.', icon: 'foundation', onPress: go('foundations') }, { key: 'wq', label: 'Wind, quake', icon: 'wind', onPress: go('lateral') }, { key: 'mep', label: 'MEP', icon: 'mep', onPress: go('mep') }] },
+    { key: 'bld', title: 'Civil · Building templates', items: BUILDINGS.map(b => ({ key: `bt-${b.key}`, label: b.label.replace(/, ground.*/, '').replace(' or hospital wing', '').replace('Church or community hall', 'Community hall'), icon: 'design' as any, onPress: () => { void addTemplate(b); } })) },
     { key: 'mech', title: 'Mechanical', items: [{ key: 'pw', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=mech` as any) }, ...TEMPLATES.filter(x => x.group === 'mechanical').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
     { key: 'auto', title: 'Automotive', items: [{ key: 'pa', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=auto` as any) }, ...TEMPLATES.filter(x => x.group === 'automotive').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
     { key: 'veh', title: 'Vehicles', items: [{ key: 'pv', label: 'Parts workspace', icon: 'design', onPress: () => router.push(`/parts/${id}?tab=veh` as any) }, ...TEMPLATES.filter(x => x.group === 'vehicle' || x.group === 'component').map(x => ({ key: `t-${x.key}`, label: x.label, icon: 'design' as any, onPress: () => router.push(`/parts/${id}?tpl=${x.key}` as any) }))] },
@@ -948,6 +959,7 @@ export default function Plan() {
           </ScrollView>
           {!wide && Inspector}
           {!!err && <Text style={s.err}>{err}</Text>}
+          {!!info && <Text testID="info" style={s.notice}>{info}</Text>}
           {!loaded && !els.length && <Text style={s.sum}>Loading the model…</Text>}
           <View style={{ flex: 1 }} onLayout={e => setVp({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
             <ScrollView horizontal ref={hRef}><ScrollView ref={vRef}>
@@ -1022,6 +1034,7 @@ const s = StyleSheet.create({
   l: { color: '#146c43', fontWeight: '600' }, k: { color: '#4f6a5b' }, rhint: { color: '#4f6a5b', maxWidth: 220, fontSize: 12, paddingTop: 6 },
   sum: { paddingHorizontal: 12, paddingBottom: 6, color: '#4f6a5b', fontSize: 13 },
   err: { color: '#c62828', paddingHorizontal: 12, paddingVertical: 4 },
+  notice: { color: '#146c43', paddingHorizontal: 12, paddingVertical: 4 },
   insp: { margin: 8, padding: 12, gap: 8, borderWidth: 1, borderColor: '#c62828', borderRadius: 10, backgroundColor: '#fff' },
   ir: { flexDirection: 'row', alignItems: 'center', gap: 6 }, it: { flex: 1, fontWeight: '700', fontSize: 15 },
   step: { fontSize: 22, color: '#146c43', paddingHorizontal: 4 }, sv: { fontWeight: '600', minWidth: 54, textAlign: 'center' },

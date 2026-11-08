@@ -2,6 +2,8 @@
 // Analytical benchmarks and regression checks. Closed-form results are exact textbook values, not approximations.
 import { readFileSync } from 'fs';
 import { VEHICLE_TEMPLATES } from '../lib/vehicles';
+import { BUILDINGS } from '../lib/buildings';
+import { placeBuilding } from '../lib/placebuilding';
 import { BRAND_TEMPLATES, SPECS } from '../lib/brands';
 import { newVehicleProject, VEHICLE_KINDS } from '../lib/vproject';
 import { rebuild as rebuildPart } from '../lib/parts';
@@ -925,6 +927,26 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const vp = newVehicleProject('  City runabout ', 'blank');
   ok('a new vehicle project keeps its name and is marked as a vehicle', vp.name === 'City runabout' && vp.kind === 'vehicle');
   ok('every vehicle project kind builds', VEHICLE_KINDS.every(k => { const r = rebuildPart(newVehicleProject('x', k.key)); return r.errors.length === 0 && !!r.stats; }));
+}
+
+// ---- building templates ----
+{
+  ok('13 building templates', BUILDINGS.length === 13);
+  const lib: any[] = [{ id: 'd', category: 'door', name: 'Door', specs: { w: 0.9 } }, { id: 'w', category: 'window', name: 'Win', specs: { w: 1.5 } }, { id: 'c', category: 'section', name: 'RC column 300x300', specs: {} }, { id: 'b', category: 'section', name: 'RC beam 250x500', specs: {} }];
+  let n = 0; const ids = () => `id${n++}`;
+  for (const b of BUILDINGS) {
+    const p = placeBuilding(b, [{ id: 's0', name: 'Ground floor', elevation_m: 0, height_m: 3.6 }], [], lib, ids);
+    const walls = new Set(p.rows.filter(r => r.type === 'wall').map(r => r.id));
+    const openOk = p.rows.filter(r => r.type === 'door' || r.type === 'window').every(r => walls.has(r.geometry.wall_id));
+    ok(`${b.key}: ${b.storeys.length} storeys, ${p.rows.length} elements, every door and window sits in a wall`, p.stories.length === b.storeys.length && openOk && p.rows.length > 20 && p.rows.every(r => r.story < b.storeys.length));
+  }
+  const ap = BUILDINGS.find(b => b.key === 'apartments')!;
+  const pl = placeBuilding(ap, [{ id: 's0', name: 'Ground floor', elevation_m: 0, height_m: 3.6 }], [], lib);
+  ok('apartment block adds four storeys above the ground floor, 3 m each', pl.stories.filter(s => s.isNew).length === 4 && pl.stories[4].elevation_m === 3.6 + 3 * 3);
+  ok('apartment block has a rigid core marked on its walls', pl.rows.some(r => r.geometry.core));
+  const el = [{ id: 'x', type: 'wall', geometry: { start: [0, 0], end: [10, 0], height: 3, thickness: 0.2 }, library_item_id: null }];
+  const sh = placeBuilding(BUILDINGS[0], [{ id: 's0', name: 'G', elevation_m: 0, height_m: 3.6 }], el as any, lib);
+  ok('a template is placed beside existing work, not on top of it', sh.dx >= 18);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
