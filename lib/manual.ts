@@ -58,6 +58,7 @@ export const manual: Section[] = [
         'A wall, column or any other element belongs to the storey it was drawn on. Switch storeys with the tabs.',
         'Grid lines belong to the project: they show on every storey.',
         'Copy up does not copy grid lines (they are already on every storey).',
+        '**Building templates** (Construction & Civil menu, and the Civil · Building templates panel on the left) load a ready-made building into the project: two houses, apartment block, office block, hotel, school, clinic, shop, parking garage, warehouse, factory, hatchery with tanks, and a community hall. Each brings its storeys, grid lines, columns, beams, slabs, walls, doors, windows, stairs, roof and named rooms. Lift cores are marked as rigid cores for the wind and quake check. A template is placed beside anything already drawn, and you can then edit every element.',
       ] },
     ],
   },
