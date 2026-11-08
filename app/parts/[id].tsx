@@ -46,6 +46,8 @@ export default function Parts() {
   const [selStep, setSelStep] = useState<string | null>('f1'), [view, setView] = useState<'sketch' | '3d'>('3d');
   const doc = parts[Math.min(ci, parts.length - 1)];
   const hist = useRef<PartDoc[]>([]);
+  const railRef = useRef<ScrollView>(null), railX = useRef(0);
+  const rail = (dir: number) => { const x = Math.max(0, railX.current + dir * 420); railX.current = x; railRef.current?.scrollTo({ x, animated: true }); };
   const [msg, setMsg] = useState('');
 
   useEffect(() => { AsyncStorage.getItem(key).then(v => { try { const p = v ? JSON.parse(v) : null; if (Array.isArray(p) && p.length) setParts(p); } catch { /* start fresh */ } setReady(true); }).catch(() => setReady(true)); }, [key]);
@@ -343,7 +345,9 @@ export default function Parts() {
   const Ribbon = (
     <View style={s.ribbon}>
       <View style={s.tabs}>{TABS.map(([k, l]) => <Pressable key={k} testID={`tab-${k}`} onPress={() => { setTab(k); if (k === 'sketch' && !editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) { setSelStep(f.id); setView('sketch'); } } }} style={[s.tab, tab === k && s.tabOn]}><Text style={[s.tabT, tab === k && { color: '#0a2e1f' }]}>{l}</Text></Pressable>)}</View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.groups}>
+      <View style={s.railRow}>
+      <Pressable testID="ribbon-left" accessibilityLabel="Scroll ribbon left" onPress={() => rail(-1)} style={s.arrow}><Text style={s.arrowT}>◀</Text></Pressable>
+      <ScrollView ref={railRef} horizontal showsHorizontalScrollIndicator={false} scrollEventThrottle={32} onScroll={e => { railX.current = e.nativeEvent.contentOffset.x; }} style={{ flex: 1 }} contentContainerStyle={s.groups}>
         {tab === 'sketch' && <>
           <Grp title="Sketch">{PLANES.map(p => <B key={p} testID={`add-sketch-${p}`} icon="✎" label={`New on ${p}`} go={() => addSketch(p)} />)}<B testID="finish-sketch" icon="✓" label="Finish" go={finishSketch} /></Grp>
           <Grp title="Draw">
@@ -395,6 +399,8 @@ export default function Parts() {
           <Grp title="Open"><B testID="paste-open" icon="⬆" label="Paste a part file" go={() => setPaste(paste === null ? '' : null)} /></Grp>
         </>}
       </ScrollView>
+      <Pressable testID="ribbon-right" accessibilityLabel="Scroll ribbon right" onPress={() => rail(1)} style={s.arrow}><Text style={s.arrowT}>▶</Text></Pressable>
+      </View>
       <Text style={s.hint}>{TAB_HINT[tab]}</Text>
       {paste !== null && (
         <View style={s.card}>
@@ -438,6 +444,9 @@ const s = StyleSheet.create({
   tab: { paddingHorizontal: 14, paddingVertical: 7, borderTopLeftRadius: 8, borderTopRightRadius: 8 },
   tabOn: { backgroundColor: '#fff' },
   tabT: { fontSize: 13, fontWeight: '700', color: '#4f6a5b' },
+  railRow: { flexDirection: 'row', alignItems: 'stretch' },
+  arrow: { width: 34, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e3efe8', borderRadius: 6, marginHorizontal: 2 },
+  arrowT: { fontSize: 16, color: '#146c43', fontWeight: '700' },
   groups: { padding: 6, gap: 0, alignItems: 'stretch' },
   grp: { paddingHorizontal: 8, borderRightWidth: 1, borderColor: '#e2ece6', justifyContent: 'space-between' },
   grpRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, flexWrap: 'nowrap' },
