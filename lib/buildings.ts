@@ -7,7 +7,7 @@ export type Building = { key: string; label: string; group: string; blurb: strin
 
 const WT = 0.2, PT = 0.1, SLAB = 0.2;
 
-class Draft {
+export class Draft {
   els: TEl[] = [];
   n = 0;
   constructor(readonly storeys: { name: string; h: number }[]) {}

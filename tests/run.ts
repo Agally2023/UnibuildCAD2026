@@ -4,6 +4,7 @@ import { readFileSync } from 'fs';
 import { VEHICLE_TEMPLATES } from '../lib/vehicles';
 import { BUILDINGS } from '../lib/buildings';
 import { placeBuilding } from '../lib/placebuilding';
+import { STYLED, REGIONS } from '../lib/styles';
 import { BRAND_TEMPLATES, SPECS } from '../lib/brands';
 import { newVehicleProject, VEHICLE_KINDS } from '../lib/vproject';
 import { rebuild as rebuildPart } from '../lib/parts';
@@ -939,6 +940,17 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
     const walls = new Set(p.rows.filter(r => r.type === 'wall').map(r => r.id));
     const openOk = p.rows.filter(r => r.type === 'door' || r.type === 'window').every(r => walls.has(r.geometry.wall_id));
     ok(`${b.key}: ${b.storeys.length} storeys, ${p.rows.length} elements, every door and window sits in a wall`, p.stories.length === b.storeys.length && openOk && p.rows.length > 20 && p.rows.every(r => r.story < b.storeys.length));
+  }
+  ok('28 regional styled templates in the right regions', STYLED.length === 28 && STYLED.every(b => REGIONS.includes(b.group)) && new Set(STYLED.map(b => b.key)).size === 28);
+  ok('regions cover African, American, European, Scandinavian and Chinese', ['African', 'American', 'European', 'Scandinavian', 'Chinese'].every(r => STYLED.some(b => b.group === r)));
+  for (const k of ['House', 'Church', 'School', 'Apartments']) ok(`styled ${k} templates exist for several regions`, new Set(STYLED.filter(b => b.label.startsWith(k)).map(b => b.group)).size >= 4);
+  for (const b of STYLED) {
+    const p = placeBuilding(b, [{ id: 's0', name: 'Ground floor', elevation_m: 0, height_m: 3.6 }], [], lib, ids);
+    const walls = new Set(p.rows.filter(r => r.type === 'wall').map(r => r.id));
+    const openOk = p.rows.filter(r => r.type === 'door' || r.type === 'window').every(r => walls.has(r.geometry.wall_id));
+    const wallsCol = p.rows.filter(r => r.type === 'wall').every(r => typeof r.geometry.color === 'string');
+    const finite = JSON.stringify(p.rows.map(r => r.geometry)).indexOf('null') < 0 && JSON.stringify(p.rows.map(r => r.geometry)).indexOf('NaN') < 0;
+    ok(`${b.key}: ${p.rows.length} elements, ${p.rows.filter(r => r.type === 'deco').length} decorations, doors/windows in walls, coloured walls, finite numbers`, openOk && wallsCol && finite && p.rows.some(r => r.type === 'deco') && p.rows.some(r => r.type === 'door') && p.rows.length > 30 && p.stories.length === b.storeys.length);
   }
   const ap = BUILDINGS.find(b => b.key === 'apartments')!;
   const pl = placeBuilding(ap, [{ id: 's0', name: 'Ground floor', elevation_m: 0, height_m: 3.6 }], [], lib);

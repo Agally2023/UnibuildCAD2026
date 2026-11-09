@@ -4,7 +4,7 @@ import type { El, Lib, Story } from './engineering';
 import type { Building } from './buildings';
 
 const uuid = (): string => { const h = '0123456789abcdef'; let s = ''; for (let i = 0; i < 36; i++) s += i === 8 || i === 13 || i === 18 || i === 23 ? '-' : i === 14 ? '4' : i === 19 ? h[8 + Math.floor(Math.random() * 4)] : h[Math.floor(Math.random() * 16)]; return s; };
-export const DISC: Record<string, string> = { wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', grid: 'structure', zone: 'architecture', slab: 'structure' };
+export const DISC: Record<string, string> = { deco: 'architecture', wall: 'architecture', door: 'architecture', window: 'architecture', roof: 'architecture', stair: 'architecture', column: 'structure', beam: 'structure', grid: 'structure', zone: 'architecture', slab: 'structure' };
 
 const shift = (g: any, dx: number): any => {
   const out: any = { ...g };
