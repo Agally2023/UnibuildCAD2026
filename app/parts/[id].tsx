@@ -12,6 +12,7 @@ import { newVehicleProject, VEHICLE_KINDS } from '../../lib/vproject';
 import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
 import { featureEdges, toStl } from '../../lib/solid';
 import { wirePath } from '../../lib/wire';
+import WorkspaceBar from '../../components/WorkspaceBar';
 import PartScene from '../../components/PartScene';
 import { saveFile } from '../../components/saveFile';
 
@@ -406,7 +407,7 @@ export default function Parts() {
           <Grp title="Display"><B icon="◩" label={wire ? 'Solid view' : 'Wire view'} on={wire} go={() => setWire(w => !w)} /></Grp>
         </>}
         {tab === 'mods' && <>
-          <Grp title="Workspaces"><B testID="ws-civil" icon="▦" label="Construction & Civil" sub="Plans, 3D, analysis" wide go={() => router.replace(`/project/${id}` as any)} /><B testID="ws-mech" icon="⚙" label="Mechanical" on={ws === 'mech'} go={() => { setWs('mech'); setTab('tpl'); }} /><B testID="ws-auto" icon="🚗" label="Automotive" sub="Vehicles and brands" on={ws === 'auto'} go={() => { setWs('auto'); setTab('tpl'); }} /></Grp>
+          <Grp title="Workspaces"><B testID="ws-civil-m" icon="▦" label="Construction & Civil" sub="Plans, 3D, analysis" wide go={() => router.replace('/projects' as any)} /><B testID="ws-mech-m" icon="⚙" label="Mechanical" on={ws === 'mech'} go={() => { setWs('mech'); setTab('tpl'); }} /><B testID="ws-auto-m" icon="🚗" label="Automotive" sub="Vehicles and brands" on={ws === 'auto'} go={() => { setWs('auto'); setTab('tpl'); }} /></Grp>
           <Grp title="Help"><B icon="📖" label="Manual" go={() => router.push('/manual' as any)} /><B icon="⬡" label="Launcher" go={() => router.replace('/launcher' as any)} /></Grp>
         </>}
       </ScrollView>
@@ -422,8 +423,10 @@ export default function Parts() {
     </View>
   );
 
+  useEffect(() => { if (wsQ === 'mech' || wsQ === 'auto') { setWs(wsQ); setTab('tpl'); } }, [wsQ]);
   const Head = (
     <View style={s.head}>
+      <WorkspaceBar current={ws} />
       <Text style={s.t1}>{ws === 'mech' ? 'Mechanical design' : 'Automotive design'}</Text>
       <Exp testID="part-name" value={doc.name} width={170} onCommit={v => commit(d => ({ ...d, name: v }))} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>

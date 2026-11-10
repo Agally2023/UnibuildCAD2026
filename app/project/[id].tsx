@@ -2,6 +2,7 @@ import { FORMS, isPitched, overhangOf, roofForm, roofLabel, roofLines, roofPlanB
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
 import { BUILDINGS, BUILDING_GROUPS } from '../../lib/buildings';
+import WorkspaceBar from '../../components/WorkspaceBar';
 import { STYLED, REGIONS } from '../../lib/styles';
 import { loadBuilding } from '../../lib/loadbuilding';
 import { findFireCrossings, fireOf, RATINGS } from '../../lib/firedamper';
@@ -890,6 +891,7 @@ export default function Plan() {
   useEffect(() => { if (!lay.full) setPop(null); }, [lay.full]);
   return (
     <View style={s.wrap}>
+      {!lay.full && <WorkspaceBar current="civil" projectId={id} />}
       {<MenuBar menus={menus} open={menu} setOpen={setMenu} narrow={!wide} right={pname} />}
       {menu && <Pressable style={s.backdrop} onPress={() => setMenu(null)} />}
       {!lay.full && wide && (
