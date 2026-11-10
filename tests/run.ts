@@ -7,6 +7,7 @@ import { placeBuilding } from '../lib/placebuilding';
 import { STYLED, REGIONS } from '../lib/styles';
 import { lookFor, guessWall, guessDeco, partLook, paintFor, vehicleColor, MAT } from '../lib/materials';
 import { ALL_TEMPLATES } from '../lib/templates';
+import { crown, tiers, fronds, noise3, rand, sizeOf, trunkHeight } from '../lib/trees';
 import { BRAND_TEMPLATES, SPECS } from '../lib/brands';
 import { newVehicleProject, VEHICLE_KINDS } from '../lib/vproject';
 import { rebuild as rebuildPart } from '../lib/parts';
@@ -954,6 +955,11 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
     const finite = JSON.stringify(p.rows.map(r => r.geometry)).indexOf('null') < 0 && JSON.stringify(p.rows.map(r => r.geometry)).indexOf('NaN') < 0;
     ok(`${b.key}: ${p.rows.length} elements, ${p.rows.filter(r => r.type === 'deco').length} decorations, doors/windows in walls, coloured walls, finite numbers`, openOk && wallsCol && finite && p.rows.some(r => r.type === 'deco') && p.rows.some(r => r.type === 'door') && p.rows.length > 30 && p.stories.length === b.storeys.length);
   }
+  ok('trees: noise is smooth, repeatable and bounded', noise3(1.3, 2.1, 0.7, 4) === noise3(1.3, 2.1, 0.7, 4) && Math.abs(noise3(1.3, 2.1, 0.7) - noise3(1.31, 2.1, 0.7)) < 0.1 && Array.from({ length: 200 }, (_, i) => noise3(i * 0.37, i * 0.11, i * 0.53)).every(v => Math.abs(v) <= 1.0001));
+  ok('trees: no two crowns are alike, but the same seed gives the same tree', JSON.stringify(crown('round', 5, 2, 1)) !== JSON.stringify(crown('round', 5, 2, 2)) && JSON.stringify(crown('round', 5, 2, 3)) === JSON.stringify(crown('round', 5, 2, 3)));
+  ok('trees: a round crown has many lumps above its trunk, a cypress is narrow and tall, a pine tapers', crown('round', 5, 2, 1).length >= 8 && crown('round', 5, 2, 1).every(b => b.c[2] >= trunkHeight('round', 5) * 0.8) && Math.max(...crown('cypress', 6, 0.7, 1).map(b => b.r[0])) <= 0.8 && tiers(5.5, 1.3, 1)[0].r > tiers(5.5, 1.3, 1).at(-1)!.r * 3);
+  ok('trees: a palm has a fan of fronds, some hanging', fronds(6, 2.2, 1).length >= 10 && fronds(6, 2.2, 1).some(f => f.droop > 0.6));
+  ok('trees: every styled template draws its trees as one organic element each, with sizes from the kind', STYLED.every(b => b.els.filter(e => e.g.shape === 'tree').every(e => e.g.z1 > 0.5 && e.g.r > 0.3)) && STYLED.filter(b => b.els.some(e => e.g.shape === 'tree')).length >= 24 && sizeOf('pine', 1).h > sizeOf('shrub', 1).h * 4 && rand(1)() !== rand(2)());
   const ap = BUILDINGS.find(b => b.key === 'apartments')!;
   const pl = placeBuilding(ap, [{ id: 's0', name: 'Ground floor', elevation_m: 0, height_m: 3.6 }], [], lib);
   ok('apartment block adds four storeys above the ground floor, 3 m each', pl.stories.filter(s => s.isNew).length === 4 && pl.stories[4].elevation_m === 3.6 + 3 * 3);

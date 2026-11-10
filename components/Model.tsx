@@ -3,6 +3,7 @@ import { BufferGeometry, DoubleSide, Float32BufferAttribute, Path, Shape } from 
 import { isPitched, roofFaces, roofThickness } from '../lib/roof';
 import { beamSec, stairSteps, wallT } from '../lib/model';
 import { lookFor } from '../lib/materials';
+import Tree from './Tree';
 import RealMat from './RealMat';
 
 export type El = { id: string; type: string; geometry: any; library_item_id: string | null; story_id?: string | null };
@@ -57,6 +58,8 @@ export default function Model({ els, lib, storeyH, center, real = true }: { els:
           const sx0 = alongX ? x0 + (x1 - x0) * a : x0, sx1 = alongX ? x0 + (x1 - x0) * b : x1, sy0 = alongX ? y0 : y0 + (y1 - y0) * a, sy1 = alongX ? y1 : y0 + (y1 - y0) * b;
           out.push(<mesh castShadow receiveShadow key={e.id + i} position={[(sx0 + sx1) / 2, z0 + h / 2, (sy0 + sy1) / 2]}><boxGeometry args={[Math.abs(sx1 - sx0), h, Math.abs(sy1 - sy0)]} /><RealMat {...L('stair', g)} /></mesh>);
         }
+      } else if (e.type === 'deco' && g.shape === 'tree' && g.at) {
+        out.push(<Tree key={e.id} g={g} />);
       } else if (e.type === 'deco') {
         const z0 = g.z0 ?? 0, z1 = g.z1 ?? 0.2, h = Math.max(z1 - z0, 0.02), col = g.color ?? '#9aa8b1';
         if (g.shape === 'cyl' && g.at) out.push(<mesh castShadow receiveShadow key={e.id} position={[g.at[0], z0 + h / 2, g.at[1]]}><cylinderGeometry args={[g.r ?? 0.5, g.r ?? 0.5, h, 28]} /><RealMat {...L('deco', g)} /></mesh>);
