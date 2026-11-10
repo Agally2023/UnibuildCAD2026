@@ -5,6 +5,8 @@ import { VEHICLE_TEMPLATES } from '../lib/vehicles';
 import { BUILDINGS } from '../lib/buildings';
 import { placeBuilding } from '../lib/placebuilding';
 import { STYLED, REGIONS } from '../lib/styles';
+import { lookFor, guessWall, guessDeco, partLook, paintFor, vehicleColor, MAT } from '../lib/materials';
+import { ALL_TEMPLATES } from '../lib/templates';
 import { BRAND_TEMPLATES, SPECS } from '../lib/brands';
 import { newVehicleProject, VEHICLE_KINDS } from '../lib/vproject';
 import { rebuild as rebuildPart } from '../lib/parts';
@@ -959,6 +961,22 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const el = [{ id: 'x', type: 'wall', geometry: { start: [0, 0], end: [10, 0], height: 3, thickness: 0.2 }, library_item_id: null }];
   const sh = placeBuilding(BUILDINGS[0], [{ id: 's0', name: 'G', elevation_m: 0, height_m: 3.6 }], el as any, lib);
   ok('a template is placed beside existing work, not on top of it', sh.dx >= 18);
+}
+
+// ---- real materials ----
+{
+  ok('brick-red walls get brick, cream walls get plaster', guessWall('#a5432f') === 'brick' && guessWall('#f3e2bd') === 'plaster');
+  ok('lawn is grass, pond is water, gold dome is gold, tree trunk is bark', guessDeco({ shape: 'box', color: '#9ccf6f', z0: -0.08, z1: -0.01 }) === 'grass' && guessDeco({ shape: 'cyl', color: '#4aa3df', z0: 0.4, z1: 0.5, r: 1 }) === 'water' && guessDeco({ shape: 'cone', color: '#d4a017', z0: 0, z1: 1 }) === 'gold' && guessDeco({ shape: 'cyl', color: '#6b4a2f', z0: 0, z1: 1.7, r: 0.16 }) === 'bark');
+  ok('windows are glass, doors timber, roof with a form is tile, flat roof is concrete', lookFor('window', {}).kind === 'glass' && lookFor('door', { color: '#2e7d32' }).kind === 'timber' && lookFor('roof', { form: 'gable', color: '#b23a2e' }).kind === 'tile' && lookFor('roof', { color: '#e9dfc9' }).kind === 'concrete');
+  ok('an explicit material on the element wins', lookFor('wall', { color: '#fff', mat: 'stone' }).kind === 'stone' && lookFor('roof', { form: 'hip', mat: 'thatch' }).kind === 'thatch');
+  ok('schematic mode keeps flat engineering colours', lookFor('wall', {}, false).kind === 'paint');
+  ok('every material is physically sensible', Object.values(MAT).every(m => m.rough >= 0 && m.rough <= 1 && m.metal >= 0 && m.metal <= 1 && m.tile > 0));
+  ok('glass is shinier than plaster, metal is metallic', MAT.glass.rough < MAT.plaster.rough && MAT.metal.metal > 0.5);
+  ok('steel is darker grey metal, aluminium lighter', partLook(7850).metal === 1 && partLook(7850).color !== partLook(2700).color);
+  ok('brands get their own paint', paintFor('Ferrari 488') === '#c4161c' && paintFor('Lamborghini Huracan') === '#e8c000' && paintFor('Tesla Model 3') !== paintFor('Ford F-150'));
+  ok('vehicle faces: glass up high at the sides, tyres low, lamps at the front, underside dark', vehicleColor([0, 1, 0], 0.7, '#f00') === '#0f1e2b' && vehicleColor([0, 1, 0], 0.1, '#f00') === '#17181a' && vehicleColor([-1, 0, 0], 0.4, '#f00') === '#f4f1da' && vehicleColor([0, 0, -1], 0.5, '#f00') === '#15161a' && vehicleColor([0, 1, 0], 0.4, '#f00') === '#f00');
+  ok('every vehicle and brand template is marked as a vehicle, machine parts are not', ALL_TEMPLATES.filter(t => t.group === 'vehicle' || t.group === 'brand').every(t => t.make().kind === 'vehicle') && ALL_TEMPLATES.filter(t => t.group === 'mechanical').every(t => t.make().kind === undefined));
+  ok('the thatch, timber and stone styled templates carry their materials', STYLED.find(b => b.key === 'af-homestead')!.els.some(e => e.type === 'deco' && guessDeco(e.g) === 'thatch') && STYLED.find(b => b.key === 'eu-cottage')!.els.some(e => e.g.mat === 'thatch') && STYLED.find(b => b.key === 'eu-gothic')!.els.some(e => e.g.mat === 'stone') && STYLED.find(b => b.key === 'sc-stuga')!.els.some(e => e.g.mat === 'timber'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

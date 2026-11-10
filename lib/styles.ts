@@ -342,10 +342,15 @@ const usBrownstones = () => tower({ key: 'us-brownstone', label: 'Apartments · 
 const nordicBlocks = () => tower({ key: 'sc-blocks', label: 'Apartments · Scandinavian timber blocks', region: 'Scandinavian', blurb: 'Two 24 x 11 m blocks, 3 floors, timber cladding, balconies, pitched roofs, pine yard', pal: P({ wall: '#c98a4b', trim: '#f4f1e8', roof: '#3a3d42', win: '#cfe6f2', door: '#2f7fb5', ground: '#8fcf72', stone: '#d5d8da', accent: '#9a3b2b' }), blocks: [[0, 0, 24, 11], [30, 0, 54, 11]], blockColors: ['#c98a4b', '#9a3b2b'], n: 3, h: 3, roof: ['gable', 20, 0.6], balc: ['#f4f1e8', '#2f7fb5'], extra: d => { d.dBox(0, [24.5, -3, 29.5, 15], 0.01, 0.04, '#d5d8da'); d.tree(27, 3, 1.5, 'pine'); d.tree(27, 9, 1.3, 'pine'); d.tree(60, 6, 1.4, 'pine'); } });
 
 // ---------- catalogue ----------
-export const STYLED: Building[] = [
+const BASE: Building[] = [
   kenyanBungalow(), swahiliHouse(), homestead(), colonial(), ranch(), cottage(), medVilla(), stuga(), nordicModern(), siheyuan(), minka(), courtyardHouse(),
   africanChurch(), americanChurch(), gothicChurch(), byzantineChurch(), nordicChurch(), chineseChurch(),
   africanSchool(), americanSchool(), europeSchool(), nordicSchool(), chineseSchool(),
   africanFlats(), chineseTower(), europeBlock(), usBrownstones(), nordicBlocks(),
 ];
+// what the walls and pitched roofs of each template are made of, so the 3D view can draw real brick, timber, stone, thatch or sheet metal
+const WALL: Record<string, string> = { 'us-ranch': 'timber', 'sc-stuga': 'timber', 'sc-modern': 'timber', 'us-church': 'timber', 'eu-gothic': 'stone', 'sc-church': 'timber', 'sc-school': 'timber', 'us-brownstone': 'stone', 'sc-blocks': 'timber', 'af-homestead': 'plaster' };
+const ROOF: Record<string, string> = { 'af-bungalow': 'metal', 'af-homestead': 'thatch', 'eu-cottage': 'thatch', 'af-church': 'metal', 'af-school': 'metal', 'sc-modern': 'metal', 'sc-school': 'metal' };
+export const STYLED: Building[] = BASE.map(b => ({ ...b, els: b.els.map(e => (e.type === 'wall' && WALL[b.key] ? { ...e, g: { ...e.g, mat: WALL[b.key] } } : e.type === 'roof' && ROOF[b.key] && e.g.form ? { ...e, g: { ...e.g, mat: ROOF[b.key] } } : e)) }));
+
 export const REGIONS = ['African', 'American', 'European', 'Scandinavian', 'Chinese', 'Japanese', 'Middle Eastern'];
