@@ -2,6 +2,7 @@
 // Eastern): houses, churches, schools and apartment buildings. They are made of the ordinary plan elements, each with a colour, plus
 // 'deco' elements for lawns, paths, steps, spires, domes, trees and fences. Everything is in metres and stays editable.
 import { Draft, type Building } from './buildings';
+import { sizeOf } from './trees';
 
 type Pt = [number, number];
 type R4 = [number, number, number, number];
@@ -37,11 +38,10 @@ class SD extends Draft {
   dPyr(s: number, r: R4, z0: number, z1: number, color: string) { this.put(s, 'deco', { shape: 'pyramid', rect: r, z0, z1, color }); }
   dCyl(s: number, at: Pt, r: number, z0: number, z1: number, color: string) { this.put(s, 'deco', { shape: 'cyl', at, r, z0, z1, color }); }
   dCone(s: number, at: Pt, r: number, z0: number, z1: number, color: string) { this.put(s, 'deco', { shape: 'cone', at, r, z0, z1, color }); }
-  tree(x: number, y: number, k = 1, kind: 'pine' | 'round' | 'palm' | 'cypress' = 'round') {
-    if (kind === 'palm') { this.dCyl(0, [x, y], 0.16 * k, 0, 5.2 * k, BARK); this.dCone(0, [x, y], 1.7 * k, 4.8 * k, 5.8 * k, GREEN); return; }
-    if (kind === 'cypress') { this.dCyl(0, [x, y], 0.12 * k, 0, 0.8 * k, BARK); this.dCone(0, [x, y], 0.7 * k, 0.6 * k, 5.2 * k, DARKG); return; }
-    this.dCyl(0, [x, y], 0.16 * k, 0, 1.7 * k, BARK);
-    if (kind === 'pine') this.dCone(0, [x, y], 1.2 * k, 1.1 * k, 5 * k, DARKG); else this.dCyl(0, [x, y], 1.3 * k, 1.7 * k, 3.5 * k, GREEN);
+  // a real-shaped tree: one decoration element drawn organically in 3D (lumpy crown, drooping pine skirts, leaning palm, tall cypress)
+  tree(x: number, y: number, k = 1, kind: 'pine' | 'round' | 'palm' | 'cypress' | 'shrub' = 'round') {
+    const z = sizeOf(kind, k), col = { round: '#3f8a3a', pine: '#2b6a3a', palm: '#4a9a3a', cypress: '#2e6a3a', shrub: '#4d9a42' }[kind];
+    this.put(0, 'deco', { shape: 'tree', kind, at: [x, y], r: z.r, z0: 0, z1: z.h, color: col, seed: Math.round(x * 7.3 + y * 3.1 + k * 11) });
   }
   lawn(r: R4, color?: string) { this.dBox(0, r, -0.08, -0.01, color ?? this.pal.ground); }
   paving(r: R4, color?: string, z = 0.02) { this.dBox(0, r, -0.01, z, color ?? this.pal.stone); }
@@ -108,6 +108,7 @@ function villa(o: VO): Building {
   if (o.balcony && n > 1) { d.balcony(1, W * 0.3, W * 0.7, D, 1.5, pal.floor, pal.trim); }
   d.paving([doorX - 0.7, D + (o.veranda ? 2.6 : o.portico ? 3.6 : 0.6), doorX + 0.7, D + 6.5], '#cdbf9f');
   (o.trees ?? []).forEach(([kind, k], i) => { const side = i % 2 ? 1 : -1; d.tree(side < 0 ? -2.5 - i : W + 2.5 + i, D * 0.3 + i * 2.2, k, kind); });
+  for (const sx of [0.12, 0.3, 0.7, 0.88]) d.tree(W * sx, D + 0.9, 0.7 + (sx > 0.5 ? 0.1 : 0), 'shrub');
   if (o.fence) d.fence([-5, -4, W + (o.garage ? 8 : 5), D + 6], o.fence, o.fenceGap === false ? undefined : [doorX - 1.2, doorX + 1.2]);
   o.x?.(d, W, D);
   return d.fin({ key: o.key, label: o.label, group: o.region, blurb: o.blurb });

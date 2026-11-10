@@ -39,9 +39,6 @@ export default function Hub() {
       { route: 'foundations', title: 'Slab and foundations', what: 'Slab panels, flat slabs (punching shear and equivalent-frame bending), pad, strip and combined footings, ground beams, lateral loads at the base.', badge: `${c.slab ?? 0} slabs` },
       { route: 'lateral', title: 'Wind and earthquake', what: 'Wind to EN 1991-1-4 and equivalent-static earthquake to EN 1998-1, shared among columns, with drift, overturning and column checks.' },
     ] },
-    { title: 'Parts and mechanical design', color: '#b3402a', mods: [
-      { route: 'parts', title: 'Parts', what: 'Sketch with dimensions and constraints, extrude, revolve, cut and join into solid parts driven by named parameters, with a history timeline, mass and volume, and STL export. For brackets, plates, shafts, connections and machine or vehicle components.', badge: 'New' },
-    ] },
     { title: 'Services (MEP)', color: '#0c9a87', mods: [
       { route: 'mep', title: 'MEP routing and sizing', what: 'Routes ducts and chilled-water pipes from a plant to the outlets, sizes every segment, lowers them under beams, and reports fittings and pressure drop for fan and pump selection.', badge: `${c.equipment ?? 0} plant · ${c.fixture ?? 0} outlets` },
     ] },
