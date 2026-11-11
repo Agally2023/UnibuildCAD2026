@@ -5,13 +5,17 @@ import { featureEdges, type Mesh } from '../lib/solid';
 import type { Q } from '../lib/orbit';
 import Studio from './Studio';
 import { partLook, paintFor, vehicleColor } from '../lib/materials';
+import { buildVehicle, vehicleBounds, type VSpec } from '../lib/vmodel';
+import { VehicleParts, GroundShadow } from './VehicleModel';
 
-type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean };
+type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean; vspec?: VSpec; params?: Record<string, number> };
 
 // Flat-shaded solid with its sharp edges drawn, as in a CAD viewport. The part is modelled Z up; the scene is Y up.
-export default function PartScene({ mesh, quat, zoom, name = '', density = 7850, vehicle = false }: P) {
+export default function PartScene({ mesh, quat, zoom, name = '', density = 7850, vehicle = false, vspec, params }: P) {
+  const vparts = useMemo(() => (vehicle && vspec ? buildVehicle(vspec, params ?? {}, paintFor(name)) : null), [vehicle, vspec, params, name]);
   const look = partLook(density);
   const { geo, edges, c, r } = useMemo(() => {
+    if (vparts) { const b = vehicleBounds(vparts); return { geo: new BufferGeometry(), edges: null, c: b.lo.map((v, i) => (v + b.hi[i]) / 2), r: Math.max(1, Math.hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]) / 2) }; }
     const pos = new Float32Array(mesh.f.length * 3); let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     mesh.f.forEach((vi, k) => { for (let a = 0; a < 3; a++) { const x = mesh.v[vi * 3 + a]; pos[k * 3 + a] = x; lo[a] = Math.min(lo[a], x); hi[a] = Math.max(hi[a], x); } });
     const g = new BufferGeometry(); g.setAttribute('position', new BufferAttribute(pos, 3)); g.computeVertexNormals();
@@ -19,17 +23,17 @@ export default function PartScene({ mesh, quat, zoom, name = '', density = 7850,
     const cc = lo.map((v, i) => (v + hi[i]) / 2), rr = Math.max(1, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2);
     const ev = featureEdges(mesh, 30), eg = new BufferGeometry(); eg.setAttribute('position', new BufferAttribute(new Float32Array(ev), 3));
     return { geo: g, edges: ev.length ? eg : null, c: cc, r: rr };
-  }, [mesh, vehicle, name]);
+  }, [mesh, vehicle, name, vparts]);
   return (
     <Canvas camera={{ position: [0, 0, 130], fov: 45, near: 1, far: 2000 }}>
       <Studio />
       <ambientLight intensity={0.3} />
       <directionalLight position={[40, 120, 80]} intensity={2.2} />
       <directionalLight position={[-80, 40, -80]} intensity={0.6} />
-      <group quaternion={quat} scale={(zoom * 40) / r}>
+      <group quaternion={quat} scale={(zoom * (vparts ? 54 : 40)) / r}>
         <group rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <group position={[-c[0], -c[1], -c[2]]}>
-            <mesh geometry={geo}>{vehicle ? <meshPhysicalMaterial vertexColors metalness={0.45} roughness={0.28} clearcoat={1} clearcoatRoughness={0.08} envMapIntensity={1.4} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} /> : <meshStandardMaterial color={look.color} metalness={look.metal} roughness={look.rough} envMapIntensity={1.5} flatShading polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />}</mesh>
+            {vparts ? <><VehicleParts parts={vparts} /><GroundShadow w={(vehicleBounds(vparts).hi[1] - vehicleBounds(vparts).lo[1])} l={(vehicleBounds(vparts).hi[0] - vehicleBounds(vparts).lo[0])} cx={c[0]} cy={c[1]} /></> : <mesh geometry={geo}>{vehicle ? <meshPhysicalMaterial vertexColors metalness={0.45} roughness={0.28} clearcoat={1} clearcoatRoughness={0.08} envMapIntensity={1.4} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} /> : <meshStandardMaterial color={look.color} metalness={look.metal} roughness={look.rough} envMapIntensity={1.5} flatShading polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />}</mesh>}
             {edges && !vehicle && <lineSegments geometry={edges}><lineBasicMaterial color="#0a2e1f" /></lineSegments>}
           </group>
         </group>

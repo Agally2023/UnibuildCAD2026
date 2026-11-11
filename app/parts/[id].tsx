@@ -307,7 +307,7 @@ export default function Parts() {
 
   const Viewport = (
     <View ref={wrap} testID="viewport3d" style={s.canvas} {...pan.panHandlers}>
-      {R.mesh.f.length ? (showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
+      {R.mesh.f.length ? (showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} vspec={doc.vspec} params={R.values} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
       <View style={s.vbtns}>{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <Chip key={k} label={v.label} go={() => setQuat(v.q)} />)}<Chip label="Turn 15° ↻" go={() => setQuat(q => turn(q, 'y', Math.PI / 12))} />{glOk && <Chip label={wire ? 'Solid view' : 'Wire view'} go={() => setWire(w => !w)} />}</View>
     </View>
   );

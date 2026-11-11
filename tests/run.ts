@@ -50,6 +50,11 @@ import { ecm } from '../lib/serviceability';
 import { bays, classify, designSlabPanels, punching } from '../lib/slabpanels';
 import { bsColumn, crackBS, fcuOf, flexBS, mfBS, vcBS } from '../lib/bs8110';
 import { allowedSpanDepth, beamDeflection, crackWidth, curvature, deflection, section } from '../lib/serviceability';
+import { buildVehicle, vehicleBounds } from '../lib/vmodel';
+import { BRAND_TEMPLATES as BT2 } from '../lib/brands';
+import { VEHICLE_TEMPLATES as VT2 } from '../lib/vehicles';
+import { evalParams as evalParams2 } from '../lib/sketch';
+import { paintFor as paintFor2 } from '../lib/materials';
 
 let pass = 0, fail = 0;
 const ok = (name: string, cond: boolean, detail = '') => { cond ? pass++ : fail++; console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond ? '' : '  ' + detail}`); };
@@ -993,6 +998,26 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('vehicle faces: glass up high at the sides, tyres low, lamps at the front, underside dark', vehicleColor([0, 1, 0], 0.7, '#f00') === '#0f1e2b' && vehicleColor([0, 1, 0], 0.1, '#f00') === '#17181a' && vehicleColor([-1, 0, 0], 0.4, '#f00') === '#f4f1da' && vehicleColor([0, 0, -1], 0.5, '#f00') === '#15161a' && vehicleColor([0, 1, 0], 0.4, '#f00') === '#f00');
   ok('every vehicle and brand template is marked as a vehicle, machine parts are not', ALL_TEMPLATES.filter(t => t.group === 'vehicle' || t.group === 'brand').every(t => t.make().kind === 'vehicle') && ALL_TEMPLATES.filter(t => t.group === 'mechanical').every(t => t.make().kind === undefined));
   ok('the thatch, timber and stone styled templates carry their materials', STYLED.find(b => b.key === 'af-homestead')!.els.some(e => e.type === 'deco' && guessDeco(e.g) === 'thatch') && STYLED.find(b => b.key === 'eu-cottage')!.els.some(e => e.g.mat === 'thatch') && STYLED.find(b => b.key === 'eu-gothic')!.els.some(e => e.g.mat === 'stone') && STYLED.find(b => b.key === 'sc-stuga')!.els.some(e => e.g.mat === 'timber'));
+}
+
+
+// ---- realistic vehicle models ----
+{
+  const docs = [...VT2.filter(t => t.group === 'vehicle'), ...BT2].map(t => t.make());
+  ok('every vehicle and brand template carries a realistic model spec', docs.every(d => !!d.vspec));
+  let allParts = true, sizeOk = true, wheelsOk = true;
+  for (const d of docs) {
+    const p = evalParams2(d.params).values, parts = buildVehicle(d.vspec!, p, paintFor2(d.name));
+    if (!parts.length || parts.some(q => q.idx.length === 0 || q.pos.some(v => !Number.isFinite(v)))) allParts = false;
+    const b = vehicleBounds(parts);
+    if (d.vspec!.kind === 'car' && p.L && p.W && p.H) { const l = b.hi[0] - b.lo[0], w = b.hi[1] - b.lo[1], h = b.hi[2]; if (l < p.L * 0.97 || l > p.L * 1.08 || w < p.W * 0.9 || w > p.W * 1.2 || h < p.H * 0.93 || h > p.H * 1.12) sizeOk = false; }
+    if (parts.filter(q => q.mat === 'rubber').length < 2) wheelsOk = false;
+  }
+  ok('all vehicle models build finite geometry', allParts);
+  ok('car models match the published length, width and height', sizeOk);
+  ok('every vehicle has tyres, and cars have glass, lamps and rims', wheelsOk);
+  const corolla = BT2.find(t => t.key === 'toyota-corolla')!.make(), cp = buildVehicle(corolla.vspec!, evalParams2(corolla.params).values, '#c9ccd1');
+  ok('a car has body, glass, four rims, headlamps and tail lamps', ['paint', 'glass', 'lamp', 'tail'].every(m => cp.some(q => q.mat === m)) && cp.filter(q => q.mat === 'rim').length === 4);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

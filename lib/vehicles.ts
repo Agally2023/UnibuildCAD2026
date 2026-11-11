@@ -46,8 +46,8 @@ function wheelSet(id: string, label: string, xs: string[], rExpr: string, wExpr:
 }
 
 export function sedan(): PartDoc {
-  const d = newPart('Sedan');
-  d.params = params({ L: 4600, W: 1800, wb: 2700, fo: 900, gc: 220, bh: 520, cl: 2000, cx: 1250, ch: 560, rw: 330, tw: 225, tr: 'W-tw-120' });
+  const d = newPart('Sedan'); d.vspec = { kind: 'car', style: 'sedan' };
+  d.params = params({ L: 4600, W: 1800, wb: 2700, fo: 900, gc: 220, bh: 520, H: 1450, cl: 2000, cx: 1250, ch: 560, rw: 330, tw: 225, tr: 'W-tw-120' });
   const v = evalParams(d.params).values;
   d.steps = [
     ...blk('f1', 'Lower body', 'XZ', '0', ['0', 'gc', 'L', 'bh'], 'W', 'new', v),
@@ -57,8 +57,8 @@ export function sedan(): PartDoc {
   d.density = DENS.sedan; return d;
 }
 export function pickup(): PartDoc {
-  const d = newPart('Pickup truck');
-  d.params = params({ L: 5300, W: 1950, wb: 3200, fo: 950, gc: 240, bh: 560, cabx: 1050, cabl: 1750, cabh: 800, bedl: 1750, bedh: 480, wall: 90, rw: 380, tw: 265, tr: 'W-tw-120' });
+  const d = newPart('Pickup truck'); d.vspec = { kind: 'car', style: 'pickup' };
+  d.params = params({ L: 5300, W: 1950, wb: 3200, fo: 950, gc: 240, bh: 560, cabx: 1050, H: 1600, cabl: 1750, cabh: 800, bedl: 1750, bedh: 480, wall: 90, rw: 380, tw: 265, tr: 'W-tw-120' });
   const v = evalParams(d.params).values;
   d.steps = [
     ...blk('f1', 'Chassis and body', 'XZ', '0', ['0', 'gc', 'L', 'bh'], 'W', 'new', v),
@@ -70,7 +70,7 @@ export function pickup(): PartDoc {
   d.density = DENS.pickup; return d;
 }
 export function boxTruck(): PartDoc {
-  const d = newPart('Box truck');
+  const d = newPart('Box truck'); d.vspec = { kind: 'truck' };
   d.params = params({ L: 7200, W: 2400, fo: 1100, wb: 3900, ax2: 1350, gc: 460, fh: 640, cabl: 1800, cabh: 1750, boxl: 5000, boxh: 2350, wall: 80, rw: 520, tw: 295, tr: 'W-tw-300' });
   const v = evalParams(d.params).values;
   d.steps = [
@@ -84,7 +84,7 @@ export function boxTruck(): PartDoc {
   d.density = DENS.boxTruck; return d;
 }
 export function bus(): PartDoc {
-  const d = newPart('City bus');
+  const d = newPart('City bus'); d.vspec = { kind: 'bus' };
   d.params = params({ L: 12000, W: 2550, H: 3250, wb: 6000, fo: 2600, gc: 420, wall: 100, nwin: 7, wl: 1100, wsp: 1300, wz: 1450, wh: 900, rw: 520, tw: 295, tr: 'W-tw-200' });
   const v = evalParams(d.params).values;
   d.steps = [
@@ -97,7 +97,7 @@ export function bus(): PartDoc {
   d.density = DENS.bus; return d;
 }
 export function motorcycle(): PartDoc {
-  const d = newPart('Motorcycle');
+  const d = newPart('Motorcycle'); d.vspec = { kind: 'moto' };
   d.params = params({ wb: 1450, rw: 330, tw: 130, rim: 55, hub: 45, eng: 380 });
   const v = evalParams(d.params).values, W = v.wb, R = v.rw;
   d.steps = [
@@ -117,7 +117,7 @@ export function motorcycle(): PartDoc {
   d.density = DENS.motorcycle; return d;
 }
 export function bicycle(): PartDoc {
-  const d = newPart('Bicycle');
+  const d = newPart('Bicycle'); d.vspec = { kind: 'bike' };
   d.params = params({ wb: 1050, rw: 340, rim: 20, hub: 22 });
   const R = 340, W = 1050, BB: P2 = [W * 0.42, R - 55], ST: P2 = [W * 0.36, 900], HT: P2 = [W * 0.9, 860], HB: P2 = [W * 0.93, 520], A: P2 = [0, R], F: P2 = [W, R];
   d.steps = [
@@ -138,7 +138,7 @@ export function bicycle(): PartDoc {
   d.density = DENS.bicycle; return d;
 }
 export function trailer(): PartDoc {
-  const d = newPart('Box trailer');
+  const d = newPart('Box trailer'); d.vspec = { kind: 'trailer' };
   d.params = params({ L: 3000, W: 1800, gc: 330, ch: 150, bw: 480, wall: 70, ax: 1350, rw: 300, tw: 200, tr: 'W-tw-80', dl: 1200, dw: 260 });
   const v = evalParams(d.params).values;
   d.steps = [
@@ -152,7 +152,7 @@ export function trailer(): PartDoc {
   d.density = DENS.trailer; return d;
 }
 export function tractor(): PartDoc {
-  const d = newPart('Farm tractor');
+  const d = newPart('Farm tractor'); d.vspec = { kind: 'tractor' };
   d.params = params({ L: 3900, hoodl: 1500, hw: 700, cw: 1350, chassisH: 220, rrw: 800, rtw: 450, rtr: 1650, frw: 500, ftw: 250, ftr: 1500, rax: 2650, fax: 500, cabx: 1750, cabl: 1350, cabh: 1450, exh: 36 });
   const v = evalParams(d.params).values;
   d.steps = [

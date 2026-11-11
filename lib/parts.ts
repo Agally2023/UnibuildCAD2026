@@ -9,8 +9,9 @@ export type FeatureStep = { id: string; type: 'extrude' | 'revolve'; name: strin
 // Repeats an earlier feature: along a line (spacing dx, dy, dz per copy) or around a world axis (copies spread over the angle).
 export type PatternStep = { id: string; type: 'pattern'; name: string; of: string; mode: 'linear' | 'circular'; count: string; dx: string; dy: string; dz: string; axis: 'x' | 'y' | 'z'; angle: string; cx: string; cy: string; cz: string; off?: boolean };
 export type Step = SketchStep | FeatureStep | PatternStep;
-export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number };   // density kg/m³
+export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; vspec?: VSpec; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number };   // density kg/m³
 
+import type { VSpec } from './vmodel';
 export const newPart = (name = 'Part 1'): PartDoc => ({ v: 1, name, params: [], steps: [], density: 7850 });
 
 export type Rebuilt = {
