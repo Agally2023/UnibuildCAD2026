@@ -18,6 +18,24 @@ function draw(kind: Tex): HTMLCanvasElement {
   const cv = document.createElement('canvas'); cv.width = cv.height = S; const c = cv.getContext('2d')!, r = rng(kind.length * 977 + kind.charCodeAt(0));
   const fill = (v: number) => { c.fillStyle = g(v); c.fillRect(0, 0, S, S); };
   switch (kind) {
+    case 'parquet': {
+      fill(150); const cols = 6, rows = 18, w = S / cols, h = S / rows;
+      for (let y = 0; y < rows; y++) { const off = (y % 3) * (w / 3); for (let x = -1; x < cols; x++) { const v = 200 + r() * 55; c.fillStyle = g(v); c.fillRect(x * w + off + 1, y * h + 1, w - 2, h - 2); for (let k = 0; k < 5; k++) { c.strokeStyle = g(120 + r() * 90, 0.16); c.lineWidth = 0.8; const yy = y * h + 2 + r() * (h - 4); c.beginPath(); c.moveTo(x * w + off + 2, yy); c.lineTo(x * w + off + w - 2, yy + (r() - 0.5) * 2); c.stroke(); } } }
+      grain(c, 10, r); break;
+    }
+    case 'terrazzo': { fill(232); blotches(c, 18, 200, 255, r, 70); for (let i = 0; i < 420; i++) { c.fillStyle = g(70 + r() * 150, 0.95); c.beginPath(); const x = r() * S, y = r() * S, a = 1 + r() * 4.5; c.moveTo(x, y); c.lineTo(x + a, y + r() * a); c.lineTo(x + r() * a, y + a); c.lineTo(x - a * 0.3, y + a * 0.5); c.closePath(); c.fill(); } grain(c, 12, r); break; }
+    case 'ceramic': { fill(110); const n = 4, w = S / n; for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const v = 232 + r() * 23, gr = c.createLinearGradient(x * w, y * w, x * w + w, y * w + w); gr.addColorStop(0, g(v)); gr.addColorStop(1, g(v - 22)); c.fillStyle = gr; c.fillRect(x * w + 2.5, y * w + 2.5, w - 5, w - 5); } grain(c, 6, r); break; }
+    case 'marble': { fill(244); blotches(c, 26, 215, 255, r, 90); for (let i = 0; i < 9; i++) { c.strokeStyle = g(70 + r() * 90, 0.35 + r() * 0.3); c.lineWidth = 0.6 + r() * 2; c.beginPath(); let x = r() * S, y = 0; c.moveTo(x, y); for (let k = 0; k < 6; k++) { x += (r() - 0.5) * 70; y += S / 6; c.bezierCurveTo(x - 20, y - 30, x + 20, y - 10, x, y); } c.stroke(); } grain(c, 6, r); break; }
+    case 'epoxy': { fill(244); blotches(c, 22, 215, 255, r, 100); for (let i = 0; i < 160; i++) { c.fillStyle = g(r() < 0.5 ? 255 : 170, 0.5); c.fillRect(r() * S, r() * S, 1 + r() * 1.5, 1 + r() * 1.5); } grain(c, 5, r); break; }
+    case 'granite': { fill(210); blotches(c, 20, 170, 245, r, 50); for (let i = 0; i < 1800; i++) { c.fillStyle = g(60 + r() * 195, 0.85); c.fillRect(r() * S, r() * S, 1 + r() * 2, 1 + r() * 2); } grain(c, 18, r); break; }
+    case 'blockwork': { fill(150); const rows = 8, rh = S / rows, bw = S / 4; for (let y = 0; y < rows; y++) for (let x = -1; x < 4; x++) { const ox = (y % 2 ? bw / 2 : 0) + x * bw; c.fillStyle = g(205 + r() * 45); c.fillRect(ox + 2, y * rh + 2, bw - 4, rh - 4); } blotches(c, 24, 150, 250, r, 50); grain(c, 28, r); break; }
+    case 'slate': { fill(90); const rows = 9, rh = S / rows; for (let y = 0; y < rows; y++) { let x = -r() * 30; while (x < S) { const w = 30 + r() * 26, v = 165 + r() * 90, gr = c.createLinearGradient(0, y * rh, 0, y * rh + rh * 1.5); gr.addColorStop(0, g(v - 35)); gr.addColorStop(1, g(v)); c.fillStyle = gr; c.fillRect(x + 1, y * rh, w - 2, rh * 1.5); x += w; } } grain(c, 26, r); break; }
+    case 'shingle': { fill(110); const rows = 12, rh = S / rows, w = S / 7; for (let y = 0; y < rows; y++) for (let x = -1; x < 7; x++) { const ox = (y % 2 ? w / 2 : 0) + x * w; c.fillStyle = g(180 + r() * 75); c.beginPath(); c.moveTo(ox + 1, y * rh); c.lineTo(ox + w - 1, y * rh); c.lineTo(ox + w - 1, y * rh + rh * 1.1); c.arc(ox + w / 2, y * rh + rh * 1.1, w / 2 - 1, 0, Math.PI); c.closePath(); c.fill(); } grain(c, 36, r); break; }
+    case 'boxprofile': { fill(215); const ribs = 5, w = S / ribs; for (let i = 0; i < ribs; i++) { const x = i * w; c.fillStyle = g(255); c.fillRect(x + w * 0.1, 0, w * 0.22, S); c.fillStyle = g(150); c.fillRect(x + w * 0.32, 0, w * 0.08, S); c.fillStyle = g(235); c.fillRect(x + w * 0.4, 0, w * 0.35, S); c.fillStyle = g(135); c.fillRect(x + w * 0.75, 0, w * 0.08, S); } c.fillStyle = g(120, 0.4); c.fillRect(0, S * 0.5 - 1, S, 2); blotches(c, 10, 180, 255, r, 50); grain(c, 12, r); break; }
+    case 'cobble': { fill(110); for (let i = 0; i < 90; i++) { const x = r() * S, y = r() * S, rr = 10 + r() * 9, v = 160 + r() * 95; c.fillStyle = g(v); c.beginPath(); c.ellipse(x, y, rr, rr * (0.7 + r() * 0.3), r() * 3, 0, 7); c.fill(); } grain(c, 30, r); break; }
+    case 'gravel': { fill(170); for (let i = 0; i < 1500; i++) { c.fillStyle = g(100 + r() * 155, 0.95); c.beginPath(); c.arc(r() * S, r() * S, 1 + r() * 3, 0, 7); c.fill(); } grain(c, 30, r); break; }
+    case 'carpet': { fill(225); grain(c, 55, r); for (let i = 0; i < 1800; i++) { c.strokeStyle = g(150 + r() * 105, 0.3); c.lineWidth = 0.7; const x = r() * S, y = r() * S; c.beginPath(); c.moveTo(x, y); c.lineTo(x + (r() - 0.5) * 4, y + (r() - 0.5) * 4); c.stroke(); } break; }
+    case 'seam': { fill(225); const pans = 6, w = S / pans; for (let i = 0; i < pans; i++) { const x = i * w; const gr = c.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, g(250)); gr.addColorStop(0.9, g(215)); gr.addColorStop(1, g(255)); c.fillStyle = gr; c.fillRect(x, 0, w, S); c.fillStyle = g(130, 0.7); c.fillRect(x - 1.5, 0, 3, S); c.fillStyle = g(255, 0.6); c.fillRect(x + 1.5, 0, 2, S); } grain(c, 9, r); break; }
     case 'brick': {
       fill(150); const rows = 16, rh = S / rows, bw = S / 5;
       for (let y = 0; y < rows; y++) for (let x = -1; x < 5; x++) { const ox = (y % 2 ? bw / 2 : 0) + x * bw; c.fillStyle = g(208 + r() * 47); c.fillRect(ox + 1.5, y * rh + 1.5, bw - 3, rh - 3); }
@@ -68,4 +86,10 @@ export function texture(kind: Tex): Texture | null {
   let t = cache.get(kind);
   if (!t) { t = new CanvasTexture(draw(kind)); t.wrapS = t.wrapT = RepeatWrapping; t.colorSpace = SRGBColorSpace; t.anisotropy = 8; cache.set(kind, t); }
   return t;
+}
+const urls = new Map<Tex, string>();
+// small picture of a texture for the finish chooser (web only; empty elsewhere)
+export function swatchUrl(kind: Tex): string {
+  if (typeof document === 'undefined') return '';
+  let u = urls.get(kind); if (!u) { u = draw(kind).toDataURL('image/png'); urls.set(kind, u); } return u;
 }
