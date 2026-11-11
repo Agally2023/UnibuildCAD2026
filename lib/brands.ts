@@ -34,6 +34,7 @@ export function fromSpec(s: Spec): PartDoc {
   const d = newPart(`${s.brand} ${s.model}`);
   const front = (s.L - s.wb) * 0.46;
   d.params = params({ L: s.L, W: s.W, H: s.H, wb: s.wb, fo: Math.round(front), gc: s.style === 'suv' || s.style === 'pickup' ? 220 : s.style === 'super' ? 110 : 140, rw, tw, tr: 'W-tw-110' });
+  d.vspec = { kind: 'car', style: s.style, brand: s.brand };
   const v = evalParams(d.params).values, gc = v.gc;
   const steps: Step[] = [];
   const arches = (): Step[] => [

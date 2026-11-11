@@ -107,6 +107,7 @@ export function paintFor(name: string): string {
   const n = name.toLowerCase(), has = (...w: string[]) => w.some(x => n.includes(x));
   if (has('ferrari')) return '#c4161c'; if (has('lamborghini', 'lambo')) return '#e8c000'; if (has('tesla')) return '#d8dadd'; if (has('toyota')) return '#c9ccd1'; if (has('nissan')) return '#a9181f';
   if (has('ford')) return '#1f4e9c'; if (has('land rover', 'landrover', 'defender', 'range rover')) return '#33553c'; if (has('bmw')) return '#2b4f86'; if (has('mercedes')) return '#2c2f33'; if (has('porsche')) return '#d7d9dc';
+  if (has('tractor')) return '#2f7d32'; if (has('motorcycle')) return '#9a1b1b'; if (has('bicycle')) return '#b3261e'; if (has('trailer')) return '#3a4a5c';
   if (has('bus')) return '#f0b400'; if (has('box truck', 'boxtruck', 'truck')) return '#e7e9ec'; if (has('pickup')) return '#37573d'; if (has('sedan')) return '#2c4d8a'; if (has('hatch')) return '#a31d24'; if (has('suv', 'van')) return '#4a5058';
   return '#9ea6ae';
 }

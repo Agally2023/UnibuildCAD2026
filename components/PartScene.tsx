@@ -4,7 +4,7 @@ import { BufferAttribute, BufferGeometry } from 'three';
 import { featureEdges, type Mesh } from '../lib/solid';
 import type { Q } from '../lib/orbit';
 
-type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean };
+type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean; vspec?: unknown; params?: Record<string, number> };
 
 // Flat-shaded solid with its sharp edges drawn, as in a CAD viewport. The part is modelled Z up; the scene is Y up.
 export default function PartScene({ mesh, quat, zoom }: P) {
