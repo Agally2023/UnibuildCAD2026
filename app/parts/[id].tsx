@@ -50,7 +50,7 @@ export default function Parts() {
   const [selStep, setSelStep] = useState<string | null>('f1'), [view, setView] = useState<'sketch' | '3d'>('3d');
   const doc = parts[Math.min(ci, parts.length - 1)];
   const router = useRouter();
-  const hist = useRef<PartDoc[]>([]);
+  const hist = useRef<PartDoc[]>([]), fut = useRef<PartDoc[]>([]);
   const railRef = useRef<ScrollView>(null), railX = useRef(0);
   const rail = (dir: number) => { const x = Math.max(0, railX.current + dir * 420); railX.current = x; railRef.current?.scrollTo({ x, animated: true }); };
   const [msg, setMsg] = useState('');
@@ -58,8 +58,15 @@ export default function Parts() {
   useEffect(() => { AsyncStorage.getItem(key).then(v => { try { const p = v ? JSON.parse(v) : null; if (Array.isArray(p) && p.length) setParts(p); } catch { /* start fresh */ } setReady(true); }).catch(() => setReady(true)); }, [key]);
   useEffect(() => { if (ready) AsyncStorage.setItem(key, JSON.stringify(parts)).catch(() => {}); }, [parts, ready, key]);
 
-  const commit = useCallback((fn: (d: PartDoc) => PartDoc) => setParts(ps => ps.map((p, i) => { if (i !== Math.min(ci, ps.length - 1)) return p; hist.current = [...hist.current.slice(-49), p]; return fn(p); })), [ci]);
-  const undo = () => { const p = hist.current.pop(); if (p) setParts(ps => ps.map((q, i) => (i === Math.min(ci, ps.length - 1) ? p : q))); };
+  const commit = useCallback((fn: (d: PartDoc) => PartDoc) => setParts(ps => ps.map((p, i) => { if (i !== Math.min(ci, ps.length - 1)) return p; hist.current = [...hist.current.slice(-99), p]; fut.current = []; return fn(p); })), [ci]);
+  const undo = () => { const p = hist.current.pop(); if (!p) return; const cur = parts[Math.min(ci, parts.length - 1)]; fut.current.push(cur); setParts(ps => ps.map((q, i) => (i === Math.min(ci, ps.length - 1) ? p : q))); };
+  const redo = () => { const p = fut.current.pop(); if (!p) return; const cur = parts[Math.min(ci, parts.length - 1)]; hist.current.push(cur); setParts(ps => ps.map((q, i) => (i === Math.min(ci, ps.length - 1) ? p : q))); };
+  const undoRef = useRef({ undo, redo }); undoRef.current = { undo, redo };
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const k = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return; if (!(e.ctrlKey || e.metaKey)) return; const key = e.key.toLowerCase(); if (key === 'z' && !e.shiftKey) { e.preventDefault(); undoRef.current.undo(); } else if (key === 'y' || (key === 'z' && e.shiftKey)) { e.preventDefault(); undoRef.current.redo(); } };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, []);
   const R = useMemo(() => rebuild(doc), [doc]);
   const step = doc.steps.find(x => x.id === selStep) ?? null;
   const editingSketch = step?.type === 'sketch' ? step : null;
@@ -173,7 +180,7 @@ export default function Parts() {
   const base = (doc.name || 'part').replace(/[^A-Za-z0-9_-]+/g, '_');
   const exportStl = async () => { if (!R.mesh.f.length) { setMsg('Nothing to export yet.'); return; } try { await saveFile(`${base}.stl`, toStl(doc.name, R.mesh)); setMsg('STL saved'); } catch (e: any) { setMsg('Export failed: ' + (e?.message ?? e)); } };
   const exportJson = async () => { try { await saveFile(`${base}.unibuild-part.json`, JSON.stringify(doc, null, 1)); setMsg('Part file saved'); } catch (e: any) { setMsg('Export failed: ' + (e?.message ?? e)); } };
-  const newDoc = (d: PartDoc) => { hist.current = []; setParts(ps => [...ps, d]); setCi(parts.length); setSelStep(d.steps[0]?.id ?? null); setView(d.steps.length ? '3d' : 'sketch'); };
+  const newDoc = (d: PartDoc) => { hist.current = []; fut.current = []; setParts(ps => [...ps, d]); setCi(parts.length); setSelStep(d.steps[0]?.id ?? null); setView(d.steps.length ? '3d' : 'sketch'); };
 
   // ----- pieces -----
   const Timeline = (
@@ -378,8 +385,9 @@ export default function Parts() {
           <Grp title="Create"><B testID="add-extrude" icon="▮" label="Extrude" sub="Push a sketch into a solid" go={() => addFeature('extrude')} /><B testID="add-revolve" icon="◐" label="Revolve" sub="Turn a sketch about its axis" go={() => addFeature('revolve')} /></Grp>
           <Grp title="Pattern"><B testID="add-linear" icon="⋮⋮" label="Linear" sub="Copies along a line" go={() => addPattern('linear')} /><B testID="add-circular" icon="✲" label="Circular" sub="Copies around an axis" go={() => addPattern('circular')} /></Grp>
           {step && (step.type === 'extrude' || step.type === 'revolve') && <Grp title={`Operation: ${step.name}`}>{(['new', 'join', 'cut'] as Op[]).map(o => <B key={o} testID={`op-${o}`} icon={o === 'new' ? '＋' : o === 'join' ? '∪' : '−'} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</Grp>}
-          <Grp title="History"><B testID="undo" icon="↶" label="Undo" go={undo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
+          <Grp title="History"><B testID="undo" icon="↶" label="Undo" sub="Ctrl+Z" go={undo} /><B testID="redo" icon="↷" label="Redo" sub="Ctrl+Y" go={redo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
         </>}
+        {tab === 'tpl' && <Grp title="Empty canvas"><B testID="blank-part" icon="▢" label="Empty design" sub="Nothing in it, start from zero" go={() => { newDoc(newPart(`Design ${parts.length + 1}`)); setView('3d' as any); setTab('edit'); setMsg('Empty design. Add a sketch, then extrude or revolve it. Undo (Ctrl+Z) reverses any step.'); }} /><B testID="blank-sketch" icon="✎" label="Blank sketch" sub="Empty drawing sheet, ready to draw" go={() => { const sid = uid('s'), d = newPart(`Design ${parts.length + 1}`); d.steps = [{ id: sid, type: 'sketch', name: 'Sketch 1 (XY)', plane: 'XY', offset: '0', sk: emptySketch() }]; newDoc(d); setSelStep(sid); setView('sketch'); setTool('line'); setTab('edit'); setMsg('Blank sketch. Pick Line, Rectangle or Circle and draw; undo reverses the last change.'); }} /></Grp>}
         {tab === 'tpl' && ws === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
         {tab === 'tpl' && ws === 'auto' && <Grp title="New vehicle project"><View style={{ gap: 6, width: 250 }}>
           <TextInput testID="vp-name" value={vpName} onChangeText={setVpName} placeholder="Project name, e.g. City runabout" style={s.inp} />
@@ -427,10 +435,14 @@ export default function Parts() {
   const Head = (
     <View style={s.head}>
       <WorkspaceBar current={ws} />
+      <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Chip testID="undo-top" label={`↶ Undo${hist.current.length ? ` (${hist.current.length})` : ''}`} go={undo} />
+        <Chip testID="redo-top" label="↷ Redo" go={redo} />
+      </View>
       <Text style={s.t1}>{ws === 'mech' ? 'Mechanical design' : 'Automotive design'}</Text>
       <Exp testID="part-name" value={doc.name} width={170} onCommit={v => commit(d => ({ ...d, name: v }))} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>
-        {parts.map((p, i) => <Chip key={i} label={(p.kind === 'vehicle' ? '🚘 ' : '') + p.name} on={i === Math.min(ci, parts.length - 1)} go={() => { setCi(i); hist.current = []; setSelStep(p.steps[0]?.id ?? null); }} />)}
+        {parts.map((p, i) => <Chip key={i} label={(p.kind === 'vehicle' ? '🚘 ' : '') + p.name} on={i === Math.min(ci, parts.length - 1)} go={() => { setCi(i); hist.current = []; fut.current = []; setSelStep(p.steps[0]?.id ?? null); }} />)}
       </ScrollView>
     </View>
   );
