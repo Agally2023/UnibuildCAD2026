@@ -1,7 +1,7 @@
 // Real-world looks for the 3D views: which material a plan element, a vehicle face or a machine part is made of, and how it should
 // shine. Pure functions, so they are tested; the textures themselves are drawn in lib/textures.ts and applied in components/RealMat.tsx.
-export type MatKind = 'paint' | 'plaster' | 'brick' | 'timber' | 'tile' | 'metal' | 'concrete' | 'stone' | 'thatch' | 'grass' | 'soil' | 'water' | 'bark' | 'foliage' | 'paving' | 'glass' | 'gold';
-export type Tex = 'plaster' | 'brick' | 'timber' | 'tile' | 'metal' | 'concrete' | 'stone' | 'thatch' | 'grass' | 'soil' | 'water' | 'bark' | 'foliage' | 'paving';
+export type MatKind = 'paint' | 'plaster' | 'brick' | 'timber' | 'tile' | 'metal' | 'concrete' | 'stone' | 'thatch' | 'grass' | 'soil' | 'water' | 'bark' | 'foliage' | 'paving' | 'glass' | 'gold' | 'parquet' | 'terrazzo' | 'ceramic' | 'marble' | 'epoxy' | 'granite' | 'blockwork' | 'slate' | 'shingle' | 'boxprofile' | 'cobble' | 'gravel' | 'carpet' | 'seam';
+export type Tex = 'plaster' | 'brick' | 'timber' | 'tile' | 'metal' | 'concrete' | 'stone' | 'thatch' | 'grass' | 'soil' | 'water' | 'bark' | 'foliage' | 'paving' | 'parquet' | 'terrazzo' | 'ceramic' | 'marble' | 'epoxy' | 'granite' | 'blockwork' | 'slate' | 'shingle' | 'boxprofile' | 'cobble' | 'gravel' | 'carpet' | 'seam';
 export type MatDef = { tex: Tex | null; tile: number; rough: number; metal: number; env: number };
 // tile = metres covered by one repeat of the texture
 export const MAT: Record<MatKind, MatDef> = {
@@ -22,6 +22,20 @@ export const MAT: Record<MatKind, MatDef> = {
   paving: { tex: 'paving', tile: 2, rough: 0.8, metal: 0, env: 0.4 },
   glass: { tex: null, tile: 1, rough: 0.04, metal: 0.15, env: 1.6 },
   gold: { tex: null, tile: 1, rough: 0.3, metal: 1, env: 1.3 },
+  parquet: { tex: 'parquet', tile: 1.2, rough: 0.35, metal: 0, env: 0.7 },
+  terrazzo: { tex: 'terrazzo', tile: 1.5, rough: 0.28, metal: 0, env: 0.8 },
+  ceramic: { tex: 'ceramic', tile: 1.2, rough: 0.2, metal: 0, env: 0.9 },
+  marble: { tex: 'marble', tile: 2.4, rough: 0.14, metal: 0, env: 1 },
+  epoxy: { tex: 'epoxy', tile: 3, rough: 0.08, metal: 0.05, env: 1.3 },
+  granite: { tex: 'granite', tile: 1.5, rough: 0.22, metal: 0, env: 0.8 },
+  blockwork: { tex: 'blockwork', tile: 1.6, rough: 0.92, metal: 0, env: 0.3 },
+  slate: { tex: 'slate', tile: 1.2, rough: 0.6, metal: 0, env: 0.5 },
+  shingle: { tex: 'shingle', tile: 1, rough: 0.9, metal: 0, env: 0.3 },
+  boxprofile: { tex: 'boxprofile', tile: 1.2, rough: 0.4, metal: 0.7, env: 1.2 },
+  cobble: { tex: 'cobble', tile: 1.2, rough: 0.85, metal: 0, env: 0.3 },
+  gravel: { tex: 'gravel', tile: 1, rough: 1, metal: 0, env: 0.2 },
+  carpet: { tex: 'carpet', tile: 0.8, rough: 1, metal: 0, env: 0.1 },
+  seam: { tex: 'seam', tile: 1.2, rough: 0.38, metal: 0.75, env: 1.2 },
 };
 
 export function rgb(hex: string): [number, number, number] {
@@ -68,7 +82,7 @@ export type Look = { kind: MatKind; color: string; opacity: number };
 export function lookFor(type: string, g: any, real = true): Look {
   const own: string | undefined = g?.color;
   if (!real) return { kind: 'paint', color: own ?? SCHEMATIC[type] ?? '#9aa8b1', opacity: type === 'window' ? 0.7 : type === 'slab' && !own ? 0.75 : 1 };
-  if (type === 'deco') return { kind: guessDeco(g), color: own ?? '#9aa8b1', opacity: 1 };
+  if (type === 'deco') return { kind: g?.mat ?? guessDeco(g), color: own ?? '#9aa8b1', opacity: 1 };
   const d = REAL[type] ?? { kind: 'paint' as MatKind, color: '#9aa8b1' };
   let kind: MatKind = g?.mat ?? d.kind;
   if (!g?.mat && own) {
@@ -79,7 +93,7 @@ export function lookFor(type: string, g: any, real = true): Look {
     else if (type === 'column' || type === 'slab') kind = type === 'column' ? 'plaster' : 'concrete';
   }
   if (type === 'roof' && !g?.form && !g?.mat) kind = 'concrete';
-  return { kind, color: own ?? d.color, opacity: type === 'window' ? 0.5 : d.opacity ?? 1 };
+  return { kind, color: own ?? d.color, opacity: typeof g?.opacity === 'number' ? g.opacity : type === 'window' ? 0.5 : d.opacity ?? 1 };
 }
 
 // ---- machine parts ----
