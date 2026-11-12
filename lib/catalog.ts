@@ -131,7 +131,7 @@ const CARS: string[] = ['toyota-corolla', 'mercedes-benz-c-class', 'bmw-3-series
 const SUVS: string[] = ['land-rover-range-rover', 'land-rover-defender-110', 'toyota-land-cruiser-300', 'jeep-wrangler', 'mercedes-benz-g-class', 'lexus-lx-600', 'nissan-patrol', 'ford-bronco', 'mitsubishi-pajero', 'suzuki-jimny'];
 const LUX: string[] = ['bentley-bentayga', 'rolls-royce-cullinan', 'lamborghini-urus', 'aston-martin-dbx', 'porsche-cayenne', 'bmw-x5'];
 const PICKUPS: string[] = ['toyota-hilux-double-cab', 'ford-ranger', 'isuzu-d-max', 'nissan-navara', 'volkswagen-amarok'];
-const pick = (keys: string[], cat: string): Template[] => keys.map(k => BRAND_TEMPLATES.find(t => t.key === k)).filter((t): t is Template => !!t).map(t => ({ ...t, brand: cat }));
+const pick = (keys: string[], cat: string): Template[] => keys.map(k => BRAND_TEMPLATES.find(t => t.key === k)).filter((t): t is Template => !!t).map(t => ({ ...t, brand: cat, make: () => ({ ...t.make(), kind: 'vehicle' as const }) }));
 
 export const CATALOG: { title: string; icon: string; items: Template[] }[] = [
   { title: 'Cars & Sedans', icon: '🚗', items: pick(CARS, 'Cars & Sedans') },

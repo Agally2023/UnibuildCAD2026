@@ -1025,6 +1025,7 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
 // ---- catalogue ----
 {
   const cats = CATALOG.map(c => c.title);
+  ok('every catalogue template opens as a vehicle with a vspec', CATALOG.every(c => c.items.every(t => { const d = t.make(); return d.kind === 'vehicle' && !!d.vspec; })));
   ok('catalogue has the 15 categories of the reference picture', cats.length === 15 && CATALOG.every(c => c.items.length >= 3));
   let bad = '';
   for (const c of CATALOG) for (const t of c.items) {
