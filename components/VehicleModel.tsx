@@ -4,13 +4,14 @@ import type { VPart, VMat } from '../lib/vmodel';
 
 // Physically based materials for each vehicle part: clear-coated metallic paint, tinted glass, rubber, aluminium, chrome, lamps.
 const MATS: Record<VMat, { color: string; metalness: number; roughness: number; env: number; clearcoat?: number; opacity?: number; emissive?: string; ei?: number }> = {
-  paint: { color: '#ffffff', metalness: 0.55, roughness: 0.28, env: 1.4, clearcoat: 1 },
+  paint: { color: '#ffffff', metalness: 0.35, roughness: 0.32, env: 0.95, clearcoat: 1 },
   glass: { color: '#0b1620', metalness: 0.2, roughness: 0.03, env: 2.4, clearcoat: 1, opacity: 0.62 },
   rubber: { color: '#151515', metalness: 0, roughness: 0.92, env: 0.25 },
   rim: { color: '#cfd3d9', metalness: 1, roughness: 0.2, env: 1.7 },
   chrome: { color: '#eceff2', metalness: 1, roughness: 0.07, env: 2 },
   black: { color: '#ffffff', metalness: 0.1, roughness: 0.5, env: 0.5 },
   lamp: { color: '#f2f5f8', metalness: 0.1, roughness: 0.06, env: 2, emissive: '#fff4d0', ei: 0.55 },
+  blue: { color: '#1236b0', metalness: 0.1, roughness: 0.1, env: 1.5, emissive: '#2050ff', ei: 0.6 },
   tail: { color: '#a3121a', metalness: 0.1, roughness: 0.1, env: 1.5, emissive: '#ff2020', ei: 0.5 },
   interior: { color: '#2b2824', metalness: 0, roughness: 0.9, env: 0.4 },
   seat: { color: '#3d362e', metalness: 0, roughness: 0.85, env: 0.4 },

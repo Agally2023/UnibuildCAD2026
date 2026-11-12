@@ -2,19 +2,19 @@
 // parameters, in the same frame as the CAD model: millimetres, X front to rear, Y across (+Y is the right-hand side), Z up, ground at Z = 0.
 // Pure functions, no rendering: each part names a material that the viewer maps to paint, glass, rubber, aluminium, chrome, etc.
 export type VStyle = 'sedan' | 'hatch' | 'suv' | 'coupe' | 'super' | 'pickup' | 'wedge';
-export type VSpec = { kind: 'car' | 'bus' | 'truck' | 'moto' | 'bike' | 'trailer' | 'tractor'; style?: VStyle; brand?: string; paint?: string };
-export type VMat = 'paint' | 'glass' | 'rubber' | 'rim' | 'chrome' | 'black' | 'lamp' | 'tail' | 'interior' | 'seat' | 'metal' | 'white' | 'wood' | 'caliper';
+export type VSpec = { kind: string; style?: VStyle | 'van'; brand?: string; paint?: string; variant?: string };
+export type VMat = 'paint' | 'glass' | 'rubber' | 'rim' | 'blue' | 'chrome' | 'black' | 'lamp' | 'tail' | 'interior' | 'seat' | 'metal' | 'white' | 'wood' | 'caliper';
 export type VPart = { name: string; mat: VMat; pos: number[]; idx: number[]; col?: number[] };
-type V3 = [number, number, number];
-type P = Record<string, number>;
+export type V3 = [number, number, number];
+export type P = Record<string, number>;
 
 const sgn = (x: number) => (x < 0 ? -1 : 1);
 const sp = (x: number, e: number) => sgn(x) * Math.pow(Math.abs(x), e);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const clamp = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+export const clamp = (x: number, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 export function hexRgb(h: string): V3 { const n = parseInt(h.replace('#', ''), 16); return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]; }
 
-class B {
+export class B {
   pos: number[] = []; idx: number[] = []; col: number[] = [];
   constructor(public name: string, public mat: VMat, public base: V3 = [1, 1, 1]) { }
   v(p: V3, c?: V3) { this.pos.push(p[0], p[1], p[2]); this.col.push(...(c ?? this.base)); return this.pos.length / 3 - 1; }
@@ -33,7 +33,7 @@ class B {
 }
 
 // superquadric box/ellipsoid: half sizes (a, b, c) about a centre; n = 2 ellipsoid, higher = boxier
-function rbox(m: B, c: V3, s: V3, n = 3, rot = 0, nu = 14, nv = 20) {
+export function rbox(m: B, c: V3, s: V3, n = 3, rot = 0, nu = 14, nv = 20) {
   const e = 2 / n;
   m.grid(nu, nv, (i, j) => {
     const ph = -Math.PI / 2 + (Math.PI * i) / nu, th = (2 * Math.PI * j) / nv;
@@ -43,7 +43,7 @@ function rbox(m: B, c: V3, s: V3, n = 3, rot = 0, nu = 14, nv = 20) {
     return [c[0] + x * cr + z * sr, c[1] + y, c[2] - x * sr + z * cr];
   });
 }
-function tube(m: B, a: V3, b: V3, r: number, seg = 10, r2?: number) {
+export function tube(m: B, a: V3, b: V3, r: number, seg = 10, r2?: number) {
   const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], l = Math.hypot(...d) || 1, t: V3 = [d[0] / l, d[1] / l, d[2] / l];
   const h: V3 = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   let u: V3 = [t[1] * h[2] - t[2] * h[1], t[2] * h[0] - t[0] * h[2], t[0] * h[1] - t[1] * h[0]]; const ul = Math.hypot(...u); u = [u[0] / ul, u[1] / ul, u[2] / ul];
@@ -54,10 +54,10 @@ function tube(m: B, a: V3, b: V3, r: number, seg = 10, r2?: number) {
   });
 }
 // surface of revolution about the Y axis: profile points are [radius, y]
-function lathe(m: B, prof: [number, number][], c: V3, side: number, seg = 56, colf?: (r: number, y: number) => V3 | undefined) {
+export function lathe(m: B, prof: [number, number][], c: V3, side: number, seg = 56, colf?: (r: number, y: number) => V3 | undefined) {
   m.grid(prof.length - 1, seg, (i, j) => { const a = (2 * Math.PI * j) / seg, [r, y] = prof[i]; return [c[0] + r * Math.cos(a), c[1] + side * y, c[2] + r * Math.sin(a)]; }, colf ? (i) => colf(prof[i][0], prof[i][1]) : undefined);
 }
-function torus(m: B, c: V3, R: number, r: number, ax: V3, ns = 28, nr = 10) {
+export function torus(m: B, c: V3, R: number, r: number, ax: V3, ns = 28, nr = 10) {
   const l = Math.hypot(...ax), t: V3 = [ax[0] / l, ax[1] / l, ax[2] / l], h: V3 = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
   let u: V3 = [t[1] * h[2] - t[2] * h[1], t[2] * h[0] - t[0] * h[2], t[0] * h[1] - t[1] * h[0]]; const ul = Math.hypot(...u); u = [u[0] / ul, u[1] / ul, u[2] / ul];
   const w: V3 = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
@@ -67,19 +67,19 @@ function torus(m: B, c: V3, R: number, r: number, ax: V3, ns = 28, nr = 10) {
   });
 }
 // thin strip along a polyline, `w` wide, in the direction perpendicular to both the path and `nrm`
-function ribbon(m: B, pts: V3[], w: number, nrm: V3) {
+export function ribbon(m: B, pts: V3[], w: number, nrm: V3) {
   m.grid(pts.length - 1, 1, (i, j) => {
     const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], t: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let s: V3 = [t[1] * nrm[2] - t[2] * nrm[1], t[2] * nrm[0] - t[0] * nrm[2], t[0] * nrm[1] - t[1] * nrm[0]]; const l = Math.hypot(...s) || 1; s = [s[0] / l, s[1] / l, s[2] / l];
     const o = (j - 0.5) * w; return [pts[i][0] + s[0] * o, pts[i][1] + s[1] * o, pts[i][2] + s[2] * o];
   });
 }
-const merge = (base: number[], extra: number[]) => { const a = [...base, ...extra].sort((x, y) => x - y), r: number[] = []; for (const v of a) if (!r.length || v - r[r.length - 1] > 1e-6) r.push(v); return r; };
-const linspace = (a: number, b: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
+export const merge = (base: number[], extra: number[]) => { const a = [...base, ...extra].sort((x, y) => x - y), r: number[] = []; for (const v of a) if (!r.length || v - r[r.length - 1] > 1e-6) r.push(v); return r; };
+export const linspace = (a: number, b: number, n: number) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
 
 // ---------- wheels ----------
-type WOpt = { rw: number; tw: number; spokes?: number; solid?: boolean; thin?: boolean; lugs?: boolean; rimCol?: V3; sw?: number };
-function wheel(out: VPart[], c: V3, side: number, o: WOpt, tag: string) {
+export type WOpt = { rw: number; tw: number; spokes?: number; solid?: boolean; thin?: boolean; lugs?: boolean; rimCol?: V3; sw?: number };
+export function wheel(out: VPart[], c: V3, side: number, o: WOpt, tag: string) {
   const { rw, tw } = o, sw = o.sw ?? 0.45, rr = rw - sw * tw * (o.thin ? 0.35 : 1);
   const tyre = new B(`Tyre ${tag}`, 'rubber'), rim = new B(`Rim ${tag}`, 'rim'), disc = new B(`Brake disc ${tag}`, 'metal'), cal = new B(`Caliper ${tag}`, 'caliper'), hub = new B(`Hub ${tag}`, 'chrome');
   const hp: [number, number][] = ([[rr + 2, 0.42], [lerp(rr, rw, 0.25), 0.50], [lerp(rr, rw, 0.62), 0.51], [lerp(rr, rw, 0.9), 0.46], [rw - 2, 0.38], [rw, 0.30], [rw, 0]] as [number, number][]).map(([r, y]) => [r, y * tw]);
@@ -106,7 +106,7 @@ function wheel(out: VPart[], c: V3, side: number, o: WOpt, tag: string) {
 // ---------- car-like body ----------
 type Arch = { x: number; r: number };
 type Loft = { m: B; x0: number; x1: number; z0: (x: number) => number; z1: (x: number) => number; hw: (x: number) => number; n: number; capF: number; capR: number; arches: Arch[]; col: V3; step?: number; nr?: number; capEnd?: boolean };
-function bodyLoft(o: Loft) {
+export function bodyLoft(o: Loft) {
   const { m, x0, x1 } = o, nr = o.nr ?? 48, xs: number[] = [];
   let xa = merge(linspace(x0, x1, Math.max(8, Math.round((x1 - x0) / (o.step ?? 28)))), o.arches.flatMap(a => [a.x - a.r - 40, a.x - a.r * 0.5, a.x, a.x + a.r * 0.5, a.x + a.r + 40]).filter(x => x > x0 && x < x1));
   xs.push(...xa);
@@ -132,15 +132,17 @@ const FR: Record<string, { wx: number; rx: number; rrx: number; bx: number; hf: 
   coupe: { wx: 0.30, rx: 0.45, rrx: 0.66, bx: 0.78, hf: 0.50, hh: 0.62, bh: 0.64, cw: 0.84, pf: 2.0, pr: 2.0 },
   super: { wx: 0.34, rx: 0.49, rrx: 0.60, bx: 0.74, hf: 0.40, hh: 0.70, bh: 0.78, cw: 0.80, pf: 1.7, pr: 1.7 },
   pickup: { wx: 0.21, rx: 0.25, rrx: 0.45, bx: 0.51, hf: 0.50, hh: 0.56, bh: 0.60, cw: 0.84, pf: 2.4, pr: 5 },
+  van: { wx: 0.17, rx: 0.23, rrx: 0.93, bx: 0.99, hf: 0.46, hh: 0.60, bh: 0.60, cw: 0.93, pf: 1.6, pr: 9 },
   wedge: { wx: 0.30, rx: 0.40, rrx: 0.86, bx: 0.98, hf: 0.44, hh: 0.60, bh: 0.78, cw: 0.92, pf: 1.2, pr: 1.2 },
 };
 
-function car(spec: VSpec, p: P, paint: V3): VPart[] {
+export function car(spec: VSpec, p: P, paint: V3): VPart[] {
   const style = spec.style ?? 'sedan', f = { ...FR[style] };
   const L = p.L ?? 4600, W = p.W ?? 1800, H = p.H ?? 1450, wb = p.wb ?? 2700, rw = p.rw ?? 330, tw = p.tw ?? 235, gc = p.gc ?? (style === 'suv' || style === 'pickup' || style === 'wedge' ? 220 : style === 'super' ? 110 : 140);
   const fo = p.fo ?? (L - wb) * 0.46;
   if (style === 'pickup') { const cabx = p.cabx ?? L * 0.21, cabl = p.cabl ?? L * 0.30; f.wx = cabx / L; f.rx = (cabx + 0.12 * cabl) / L; f.rrx = (cabx + 0.78 * cabl) / L; f.bx = (cabx + cabl) / L; }
   const out: VPart[] = [], hwB = W / 2, tail = L;
+  const bar = spec.variant && ['police', 'ambulance', 'fire', 'rescue'].includes(spec.variant);
   const xs = f.wx * L, rx = f.rx * L, rrx = f.rrx * L, xe = f.bx * L;
   const archR = rw + 38, arches = [{ x: fo, r: archR }, { x: fo + wb, r: archR }];
   const pick = style === 'pickup', bedx = pick ? L - (p.bedl ?? L * 0.30) : L;
@@ -163,14 +165,14 @@ function car(spec: VSpec, p: P, paint: V3): VPart[] {
     const zr = x < xs ? zTop(x) : x < rx ? lerp(zTop(xs), H, 1 - Math.pow(1 - (x - xs) / (rx - xs), f.pf)) : x < rrx ? H - 18 * Math.pow((x - (rx + rrx) / 2) / ((rrx - rx) / 2), 2) : lerp(zTop(xe), H, 1 - Math.pow(1 - (xe - x) / (xe - rrx), f.pr));
     return Math.max(8, zr - zb(x) + (x >= xs && x <= xe ? 0 : 0));
   };
-  const cw = (W * f.cw) / 2, nC = style === 'pickup' || style === 'suv' || style === 'wedge' ? 3.8 : 2.7, eC = 2 / nC;
+  const cw = (W * f.cw) / 2, nC = style === 'pickup' || style === 'suv' || style === 'wedge' || style === 'van' ? 3.8 : 2.7, eC = 2 / nC;
   const cx = merge(linspace(xs, xe, Math.round((xe - xs) / 26)), []);
   const A0 = 0.08, A1 = 0.95, B0 = 1.0, B1 = Math.PI - 1.0;
-  const two = style === 'coupe' || style === 'super' || pick || style === 'wedge', mid = two ? rrx - 0.0 : (rx + rrx) / 2 + (rrx - rx) * 0.05;
+  const panel = spec.variant === 'panel', two = style === 'coupe' || style === 'super' || pick || style === 'wedge', mid = two ? rrx - 0.0 : (rx + rrx) / 2 + (rrx - rx) * 0.05;
   const wxA0 = xs + 0.30 * (rx - xs), wxRear = xe - 0.30 * (xe - rrx);
-  const sideWins: [number, number][] = two ? [[wxA0, mid * 0 + Math.min(wxRear, lerp(rx, rrx, pick ? 0.97 : 0.97))]] : [[wxA0, mid - 0.02 * L], [mid + 0.02 * L, wxRear]];
+  const sideWins: [number, number][] = panel ? [[wxA0, wxA0 + 0.09 * L]] : two ? [[wxA0, mid * 0 + Math.min(wxRear, lerp(rx, rrx, pick ? 0.97 : 0.97))]] : [[wxA0, mid - 0.02 * L], [mid + 0.02 * L, wxRear]];
   if (style === 'super') sideWins[0] = [wxA0, xe - 0.38 * (xe - rrx)];
-  const front: [number, number] = [xs + 0.06 * (rx - xs), rx - 0.10 * (rx - xs)], rear: [number, number] = pick ? [0, 0] : [rrx + 0.10 * (xe - rrx), xe - 0.12 * (xe - rrx)];
+  const front: [number, number] = [xs + 0.06 * (rx - xs), rx - 0.10 * (rx - xs)], rear: [number, number] = pick || panel ? [0, 0] : [rrx + 0.10 * (xe - rrx), xe - 0.12 * (xe - rrx)];
   const tList = merge(merge(linspace(0, Math.PI, 36), [A0, A1, B0, B1, Math.PI - A0, Math.PI - A1]), []);
   const xList = merge(cx, [...sideWins.flat(), ...front, ...rear].filter(x => x > xs && x < xe));
   const inWin = (xm: number, tm: number) => {
@@ -230,6 +232,7 @@ function car(spec: VSpec, p: P, paint: V3): VPart[] {
   if (ry && xe - xs > 1500) { const bx = lerp(fx, xe, 0.62); rbox(seat, [bx, 0, sz - 10], [220, hwB * 0.68, 70], 3.4, 0, 8, 12); rbox(seat, [bx + 230, 0, sz + 220], [60, hwB * 0.66, 250], 3.4, 0.18, 8, 12); }
   const sw = new B('Steering wheel', 'black', [0.03, 0.03, 0.035]); torus(sw, [fx - 330, hwB * 0.36, sz + 330], 190, 15, [1, 0, 0.35], 24, 6);
   out.push(int.part, seat.part, sw.part);
+  if (bar) { const lb = new B('Light bar', 'blue'), lr = new B('Light bar red', 'tail'); for (const sd of [-1, 1]) rbox(sd < 0 ? lb : lr, [(rx + rrx) / 2 - 150, sd * 200, H + 28], [110, 190, 30], 3, 0, 6, 10); out.push(lb.part, lr.part); }
   if (pick) {
     const bedl = L - bedx, wall = p.wall ?? 90, bw = hwB, bz0 = z0(bedx + 100) + 150, bz1 = belt + (p.bedh ?? 480);
     const bed = new B('Load bed', 'paint', paint), liner = new B('Bed liner', 'black', [0.04, 0.04, 0.045]);
@@ -246,7 +249,7 @@ function car(spec: VSpec, p: P, paint: V3): VPart[] {
 }
 
 // ---------- heavy vehicles ----------
-function bus(p: P, paint: V3): VPart[] {
+export function bus(p: P, paint: V3): VPart[] {
   const L = p.L ?? 12000, W = p.W ?? 2550, H = p.H ?? 3250, wb = p.wb ?? 6000, fo = p.fo ?? 2600, gc = p.gc ?? 420, rw = p.rw ?? 520, tw = p.tw ?? 295, nwin = p.nwin ?? 7, wl = p.wl ?? 1100, wsp = p.wsp ?? 1300, wz = p.wz ?? 1450, wh = p.wh ?? 900;
   const out: VPart[] = [], body = new B('Body shell', 'paint', paint);
   bodyLoft({ m: body, x0: 0, x1: L, z0: () => gc, z1: () => H, hw: () => W / 2, n: 8, capF: W * 0.13, capR: W * 0.1, arches: [{ x: fo, r: rw + 60 }, { x: fo + wb, r: rw + 60 }, { x: fo + wb + 1400, r: rw + 60 }].filter(a => a.x < L - 600), col: paint, step: 60, nr: 40 });
@@ -272,7 +275,7 @@ function bus(p: P, paint: V3): VPart[] {
   for (const [i, ax] of [fo, fo + wb, fo + wb + 1400].entries()) { if (ax > L - 600) continue; for (const sd of [-1, 1]) wheel(out, [ax, sd * wy, rw], sd, wo, `axle ${i + 1} ${sd > 0 ? 'right' : 'left'}`); }
   return out;
 }
-function truck(p: P, paint: V3): VPart[] {
+export function truck(p: P, paint: V3): VPart[] {
   const L = p.L ?? 7200, W = p.W ?? 2400, gc = p.gc ?? 460, fh = p.fh ?? 640, cabl = p.cabl ?? 1800, cabh = p.cabh ?? 1750, boxl = p.boxl ?? 5000, boxh = p.boxh ?? 2350, rw = p.rw ?? 520, tw = p.tw ?? 295, fo = p.fo ?? 1100, wb = p.wb ?? 3900, ax2 = p.ax2 ?? 1350;
   const out: VPart[] = [], zf = gc + fh, cabW = W - 250, white: V3 = [0.92, 0.93, 0.94];
   const ch = new B('Chassis frame', 'metal'); for (const sd of [-1, 1]) rbox(ch, [L / 2, sd * 500, gc + fh / 2], [L / 2, 60, fh / 2 - 30], 4, 0, 4, 8);
@@ -288,12 +291,12 @@ function truck(p: P, paint: V3): VPart[] {
   const ribs = new B('Box ribs', 'white'); for (let k = 0; k < 8; k++) for (const sd of [-1, 1]) rbox(ribs, [bx0 + 300 + k * ((boxl - 600) / 7), sd * (W / 2 + 4), zf + boxh / 2 + 10], [18, 6, boxh / 2 - 60], 4, 0, 4, 8);
   const mir = new B('Mirrors', 'black', [0.04, 0.04, 0.045]); for (const sd of [-1, 1]) { tube(mir, [220, sd * (cabW / 2), zf + 1000], [150, sd * (cabW / 2 + 240), zf + 1050], 14, 6); rbox(mir, [140, sd * (cabW / 2 + 250), zf + 1000], [30, 70, 220], 3, 0, 6, 8); }
   const pipe = new B('Exhaust stack', 'chrome'); tube(pipe, [bx0 - 40, cabW / 2 + 40, zf + 100], [bx0 - 40, cabW / 2 + 40, zf + cabh + 300], 50, 12);
-  out.push(ch.part, cab.part, box.part, glass.part, fr.part, lamp.part, tail.part, blk.part, ribs.part, mir.part, pipe.part);
+  out.push(ch.part, cab.part, ...(p.nobox ? [] : [box.part, ribs.part]), glass.part, fr.part, lamp.part, tail.part, blk.part, mir.part, pipe.part);
   const wo: WOpt = { rw, tw, solid: true, sw: 0.4 }, wy = W / 2 - tw / 2 - 30;
   for (const [i, ax] of [fo, fo + wb, fo + wb + ax2].entries()) for (const sd of [-1, 1]) wheel(out, [ax, sd * wy, rw], sd, wo, `axle ${i + 1} ${sd > 0 ? 'right' : 'left'}`);
   return out;
 }
-function trailer(p: P, paint: V3): VPart[] {
+export function trailer(p: P, paint: V3): VPart[] {
   const L = p.L ?? 3000, W = p.W ?? 1800, gc = p.gc ?? 330, ch = p.ch ?? 150, bw = p.bw ?? 480, wall = p.wall ?? 70, ax = p.ax ?? 1350, rw = p.rw ?? 300, tw = p.tw ?? 200, dl = p.dl ?? 1200, dw = p.dw ?? 260;
   const out: VPart[] = [], fl = gc + ch, rails = new B('Chassis', 'metal'), floor = new B('Floor', 'wood'), walls = new B('Box walls', 'paint', paint), fend = new B('Mudguards', 'black', [0.05, 0.05, 0.055]), lt = new B('Lights', 'tail');
   for (const sd of [-1, 1]) { rbox(rails, [L / 2, sd * (W / 2 - 90), gc + ch / 2], [L / 2, 40, ch / 2], 4, 0, 4, 8); tube(rails, [0, sd * (dw / 2), gc + ch / 2], [-dl, 0, gc + ch / 2 + 10], 28, 8); }
@@ -306,7 +309,7 @@ function trailer(p: P, paint: V3): VPart[] {
   const wy = W / 2 - tw / 2 - 40; for (const sd of [-1, 1]) wheel(out, [ax, sd * wy, rw], sd, { rw, tw, solid: true, sw: 0.5 }, sd > 0 ? 'right' : 'left');
   return out;
 }
-function tractor(p: P, paint: V3): VPart[] {
+export function tractor(p: P, paint: V3): VPart[] {
   const rrw = p.rrw ?? 800, rtw = p.rtw ?? 450, rtr = p.rtr ?? 1650, frw = p.frw ?? 500, ftw = p.ftw ?? 250, ftr = p.ftr ?? 1500, rax = p.rax ?? 2650, fax = p.fax ?? 500, hoodl = p.hoodl ?? 1500, hw = p.hw ?? 700, cabx = p.cabx ?? 1750, cabl = p.cabl ?? 1350, cabh = p.cabh ?? 1450, cwid = p.cw ?? 1350, chH = p.chassisH ?? 220, L = p.L ?? 3900;
   const out: VPart[] = [], hood = new B('Bonnet', 'paint', paint), grill = new B('Grille', 'black', [0.04, 0.04, 0.045]), lamp = new B('Headlamps', 'lamp'), met = new B('Chassis and engine', 'metal');
   const zh = rrw * 1.05; rbox(hood, [hoodl / 2 + 150, 0, zh + 130], [hoodl / 2, hw / 2, 330], 4, 0, 10, 20);
@@ -326,7 +329,7 @@ function tractor(p: P, paint: V3): VPart[] {
   for (const sd of [-1, 1]) { wheel(out, [rax, sd * (rtr / 2), rrw], sd, { rw: rrw, tw: rtw, solid: true, lugs: true, sw: 0.55, rimCol: undefined }, `rear ${sd > 0 ? 'right' : 'left'}`); wheel(out, [fax, sd * (ftr / 2), frw], sd, { rw: frw, tw: ftw, solid: true, lugs: true, sw: 0.5 }, `front ${sd > 0 ? 'right' : 'left'}`); }
   return out;
 }
-function moto(p: P, paint: V3): VPart[] {
+export function moto(p: P, paint: V3): VPart[] {
   const wb = p.wb ?? 1450, rw = p.rw ?? 330, tw = p.tw ?? 130, out: VPart[] = [], fr = new B('Frame', 'paint', paint), tank = new B('Fuel tank', 'paint', paint), seat = new B('Saddle', 'seat'), eng = new B('Engine', 'metal'), ex = new B('Exhaust', 'chrome'), lamp = new B('Headlamp', 'lamp'), blk = new B('Bars and grips', 'black', [0.03, 0.03, 0.035]), fk = new B('Forks', 'chrome');
   const head: V3 = [0.17 * wb, 0, 0.72 * wb], top: V3 = [0.13 * wb, 0, 0.745 * wb];
   for (const sd of [-1, 1]) { tube(fk, [0, sd * 85, rw], [head[0] - 30, sd * 75, head[2] + 40], 17, 10); tube(fr, [0.62 * wb, sd * 130, 0.45 * wb], [wb, sd * (tw / 2 + 28), rw], 20, 8); tube(fr, [head[0], sd * 30, head[2] - 60], [0.60 * wb, sd * 130, 0.45 * wb], 22, 8); tube(blk, [top[0], sd * 70, top[2] + 40], [top[0] + 60, sd * 380, top[2] + 90], 12, 8); rbox(blk, [top[0] + 70, sd * 400, top[2] + 95], [60, 20, 20], 3, 0, 5, 8); }
@@ -339,7 +342,7 @@ function moto(p: P, paint: V3): VPart[] {
   for (const [x, w] of [[0, tw * 0.9], [wb, tw]] as [number, number][]) wheel(out, [x, 0, rw], 1, { rw, tw: w, spokes: 12, sw: 0.9, thin: true }, x ? 'rear' : 'front');
   return out;
 }
-function bike(p: P, paint: V3): VPart[] {
+export function bike(p: P, paint: V3): VPart[] {
   const wb = p.wb ?? 1050, rw = p.rw ?? 340, out: VPart[] = [], fr = new B('Frame', 'paint', paint), bits = new B('Saddle and grips', 'black', [0.03, 0.03, 0.035]), met = new B('Cranks and bars', 'chrome'), sp_ = new B('Spokes', 'chrome');
   const bb: V3 = [0.52 * wb, 0, rw * 0.9], st: V3 = [0.60 * wb, 0, rw + 460], ht0: V3 = [0.07 * wb, 0, rw + 300], ht1: V3 = [0.115 * wb, 0, rw + 440];
   tube(fr, ht0, ht1, 22, 10); tube(fr, ht1, st, 17, 10); tube(fr, ht0, bb, 20, 10); tube(fr, bb, [st[0] + 40, 0, st[2] + 90], 17, 10);
@@ -354,9 +357,11 @@ function bike(p: P, paint: V3): VPart[] {
   return out;
 }
 
+import { buildExtra } from './vmodel2';
 export function buildVehicle(spec: VSpec, p: P, paintHex: string): VPart[] {
   const paint = hexRgb(spec.paint ?? paintHex);
-  const parts = spec.kind === 'car' ? car(spec, p, paint) : spec.kind === 'bus' ? bus(p, paint) : spec.kind === 'truck' ? truck(p, paint) : spec.kind === 'moto' ? moto(p, paint) : spec.kind === 'bike' ? bike(p, paint) : spec.kind === 'trailer' ? trailer(p, paint) : tractor(p, paint);
+  const ext = buildExtra(spec, p, paint);
+  const parts = ext ? ext : spec.kind === 'car' ? car(spec, p, paint) : spec.kind === 'bus' ? bus(p, paint) : spec.kind === 'truck' ? truck(p, paint) : spec.kind === 'moto' ? moto(p, paint) : spec.kind === 'bike' ? bike(p, paint) : spec.kind === 'trailer' ? trailer(p, paint) : tractor(p, paint);
   return parts.filter(q => q.idx.length > 0);
 }
 export function vehicleBounds(parts: VPart[]) {

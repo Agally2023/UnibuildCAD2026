@@ -51,6 +51,7 @@ import { bays, classify, designSlabPanels, punching } from '../lib/slabpanels';
 import { bsColumn, crackBS, fcuOf, flexBS, mfBS, vcBS } from '../lib/bs8110';
 import { allowedSpanDepth, beamDeflection, crackWidth, curvature, deflection, section } from '../lib/serviceability';
 import { buildVehicle, vehicleBounds } from '../lib/vmodel';
+import { CATALOG, CATALOG_TEMPLATES } from '../lib/catalog';
 import { BRAND_TEMPLATES as BT2 } from '../lib/brands';
 import { VEHICLE_TEMPLATES as VT2 } from '../lib/vehicles';
 import { evalParams as evalParams2 } from '../lib/sketch';
@@ -930,7 +931,7 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
 
 // ---- makers and vehicle projects ----
 {
-  ok('34 production models from 11 makers', BRAND_TEMPLATES.length === 34 && new Set(SPECS.map(s => s.brand)).size === 11);
+  ok('50 production models from 22 makers', BRAND_TEMPLATES.length === 50 && new Set(SPECS.map(s => s.brand)).size === 22);
   let bad = 0;
   SPECS.forEach((s, i) => { const r = rebuildPart(BRAND_TEMPLATES[i].make()); const z = r.stats; if (r.errors.length || !z || Math.abs(z.size[0] - s.L) > 2 || Math.abs(z.size[1] - s.W) > 2 || Math.abs(z.size[2] - s.H) > 2 || Math.abs(z.mass - s.kg) > s.kg * 0.01) bad++; });
   ok('every model has its published length, width, height and kerb weight', bad === 0);
@@ -1020,5 +1021,20 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('a car has body, glass, four rims, headlamps and tail lamps', ['paint', 'glass', 'lamp', 'tail'].every(m => cp.some(q => q.mat === m)) && cp.filter(q => q.mat === 'rim').length === 4);
 }
 
+
+// ---- catalogue ----
+{
+  const cats = CATALOG.map(c => c.title);
+  ok('catalogue has the 15 categories of the reference picture', cats.length === 15 && CATALOG.every(c => c.items.length >= 3));
+  let bad = '';
+  for (const c of CATALOG) for (const t of c.items) {
+    const d = t.make(), p = evalParams2(d.params).values, parts = buildVehicle(d.vspec!, p, paintFor2(d.name));
+    const b = vehicleBounds(parts), L = p.L ?? 0, bl = b.hi[0] - b.lo[0];
+    if (!d.vspec || !parts.length || parts.some(q => q.pos.some(v => !Number.isFinite(v)))) bad = `${t.key} empty`;
+    else if (L && (bl < L * 0.55 || bl > L * 1.5) && !['rv', 'segway', 'hoverboard', 'drone', 'balloon'].includes(d.vspec.kind)) bad = bad || `${t.key} length ${Math.round(bl)} vs ${L}`;
+  }
+  ok('every catalogue template builds a finite model of about the stated length ' + bad, bad === '');
+  ok('catalogue holds well over 100 templates', CATALOG.reduce((n, c) => n + c.items.length, 0) > 100 && CATALOG_TEMPLATES.length > 70);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
