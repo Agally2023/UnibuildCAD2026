@@ -8,6 +8,7 @@ import { drag, Q, turn, VIEWS } from '../../lib/orbit';
 import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
+import { CATALOG } from '../../lib/catalog';
 import { newVehicleProject, VEHICLE_KINDS } from '../../lib/vproject';
 import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
 import { featureEdges, toStl } from '../../lib/solid';
@@ -397,7 +398,8 @@ export default function Parts() {
         </View></Grp>}
         {tab === 'tpl' && ws === 'auto' && <Grp title="Complete vehicles">{TEMPLATES.filter(x => x.group === 'vehicle').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'tpl' && ws === 'auto' && <Grp title="Build from scratch: vehicle components">{TEMPLATES.filter(x => x.group === 'component').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🔩" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
-        {tab === 'tpl' && ws === 'auto' && BRANDS.map(b => <Grp key={b} title={b}>{TEMPLATES.filter(x => x.group === 'brand' && x.brand === b).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
+        {tab === 'tpl' && ws === 'auto' && CATALOG.map(c => <Grp key={c.title} title={`${c.icon} ${c.title} (${c.items.length})`}>{c.items.map(x => <B key={x.key} testID={`tpl-${x.key}`} icon={c.icon} label={x.label} sub={x.blurb} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
+        {tab === 'tpl' && ws === 'auto' && BRANDS.filter(b => TEMPLATES.some(x => x.group === 'brand' && x.brand === b)).map(b => <Grp key={b} title={b}>{TEMPLATES.filter(x => x.group === 'brand' && x.brand === b).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
         {tab === 'tpl' && ws === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'inspect' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
