@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, PanResponder, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, Image, Pressable, ScrollView, StyleSheet, TextInput, PanResponder, Platform, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G as SvgG, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,10 @@ import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emp
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
 import { CATALOG } from '../../lib/catalog';
+import { paintVehicleURL } from '../../lib/vpaint';
+import { evalParams } from '../../lib/sketch';
+import { buildVehicle } from '../../lib/vmodel';
+import { paintFor } from '../../lib/materials';
 import { newVehicleProject, VEHICLE_KINDS } from '../../lib/vproject';
 import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
 import { featureEdges, toStl } from '../../lib/solid';
@@ -36,10 +40,11 @@ const Chip = ({ label, on, go, testID, danger }: { label: string; on?: boolean; 
 );
 
 const Grp = ({ title, children }: { title: string; children: any }) => (<View style={s.grp}><View style={s.grpRow}>{children}</View><Text style={s.grpT}>{title}</Text></View>);
-const THUMBS = new Map<string, string>();   // wireframe previews of the templates, drawn once
-const B = ({ icon, label, go, on, testID, danger, sub, wide, thumb }: { icon: string; label: string; go: () => void; on?: boolean; testID?: string; danger?: boolean; sub?: string; wide?: boolean; thumb?: string }) => (
+const THUMBS = new Map<string, string>();
+const IMGS = new Map<string, string>();   // shaded previews of the realistic vehicle models   // wireframe previews of the templates, drawn once
+const B = ({ icon, label, go, on, testID, danger, sub, wide, thumb, img }: { icon: string; label: string; go: () => void; on?: boolean; testID?: string; danger?: boolean; sub?: string; wide?: boolean; thumb?: string; img?: string }) => (
   <Pressable testID={testID} onPress={go} style={[s.rb, wide && { width: 150 }, on && s.rbOn, danger && s.rbDanger]}>
-    {wide ? <Svg width={130} height={76} style={s.thumb}><Path d={thumb ?? ''} stroke="#146c43" strokeWidth={1} fill="none" /></Svg> : <Text style={[s.rbI, on && { color: '#fff' }]}>{icon}</Text>}<Text style={[s.rbT, on && { color: '#fff' }]}>{label}</Text>{!!sub && <Text style={[s.rbS, on && { color: '#dff' }]} numberOfLines={3}>{sub}</Text>}
+    {wide && img ? <Image source={{ uri: img }} style={[s.thumb, { width: 130, height: 76 }]} resizeMode="contain" /> : wide ? <Svg width={130} height={76} style={s.thumb}><Path d={thumb ?? ''} stroke="#146c43" strokeWidth={1} fill="none" /></Svg> : <Text style={[s.rbI, on && { color: '#fff' }]}>{icon}</Text>}<Text style={[s.rbT, on && { color: '#fff' }]}>{label}</Text>{!!sub && <Text style={[s.rbS, on && { color: '#dff' }]} numberOfLines={3}>{sub}</Text>}
   </Pressable>
 );
 
@@ -161,13 +166,14 @@ export default function Parts() {
   const [quat, setQuat] = useState<Q>(VIEWS.iso.q), [zoom, setZoom] = useState(1), last = useRef({ x: 0, y: 0 }), wrap = useRef<any>(null);
   useEffect(() => {
     if (tab !== 'tpl') return;
-    const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (ws === 'mech' ? x.group === 'mechanical' : x.group !== 'mechanical') && !THUMBS.has(x.key));
+    const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (ws === 'mech' ? x.group === 'mechanical' : x.group !== 'mechanical') && !THUMBS.has(x.key) && !IMGS.has(x.key));
     let dead = false;
-    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { THUMBS.set(todo[i].key, wirePath(rebuild(todo[i].make()).mesh, VIEWS.iso.q, 130, 76, 6)); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
+    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { const d = todo[i].make(); let u = ''; if (d.vspec && Platform.OS === 'web') { const pv = evalParams(d.params).values; u = paintVehicleURL(buildVehicle(d.vspec, pv, paintFor(d.name)), VIEWS.iso.q, 130, 76, 2, 4); } if (u) IMGS.set(todo[i].key, u); else THUMBS.set(todo[i].key, wirePath(rebuild(d).mesh, VIEWS.iso.q, 130, 76, 6)); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
     next(0); return () => { dead = true; };
   }, [tab, ws]);
   const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
   const showWire = wire || !glOk;
+  const vpaint = useMemo(() => (showWire && !wire && Platform.OS === 'web' && doc.vspec ? paintVehicleURL(buildVehicle(doc.vspec, R.values, paintFor(doc.name)), quat, 700, 460, 1.5, 30) : ''), [showWire, wire, doc.vspec, doc.name, R.values, quat]);
   const wireD = useMemo(() => (showWire ? wirePath(R.mesh, quat, 700, 460, 30, edges) : ''), [showWire, R.mesh, quat, edges]);
 
   const pan = useMemo(() => PanResponder.create({ onStartShouldSetPanResponder: () => true, onPanResponderGrant: () => { last.current = { x: 0, y: 0 }; }, onPanResponderMove: (_e, g) => { const dx = g.dx - last.current.x, dy = g.dy - last.current.y; last.current = { x: g.dx, y: g.dy }; setQuat(q => drag(q, dx, dy)); } }), []);
@@ -308,7 +314,7 @@ export default function Parts() {
 
   const Viewport = (
     <View ref={wrap} testID="viewport3d" style={s.canvas} {...pan.panHandlers}>
-      {R.mesh.f.length ? (showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} vspec={doc.vspec} params={R.values} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
+      {R.mesh.f.length ? (showWire && !wire && vpaint ? <Image source={{ uri: vpaint }} style={{ width: '100%', height: '100%', transform: [{ scale: zoom }] }} resizeMode="contain" /> : showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} vspec={doc.vspec} params={R.values} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
       <View style={s.vbtns}>{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <Chip key={k} label={v.label} go={() => setQuat(v.q)} />)}<Chip label="Turn 15° ↻" go={() => setQuat(q => turn(q, 'y', Math.PI / 12))} />{glOk && <Chip label={wire ? 'Solid view' : 'Wire view'} go={() => setWire(w => !w)} />}</View>
     </View>
   );
@@ -389,18 +395,18 @@ export default function Parts() {
           <Grp title="History"><B testID="undo" icon="↶" label="Undo" sub="Ctrl+Z" go={undo} /><B testID="redo" icon="↷" label="Redo" sub="Ctrl+Y" go={redo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
         </>}
         {tab === 'tpl' && <Grp title="Empty canvas"><B testID="blank-part" icon="▢" label="Empty design" sub="Nothing in it, start from zero" go={() => { newDoc(newPart(`Design ${parts.length + 1}`)); setView('3d' as any); setTab('edit'); setMsg('Empty design. Add a sketch, then extrude or revolve it. Undo (Ctrl+Z) reverses any step.'); }} /><B testID="blank-sketch" icon="✎" label="Blank sketch" sub="Empty drawing sheet, ready to draw" go={() => { const sid = uid('s'), d = newPart(`Design ${parts.length + 1}`); d.steps = [{ id: sid, type: 'sketch', name: 'Sketch 1 (XY)', plane: 'XY', offset: '0', sk: emptySketch() }]; newDoc(d); setSelStep(sid); setView('sketch'); setTool('line'); setTab('edit'); setMsg('Blank sketch. Pick Line, Rectangle or Circle and draw; undo reverses the last change.'); }} /></Grp>}
-        {tab === 'tpl' && ws === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
+        {tab === 'tpl' && ws === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
         {tab === 'tpl' && ws === 'auto' && <Grp title="New vehicle project"><View style={{ gap: 6, width: 250 }}>
           <TextInput testID="vp-name" value={vpName} onChangeText={setVpName} placeholder="Project name, e.g. City runabout" style={s.inp} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{VEHICLE_KINDS.map(k => <Chip key={k.key} testID={`vp-${k.key}`} label={k.label} on={vpKind === k.key} go={() => setVpKind(k.key)} />)}</View>
           <Text style={s.hint}>{VEHICLE_KINDS.find(k => k.key === vpKind)?.blurb}</Text>
           <B testID="vp-create" icon="🚘" label="Create project" go={() => { newDoc(newVehicleProject(vpName, vpKind)); setVpName(''); setMsg('New vehicle project created. It is listed with a car icon below. Change its parameters or any step, and add your own sketches and features.'); }} />
         </View></Grp>}
-        {tab === 'tpl' && ws === 'auto' && <Grp title="Complete vehicles">{TEMPLATES.filter(x => x.group === 'vehicle').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
-        {tab === 'tpl' && ws === 'auto' && <Grp title="Build from scratch: vehicle components">{TEMPLATES.filter(x => x.group === 'component').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🔩" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
-        {tab === 'tpl' && ws === 'auto' && CATALOG.map(c => <Grp key={c.title} title={`${c.icon} ${c.title} (${c.items.length})`}>{c.items.map(x => <B key={x.key} testID={`tpl-${x.key}`} icon={c.icon} label={x.label} sub={x.blurb} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
-        {tab === 'tpl' && ws === 'auto' && BRANDS.filter(b => TEMPLATES.some(x => x.group === 'brand' && x.brand === b)).map(b => <Grp key={b} title={b}>{TEMPLATES.filter(x => x.group === 'brand' && x.brand === b).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
-        {tab === 'tpl' && ws === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
+        {tab === 'tpl' && ws === 'auto' && <Grp title="Complete vehicles">{TEMPLATES.filter(x => x.group === 'vehicle').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
+        {tab === 'tpl' && ws === 'auto' && <Grp title="Build from scratch: vehicle components">{TEMPLATES.filter(x => x.group === 'component').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🔩" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
+        {tab === 'tpl' && ws === 'auto' && CATALOG.map(c => <Grp key={c.title} title={`${c.icon} ${c.title} (${c.items.length})`}>{c.items.map(x => <B key={x.key} testID={`tpl-${x.key}`} icon={c.icon} label={x.label} sub={x.blurb} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
+        {tab === 'tpl' && ws === 'auto' && BRANDS.filter(b => TEMPLATES.some(x => x.group === 'brand' && x.brand === b)).map(b => <Grp key={b} title={b}>{TEMPLATES.filter(x => x.group === 'brand' && x.brand === b).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
+        {tab === 'tpl' && ws === 'auto' && <Grp title="Vehicle parts">{TEMPLATES.filter(x => x.group === 'automotive').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="🚗" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>}
         {tab === 'inspect' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
           <Grp title="Measure"><View style={{ minWidth: 220 }}>{R.stats ? <><Text style={s.v}>Volume {r1(R.stats.volume / 1000)} cm³</Text><Text style={s.v}>Mass {R.stats.mass < 1 ? `${r1(R.stats.mass * 1000)} g` : `${r1(R.stats.mass)} kg`}</Text><Text style={s.v}>Size {R.stats.size.map(r1).join(' × ')} mm</Text><Text style={s.v}>Centre of mass {R.stats.com.map(r1).join(', ')} mm</Text></> : <Text style={s.k}>No solid yet.</Text>}</View></Grp>
