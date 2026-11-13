@@ -1,6 +1,13 @@
 // Run with:  npx tsx tests/run.ts
 // Analytical benchmarks and regression checks. Closed-form results are exact textbook values, not approximations.
 import { readFileSync } from 'fs';
+import { extrudeEdges as FX, latheAt as FL, holeProfile as FH, loft as FLOFT, sweepTube as FSW, mirrorMesh as FM, insetRegions as FI } from '../lib/feat';
+import { MECH_TEMPLATES } from '../lib/mechlib';
+import { drawingSvg, edgePieces, callouts } from '../lib/drawing';
+import { rebuild as rebuildM, newPart as newPartM } from '../lib/parts';
+import { volume as volM, boolean as boolM, extrude as extrudeM } from '../lib/solid';
+import { circlePolygon as cpolyM, filletCorner, addRect as addRectM, emptySketch as emptyM } from '../lib/sketch';
+import { finishLook, FINISHES as MFIN } from '../lib/materials';
 import { VEHICLE_TEMPLATES } from '../lib/vehicles';
 import { BUILDINGS } from '../lib/buildings';
 import { placeBuilding } from '../lib/placebuilding';
@@ -1036,6 +1043,61 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   }
   ok('every catalogue template builds a finite model of about the stated length ' + bad, bad === '');
   ok('catalogue holds well over 100 templates', CATALOG.reduce((n, c) => n + c.items.length, 0) > 100 && CATALOG_TEMPLATES.length > 70);
+}
+
+{
+  console.log('\nSolid-modelling features');
+  const sq = (w: number, h: number): [number, number][] => [[0, 0], [w, 0], [w, h], [0, h]], R0 = [{ outer: sq(100, 60), holes: [] }];
+  const plain = FX(R0, 'XY', 0, 20, {});
+  ok('extrude with no options keeps the exact volume', Math.abs(volM(plain) - 120000) < 1e-6);
+  const fil = FX(R0, 'XY', 0, 20, { fillet: 4 }), cha = FX(R0, 'XY', 0, 20, { chamfer: 3 }), dra = FX(R0, 'XY', 0, 20, { draft: 5 });
+  ok('rounding the end edges removes material, but only a little', volM(fil) < 120000 && volM(fil) > 115000);
+  const chExpected = 120000 - 2 * (0.5 * 3 * 3) * (2 * (100 + 60) - 4 * 3 * 0.5);
+  ok('chamfer 3 on both rims removes about the expected volume (' + volM(cha).toFixed(0) + ')', Math.abs(volM(cha) - chExpected) < 600);
+  ok('draft narrows the far end', volM(dra) < 120000 && volM(dra) > 105000);
+  ok('edge-rounded extrusions are closed solids', [fil, cha, dra].every(m => volM(m) > 0));
+  const ins = FI(R0, 5)[0].outer; ok('inset by 5 shrinks the rectangle by 5 on every side', ins[0][0] === 5 && ins[0][1] === 5 && ins[2][0] === 95 && ins[2][1] === 55);
+  const tool = FL(FH('cbore', 10, 20, 18, 6), 'XY', 0, [20, 30]);
+  ok('counterbore tool: cylinder Ø18 × 6 plus Ø10 × 20 (plus 1 mm lead-in)', Math.abs(volM(tool) - (Math.PI * 81 * 7 + Math.PI * 25 * 14)) < 25);
+  const drilled = boolM(plain, tool, 'cut'); ok('drilling a counterbored hole takes the tool volume out of the plate', Math.abs(volM(plain) - volM(drilled) - (Math.PI * 81 * 6 + Math.PI * 25 * 14)) < 30);
+  const cs = FL(FH('csink', 10, 20, 20), 'XY', 0, [20, 30]); ok('countersink tool is a closed solid', volM(cs) > 1500);
+  const lf = FLOFT({ outer: sq(100, 100).map(p => [p[0] - 50, p[1] - 50] as [number, number]), holes: [] }, { outer: cpolyM(0, 0, 30, 48), holes: [] }, 'XY', 0, 80);
+  ok('loft square to round lies between the two extrusions', volM(lf) > Math.PI * 900 * 80 && volM(lf) < 100 * 100 * 80);
+  const sw = FSW([[0, 0, 0], [0, 0, 100], [100, 0, 100], [100, 0, 0]], 20, 0, 20);
+  ok('swept bar with bends is a bit shorter than the sharp-corner path', volM(sw) > Math.PI * 100 * 270 && volM(sw) < Math.PI * 100 * 300);
+  const tube = FSW([[0, 0, 0], [0, 0, 100]], 20, 12, 0); ok('hollow sweep is an exact tube', Math.abs(volM(tube) - Math.PI * 64 * 100) / (Math.PI * 6400) < 0.01);
+  ok('mirror keeps the volume and flips the position', Math.abs(volM(FM(plain, 'YZ', 0)) - 120000) < 1e-6);
+  // timeline steps
+  const d = newPartM('t'); d.params = [{ name: 'w', expr: '40' }];
+  const sk0 = addRectM(emptyM(), [0, 0], [40, 40]);
+  d.steps = [{ id: 's1', type: 'sketch', name: 's', plane: 'XY', offset: '0', sk: sk0 }, { id: 'f1', type: 'extrude', name: 'e', sketch: 's1', op: 'new', depth: '10', angle: '360', fillet: '1', wall: '2', open: 'top' }];
+  const rb = rebuildM(d); ok('shell: a 40 mm box with 2 mm walls and floor, open top, weighs the right volume', rb.errors.length === 0 && Math.abs((rb.stats?.volume ?? 0) - (40 * 40 * 10 - 36 * 36 * 8)) < 120);
+  d.steps.push({ id: 's2', type: 'sketch', name: 'h', plane: 'XY', offset: '10', sk: { pts: [{ id: 'c', x: 20, y: 20 }], lines: [], circles: [{ id: 'o', c: 'c', r: 5 }], cons: [] } }, { id: 'h1', type: 'hole', name: 'h', sketch: 's2', hole: 'simple', dia: '0', cdia: '0', cdepth: '0', depth: '-12' });
+  const rh = rebuildM(d); ok('hole wizard drills the 2 mm floor at the circle centre (dia 0 takes the circle size)', rh.errors.length === 0 && Math.abs((rb.stats!.volume - rh.stats!.volume) - Math.PI * 25 * 2) < 8);
+  d.steps.push({ id: 'p1', type: 'pattern', name: 'p', of: 'h1', mode: 'linear', count: '1', dx: '0', dy: '0', dz: '0', axis: 'z', angle: '360', cx: '0', cy: '0', cz: '0' } as any);
+  ok('a hole can be patterned like any feature (count below 2 is rejected)', rebuildM(d).errors.some(e => e.step === 'p1'));
+  d.steps.pop(); d.steps.push({ id: 'm1', type: 'mirror', name: 'm', of: 'h1', plane: 'YZ', offset: '20' });
+  ok('mirror of a hole in the middle plane changes nothing', rebuildM(d).errors.length === 0);
+  const fc = filletCorner(sk0, sk0.pts[1].id, 5); ok('sketch fillet turns one corner into an arc of 6 segments (lines 4 to 10)', !!fc && fc.lines.length === sk0.lines.length + 6);
+  // finishes
+  ok('finish list has enamel, bronze and plastics', ['yellow', 'bronze', 'abs', 'nylon'].every(k => MFIN.some(f => f.key === k)) && finishLook(7850, 'yellow').coat === 1);
+  // drawing
+  const clev = MECH_TEMPLATES.find(t => t.key === 'm-clevis')!.make(), rc = rebuildM(clev);
+  ok('edge repair finds sharp edges between faces of a boolean result', edgePieces(rc.mesh).filter(p => p.ns.length === 2).length > 100);
+  const svg = drawingSvg(clev, rc.mesh, { values: rc.values, material: 'Cast iron', mass: rc.stats!.mass, image: false, date: '2026-01-01' });
+  ok('drawing sheet is an A3 SVG with views, section and title block', svg.startsWith('<svg') && svg.includes('FRONT VIEW') && svg.includes('TOP VIEW') && svg.includes('RIGHT SIDE VIEW') && svg.includes('SECTION A–A') && svg.includes('CLEVIS BRACKET'));
+  ok('drawing callouts list the holes with their sizes', callouts(clev, rc.values).some(t => t.includes('Ø12')) && callouts(clev, rc.values).some(t => t.includes('Ø20')));
+  ok('drawing shows overall sizes 100 and 75', svg.includes('>100<') && svg.includes('>75<'));
+}
+{
+  console.log('\nReference mechanical templates');
+  ok('there are at least 20 reference-based machine parts', MECH_TEMPLATES.length >= 20);
+  const bad: string[] = [];
+  for (const t of MECH_TEMPLATES) { try { const r = rebuildM(t.make()); if (r.errors.length || !r.stats || !(r.stats.volume > 1000) || r.bodies.length !== 1) bad.push(t.key + ':' + (r.errors[0]?.msg ?? 'empty')); } catch (e: any) { bad.push(t.key + ':' + e.message); } }
+  ok('every machine part rebuilds without errors into one solid ' + bad.join(' '), bad.length === 0);
+  ok('machine parts are grouped in four categories', new Set(MECH_TEMPLATES.map(t => t.brand)).size === 4);
+  ok('machine parts use the new features', MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'hole')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'loft')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'sweep')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'mirror')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'extrude' && !!s.wall)));
+  ok('machine parts appear in the template list', MECH_TEMPLATES.every(t => ALL_TEMPLATES.some(a => a.key === t.key)));
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

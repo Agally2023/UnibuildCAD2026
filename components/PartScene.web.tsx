@@ -4,21 +4,22 @@ import { BufferAttribute, BufferGeometry, Color } from 'three';
 import { featureEdges, type Mesh } from '../lib/solid';
 import type { Q } from '../lib/orbit';
 import Studio from './Studio';
-import { partLook, paintFor, vehicleColor } from '../lib/materials';
+import { finishLook, paintFor, vehicleColor } from '../lib/materials';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildVehicle, vehicleBounds, type VSpec } from '../lib/vmodel';
 import { VehicleParts, GroundShadow } from './VehicleModel';
 
-type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean; vspec?: VSpec; params?: Record<string, number> };
+type P = { mesh: Mesh; quat: Q; zoom: number; name?: string; density?: number; vehicle?: boolean; vspec?: VSpec; params?: Record<string, number>; finish?: string };
 
 // Flat-shaded solid with its sharp edges drawn, as in a CAD viewport. The part is modelled Z up; the scene is Y up.
-export default function PartScene({ mesh, quat, zoom, name = '', density = 7850, vehicle = false, vspec, params }: P) {
+export default function PartScene({ mesh, quat, zoom, name = '', density = 7850, vehicle = false, vspec, params, finish }: P) {
   const vparts = useMemo(() => (vehicle && vspec ? buildVehicle(vspec, params ?? {}, paintFor(name)) : null), [vehicle, vspec, params, name]);
-  const look = partLook(density);
+  const look = finishLook(density, finish);
   const { geo, edges, c, r } = useMemo(() => {
     if (vparts) { const b = vehicleBounds(vparts); return { geo: new BufferGeometry(), edges: null, c: b.lo.map((v, i) => (v + b.hi[i]) / 2), r: Math.max(1, Math.hypot(b.hi[0] - b.lo[0], b.hi[1] - b.lo[1], b.hi[2] - b.lo[2]) / 2) }; }
     const pos = new Float32Array(mesh.f.length * 3); let lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
     mesh.f.forEach((vi, k) => { for (let a = 0; a < 3; a++) { const x = mesh.v[vi * 3 + a]; pos[k * 3 + a] = x; lo[a] = Math.min(lo[a], x); hi[a] = Math.max(hi[a], x); } });
-    const g = new BufferGeometry(); g.setAttribute('position', new BufferAttribute(pos, 3)); g.computeVertexNormals();
+    let g = new BufferGeometry(); g.setAttribute('position', new BufferAttribute(pos, 3)); g.computeVertexNormals(); if (!vehicle) g = toCreasedNormals(g, (35 * Math.PI) / 180);
     if (vehicle) { const paint = paintFor(name), n = g.getAttribute('normal'), col = new Float32Array(mesh.f.length * 3), z0 = lo[2], dz = Math.max(hi[2] - lo[2], 1e-6); for (let k = 0; k < mesh.f.length; k += 3) { const zc = (pos[k * 3 + 2] + pos[k * 3 + 5] + pos[k * 3 + 8]) / 3, c = new Color(vehicleColor([n.getX(k), n.getY(k), n.getZ(k)], (zc - z0) / dz, paint)); for (let j = 0; j < 3; j++) { col[(k + j) * 3] = c.r; col[(k + j) * 3 + 1] = c.g; col[(k + j) * 3 + 2] = c.b; } } g.setAttribute('color', new BufferAttribute(col, 3)); }
     const cc = lo.map((v, i) => (v + hi[i]) / 2), rr = Math.max(1, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2);
     const ev = featureEdges(mesh, 30), eg = new BufferGeometry(); eg.setAttribute('position', new BufferAttribute(new Float32Array(ev), 3));
@@ -33,7 +34,7 @@ export default function PartScene({ mesh, quat, zoom, name = '', density = 7850,
       <group quaternion={quat} scale={(zoom * (vparts ? 54 : 40)) / r}>
         <group rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
           <group position={[-c[0], -c[1], -c[2]]}>
-            {vparts ? <><VehicleParts parts={vparts} /><GroundShadow w={(vehicleBounds(vparts).hi[1] - vehicleBounds(vparts).lo[1])} l={(vehicleBounds(vparts).hi[0] - vehicleBounds(vparts).lo[0])} cx={c[0]} cy={c[1]} /></> : <mesh geometry={geo}>{vehicle ? <meshPhysicalMaterial vertexColors metalness={0.45} roughness={0.28} clearcoat={1} clearcoatRoughness={0.08} envMapIntensity={1.4} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} /> : <meshStandardMaterial color={look.color} metalness={look.metal} roughness={look.rough} envMapIntensity={1.5} flatShading polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />}</mesh>}
+            {vparts ? <><VehicleParts parts={vparts} /><GroundShadow w={(vehicleBounds(vparts).hi[1] - vehicleBounds(vparts).lo[1])} l={(vehicleBounds(vparts).hi[0] - vehicleBounds(vparts).lo[0])} cx={c[0]} cy={c[1]} /></> : <mesh geometry={geo}>{vehicle ? <meshPhysicalMaterial vertexColors metalness={0.45} roughness={0.28} clearcoat={1} clearcoatRoughness={0.08} envMapIntensity={1.4} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} /> : <meshPhysicalMaterial color={look.color} metalness={look.metal} roughness={look.rough} clearcoat={look.coat ?? 0} clearcoatRoughness={0.1} envMapIntensity={look.metal > 0.5 ? 1.7 : 1.1} polygonOffset polygonOffsetFactor={1} polygonOffsetUnits={1} />}</mesh>}
             {edges && !vehicle && <lineSegments geometry={edges}><lineBasicMaterial color="#0a2e1f" /></lineSegments>}
           </group>
         </group>

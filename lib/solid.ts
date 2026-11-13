@@ -15,7 +15,7 @@ export const BASIS: Record<Plane, { u: V3; v: V3; n: V3 }> = {
   XZ: { u: [1, 0, 0], v: [0, 0, 1], n: [0, -1, 0] },
   YZ: { u: [0, 1, 0], v: [0, 0, 1], n: [1, 0, 0] },
 };
-const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+export const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
 export const toWorld = (pl: Plane, offset: number, p: [number, number], z = 0): V3 => { const b = BASIS[pl]; return add(add(add([0, 0, 0], b.u, p[0]), b.v, p[1]), b.n, offset + z); };
 
 export const volume = (m: Mesh) => { let s = 0; for (let i = 0; i < m.f.length; i += 3) { const a = m.f[i] * 3, b = m.f[i + 1] * 3, c = m.f[i + 2] * 3; s += (m.v[a] * (m.v[b + 1] * m.v[c + 2] - m.v[b + 2] * m.v[c + 1]) - m.v[a + 1] * (m.v[b] * m.v[c + 2] - m.v[b + 2] * m.v[c]) + m.v[a + 2] * (m.v[b] * m.v[c + 1] - m.v[b + 1] * m.v[c])) / 6; } return s; };
@@ -51,10 +51,10 @@ export function centroid(m: Mesh): V3 {
   return vol ? [s[0] / vol, s[1] / vol, s[2] / vol] : [0, 0, 0];
 }
 
-const flip = (m: Mesh): Mesh => { const f = [...m.f]; for (let i = 0; i < f.length; i += 3) { const t = f[i + 1]; f[i + 1] = f[i + 2]; f[i + 2] = t; } return { v: m.v, f }; };
-const outward = (m: Mesh) => (volume(m) < 0 ? flip(m) : m);
+export const flip = (m: Mesh): Mesh => { const f = [...m.f]; for (let i = 0; i < f.length; i += 3) { const t = f[i + 1]; f[i + 1] = f[i + 2]; f[i + 2] = t; } return { v: m.v, f }; };
+export const outward = (m: Mesh) => (volume(m) < 0 ? flip(m) : m);
 
-function capTriangles(r: Region): { pts: [number, number][]; tri: number[] } {
+export function capTriangles(r: Region): { pts: [number, number][]; tri: number[] } {
   const pts = [...r.outer, ...r.holes.flat()], flat: number[] = [], holeIdx: number[] = []; let n = r.outer.length;
   r.outer.forEach(p => flat.push(p[0], p[1]));
   r.holes.forEach(h => { holeIdx.push(n); h.forEach(p => flat.push(p[0], p[1])); n += h.length; });
