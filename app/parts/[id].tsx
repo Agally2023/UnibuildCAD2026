@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Image, Pressable, ScrollView, StyleSheet, TextInput, PanResponder, Platform, useWindowDimensions } from 'react-native';
 import Svg, { Circle, G as SvgG, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 import { drag, Q, turn, VIEWS } from '../../lib/orbit';
-import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
+import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, filletCorner, emptySketch, solveSketch, uid, type Con, type ConBody, type Sketch } from '../../lib/sketch';
 import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
 import { CATALOG } from '../../lib/catalog';
-import { paintVehicleURL } from '../../lib/vpaint';
+import { paintMeshURL, paintVehicleURL } from '../../lib/vpaint';
+import { drawingSvg } from '../../lib/drawing';
 import { evalParams } from '../../lib/sketch';
 import { buildVehicle } from '../../lib/vmodel';
-import { paintFor } from '../../lib/materials';
+import { FINISHES, finishLook, paintFor } from '../../lib/materials';
 import { newVehicleProject, VEHICLE_KINDS } from '../../lib/vproject';
-import { newPart, rebuild, sampleBracket, type FeatureStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step } from '../../lib/parts';
+import { newPart, rebuild, sampleBracket, type FeatureStep, type HoleStep, type LoftStep, type MirrorStep, type Op, type PartDoc, type PatternStep, type SketchStep, type Step, type SweepStep } from '../../lib/parts';
 import { featureEdges, toStl } from '../../lib/solid';
 import { wirePath } from '../../lib/wire';
 import WorkspaceBar from '../../components/WorkspaceBar';
@@ -23,7 +24,7 @@ import { saveFile } from '../../components/saveFile';
 
 type Tool = 'select' | 'line' | 'rect' | 'circle' | 'axis' | 'polygon';
 // Each workspace (Mechanical, Automotive) has the same six tabs; what is inside Templates differs
-const TABS = [['tpl', 'Templates'], ['edit', 'Edit'], ['file', 'File'], ['inspect', 'Analysis'], ['opts', 'Options'], ['mods', 'Modules']] as const;
+const TABS = [['tpl', 'Templates'], ['edit', 'Edit'], ['file', 'File'], ['inspect', 'Analysis'], ['draw', 'Drawing'], ['opts', 'Options'], ['mods', 'Modules']] as const;
 type Tab = typeof TABS[number][0];
 type WS = 'mech' | 'auto';
 const PLANES = ['XY', 'XZ', 'YZ'] as const;
@@ -47,6 +48,8 @@ const B = ({ icon, label, go, on, testID, danger, sub, wide, thumb, img }: { ico
     {wide && img ? <Image source={{ uri: img }} style={[s.thumb, { width: 130, height: 76 }]} resizeMode="contain" /> : wide ? <Svg width={130} height={76} style={s.thumb}><Path d={thumb ?? ''} stroke="#146c43" strokeWidth={1} fill="none" /></Svg> : <Text style={[s.rbI, on && { color: '#fff' }]}>{icon}</Text>}<Text style={[s.rbT, on && { color: '#fff' }]}>{label}</Text>{!!sub && <Text style={[s.rbS, on && { color: '#dff' }]} numberOfLines={3}>{sub}</Text>}
   </Pressable>
 );
+
+const ICON: Record<Step['type'], string> = { sketch: '✎ ', extrude: '▮ ', revolve: '◐ ', pattern: '✲ ', hole: '◎ ', loft: '◭ ', sweep: '〰 ', mirror: '⇋ ' };
 
 export default function Parts() {
   const { id, tpl, tab: tabQ, ws: wsQ } = useLocalSearchParams<{ id: string; tpl?: string; tab?: string; ws?: string }>();
@@ -88,7 +91,7 @@ export default function Parts() {
     commit(d => ({ ...d, upTo: undefined, steps: [...d.steps, { id: fid, type, name: type === 'extrude' ? 'Extrude' : 'Revolve', sketch: sk, op: hasBody ? 'join' : 'new', depth: '20', angle: '360' } as FeatureStep] })); setSelStep(fid); setView('3d');
   };
   const move = (sid: string, dir: -1 | 1) => commit(d => { const i = d.steps.findIndex(x => x.id === sid), j = i + dir; if (i < 0 || j < 0 || j >= d.steps.length) return d; const a = [...d.steps]; [a[i], a[j]] = [a[j], a[i]]; return { ...d, steps: a }; });
-  const remove = (sid: string) => { commit(d => ({ ...d, upTo: undefined, steps: d.steps.filter(x => x.id !== sid && !(x.type !== 'sketch' && x.type !== 'pattern' && (x as FeatureStep).sketch === sid) && !(x.type === 'pattern' && x.of === sid)) })); if (selStep === sid) setSelStep(null); };
+  const remove = (sid: string) => { commit(d => ({ ...d, upTo: undefined, steps: d.steps.filter(x => x.id !== sid && (x as any).sketch !== sid && (x as any).sketch2 !== sid && (x as any).of !== sid) })); if (selStep === sid) setSelStep(null); };
   const roll = (to: number | undefined) => commit(d => ({ ...d, upTo: to }));
   const shown = R.shown;
 
@@ -98,7 +101,7 @@ export default function Parts() {
   const [vpName, setVpName] = useState(''), [vpKind, setVpKind] = useState('blank');
   const [thumbTick, setThumbTick] = useState(0), [wire, setWire] = useState(false);
   const glOk = useMemo(() => Platform.OS !== 'web' || (() => { try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch { return false; } })(), []);
-  const [ws, setWs] = useState<WS>(wsQ === 'auto' || tabQ === 'auto' || tabQ === 'veh' || tabQ === 'brand' ? 'auto' : 'mech'), [tab, setTab] = useState<Tab>('tpl'), [opt, setOpt] = useState({ sides: '6', chamfer: '2', bn: '6', pcd: '100', bd: '10', pc: '4', pd: '20', pa: '360' }), [paste, setPaste] = useState<string | null>(null);
+  const [ws, setWs] = useState<WS>(wsQ === 'auto' || tabQ === 'auto' || tabQ === 'veh' || tabQ === 'brand' ? 'auto' : 'mech'), [tab, setTab] = useState<Tab>('tpl'), [opt, setOpt] = useState({ sides: '6', chamfer: '2', fillet: '5', bn: '6', pcd: '100', bd: '10', pc: '4', pd: '20', pa: '360' }), [paste, setPaste] = useState<string | null>(null);
   const setO = (k: keyof typeof opt) => (v: string) => setOpt(o => ({ ...o, [k]: v }));
   const [box, setBox] = useState({ w: 600, h: 420 }), [vw, setVw] = useState({ cx: 40, cy: 30, k: 4 });
   const sk: Sketch | null = editingSketch ? (R.solved[editingSketch.id]?.sk ?? editingSketch.sk) : null;
@@ -168,10 +171,16 @@ export default function Parts() {
     if (tab !== 'tpl') return;
     const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (ws === 'mech' ? x.group === 'mechanical' : x.group !== 'mechanical') && !THUMBS.has(x.key) && !IMGS.has(x.key));
     let dead = false;
-    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { const d = todo[i].make(); let u = ''; if (d.vspec && Platform.OS === 'web') { const pv = evalParams(d.params).values; u = paintVehicleURL(buildVehicle(d.vspec, pv, paintFor(d.name)), VIEWS.iso.q, 130, 76, 2, 4); } if (u) IMGS.set(todo[i].key, u); else THUMBS.set(todo[i].key, wirePath(rebuild(d).mesh, VIEWS.iso.q, 130, 76, 6)); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
+    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { const d = todo[i].make(); let u = ''; if (d.vspec && Platform.OS === 'web') { const pv = evalParams(d.params).values; u = paintVehicleURL(buildVehicle(d.vspec, pv, paintFor(d.name)), VIEWS.iso.q, 130, 76, 2, 4); } if (!u) { const rb = rebuild(d); if (Platform.OS === 'web') { const lk = finishLook(d.density, d.finish); u = paintMeshURL(rb.mesh, VIEWS.iso.q, 130, 76, lk.color, lk.metal); } if (!u) THUMBS.set(todo[i].key, wirePath(rb.mesh, VIEWS.iso.q, 130, 76, 6)); } if (u) IMGS.set(todo[i].key, u); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
     next(0); return () => { dead = true; };
   }, [tab, ws]);
   const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
+  const matName = useMemo(() => FINISHES.find(x => x.key === doc.finish)?.label ?? FINISHES.find(x => x.density === doc.density)?.label ?? 'Steel', [doc.finish, doc.density]);
+  const sheet = useMemo(() => {
+    if (tab !== 'draw' || Platform.OS !== 'web' || doc.kind === 'vehicle') return '';
+    try { const lk = finishLook(doc.density, doc.finish); return drawingSvg(doc, R.mesh, { values: R.values, material: matName, mass: R.stats?.mass ?? 0, date: new Date().toISOString().slice(0, 10), color: lk.color, shine: lk.metal }); } catch (e: any) { return ''; }
+  }, [tab, R.mesh, doc.name, doc.density, doc.finish, matName]);
+
   const showWire = wire || !glOk;
   const vpaint = useMemo(() => (showWire && !wire && Platform.OS === 'web' && doc.vspec ? paintVehicleURL(buildVehicle(doc.vspec, R.values, paintFor(doc.name)), quat, 700, 460, 1.5, 30) : ''), [showWire, wire, doc.vspec, doc.name, R.values, quat]);
   const wireD = useMemo(() => (showWire ? wirePath(R.mesh, quat, 700, 460, 30, edges) : ''), [showWire, R.mesh, quat, edges]);
@@ -198,7 +207,7 @@ export default function Parts() {
         return (
           <View key={x.id} style={[s.step, selStep === x.id && s.stepOn, !on && { opacity: 0.4 }]}>
             <Pressable testID={`step-${x.id}`} style={{ flex: 1 }} onPress={() => { setSelStep(x.id); setView(x.type === 'sketch' ? 'sketch' : '3d'); if (x.type === 'sketch') setTool('select'); }}>
-              <Text style={[s.stepT, off && { textDecorationLine: 'line-through' }]}>{x.type === 'sketch' ? '✎ ' : x.type === 'extrude' ? '▮ ' : x.type === 'pattern' ? '✲ ' : '◐ '}{x.name}</Text>
+              <Text style={[s.stepT, off && { textDecorationLine: 'line-through' }]}>{ICON[x.type]} {x.name}</Text>
               {!!e && <Text style={s.errT}>{e}</Text>}
             </Pressable>
             <Pressable onPress={() => move(x.id, -1)}><Text style={s.ic}>↑</Text></Pressable><Pressable onPress={() => move(x.id, 1)}><Text style={s.ic}>↓</Text></Pressable>
@@ -233,7 +242,7 @@ export default function Parts() {
       {step && <View style={s.row}><Text style={s.k}>Name</Text><Exp value={step.name} width={150} onCommit={v => setStep(step.id, { name: v })} /></View>}
       {step && step.type === 'pattern' && (
         <>
-          <View style={s.row}><Text style={s.k}>Repeats</Text>{doc.steps.filter(x => x.type === 'extrude' || x.type === 'revolve').map(x => <Chip key={x.id} label={x.name} on={step.of === x.id} go={() => setStep(step.id, { of: x.id })} />)}</View>
+          <View style={s.row}><Text style={s.k}>Repeats</Text>{doc.steps.filter(x => x.type !== 'sketch' && x.type !== 'pattern').map(x => <Chip key={x.id} label={x.name} on={step.of === x.id} go={() => setStep(step.id, { of: x.id })} />)}</View>
           <View style={s.row}><Chip label="Linear" on={step.mode === 'linear'} go={() => setStep(step.id, { mode: 'linear' })} /><Chip label="Circular" on={step.mode === 'circular'} go={() => setStep(step.id, { mode: 'circular' })} /></View>
           <View style={s.row}><Text style={s.k}>Count</Text><Exp testID="pat-count" value={step.count} width={70} onCommit={v => setStep(step.id, { count: v })} /></View>
           {step.mode === 'linear' ? (
@@ -246,7 +255,7 @@ export default function Parts() {
           )}
         </>
       )}
-      {step && step.type !== 'sketch' && step.type !== 'pattern' && (
+      {step && (step.type === 'extrude' || step.type === 'revolve') && (
         <>
           <View style={s.row}><Text style={s.k}>Sketch</Text>{doc.steps.filter(x => x.type === 'sketch').map(x => <Chip key={x.id} label={x.name.split(' (')[0]} on={step.sketch === x.id} go={() => setStep(step.id, { sketch: x.id })} />)}</View>
           <View style={s.row}><Text style={s.k}>Operation</Text>{(['new', 'join', 'cut'] as Op[]).map(o => <Chip key={o} testID={`op-${o}`} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</View>
@@ -254,8 +263,41 @@ export default function Parts() {
             <>
               <View style={s.row}><Text style={s.k}>Depth (mm)</Text><Exp testID="depth" value={step.depth} onCommit={v => setStep(step.id, { depth: v })} /></View>
               <View style={s.row}><Chip label="Symmetric about the sketch" on={!!step.symmetric} go={() => setStep(step.id, { symmetric: !step.symmetric })} /></View>
+              <View style={s.row}><Text style={s.k}>Round edges R</Text><Exp testID="fillet" value={step.fillet ?? '0'} width={56} onCommit={v => setStep(step.id, { fillet: v })} /><Text style={s.k}>Chamfer</Text><Exp testID="chamfer" value={step.chamfer ?? '0'} width={56} onCommit={v => setStep(step.id, { chamfer: v })} /></View>
+              <View style={s.row}><Text style={s.k}>Edges</Text>{(['both', 'top', 'bottom'] as const).map(e => <Chip key={e} label={e === 'both' ? 'Both ends' : e === 'top' ? 'Far end' : 'Near end'} on={(step.edges ?? 'both') === e} go={() => setStep(step.id, { edges: e })} />)}<Text style={s.k}>Draft °</Text><Exp value={step.draft ?? '0'} width={56} onCommit={v => setStep(step.id, { draft: v })} /></View>
+              <View style={s.row}><Text style={s.k}>Shell wall</Text><Exp testID="wall" value={step.wall ?? '0'} width={56} onCommit={v => setStep(step.id, { wall: v })} />{(['top', 'bottom', 'both', 'none'] as const).map(e => <Chip key={e} label={e === 'top' ? 'Open far end' : e === 'bottom' ? 'Open near end' : e === 'both' ? 'Open both' : 'Closed'} on={(step.open ?? 'top') === e} go={() => setStep(step.id, { open: e })} />)}</View>
             </>
           ) : <View style={s.row}><Text style={s.k}>Angle (°)</Text><Exp value={step.angle} onCommit={v => setStep(step.id, { angle: v })} /></View>}
+        </>
+      )}
+      {step?.type === 'hole' && (
+        <>
+          <View style={s.row}><Text style={s.k}>Sketch (circle centres)</Text>{doc.steps.filter(x => x.type === 'sketch').map(x => <Chip key={x.id} label={x.name.split(' (')[0]} on={step.sketch === x.id} go={() => setStep(step.id, { sketch: x.id })} />)}</View>
+          <View style={s.row}><Text style={s.k}>Type</Text>{([['simple', 'Simple'], ['cbore', 'Counterbore'], ['csink', 'Countersink']] as const).map(([k, l]) => <Chip key={k} testID={`hole-${k}`} label={l} on={step.hole === k} go={() => setStep(step.id, { hole: k })} />)}</View>
+          <View style={s.row}><Text style={s.k}>Diameter (0 = circle size)</Text><Exp testID="hole-dia" value={step.dia} width={64} onCommit={v => setStep(step.id, { dia: v })} /></View>
+          <View style={s.row}><Text style={s.k}>Depth (negative flips)</Text><Exp testID="hole-depth" value={step.depth} width={64} onCommit={v => setStep(step.id, { depth: v })} /></View>
+          {step.hole !== 'simple' && <View style={s.row}><Text style={s.k}>{step.hole === 'cbore' ? 'C-bore' : 'C-sink'} dia</Text><Exp value={step.cdia} width={64} onCommit={v => setStep(step.id, { cdia: v })} />{step.hole === 'cbore' && <><Text style={s.k}>depth</Text><Exp value={step.cdepth} width={64} onCommit={v => setStep(step.id, { cdepth: v })} /></>}</View>}
+        </>
+      )}
+      {step?.type === 'loft' && (
+        <>
+          <View style={s.row}><Text style={s.k}>From</Text>{doc.steps.filter(x => x.type === 'sketch').map(x => <Chip key={x.id} label={x.name.split(' (')[0]} on={step.sketch === x.id} go={() => setStep(step.id, { sketch: x.id })} />)}</View>
+          <View style={s.row}><Text style={s.k}>To</Text>{doc.steps.filter(x => x.type === 'sketch').map(x => <Chip key={x.id} label={x.name.split(' (')[0]} on={step.sketch2 === x.id} go={() => setStep(step.id, { sketch2: x.id })} />)}</View>
+          <View style={s.row}><Text style={s.k}>Operation</Text>{(['new', 'join', 'cut'] as Op[]).map(o => <Chip key={o} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</View>
+        </>
+      )}
+      {step?.type === 'sweep' && (
+        <>
+          <View style={s.row}><Text style={s.k}>Path x,y,z; x,y,z; …</Text></View>
+          <TextInput testID="sweep-path" style={[s.inp, { minHeight: 48 }]} multiline defaultValue={step.path} onEndEditing={e => setStep(step.id, { path: e.nativeEvent.text })} />
+          <View style={s.row}><Text style={s.k}>Diameter</Text><Exp value={step.dia} width={60} onCommit={v => setStep(step.id, { dia: v })} /><Text style={s.k}>Bore</Text><Exp value={step.bore} width={60} onCommit={v => setStep(step.id, { bore: v })} /><Text style={s.k}>Bend R</Text><Exp value={step.bend} width={60} onCommit={v => setStep(step.id, { bend: v })} /></View>
+          <View style={s.row}><Text style={s.k}>Operation</Text>{(['new', 'join', 'cut'] as Op[]).map(o => <Chip key={o} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</View>
+        </>
+      )}
+      {step?.type === 'mirror' && (
+        <>
+          <View style={s.row}><Text style={s.k}>Mirrors</Text>{doc.steps.filter(x => isSolid(x) && x.id !== step.id && x.type !== 'mirror').map(x => <Chip key={x.id} label={x.name} on={step.of === x.id} go={() => setStep(step.id, { of: x.id })} />)}</View>
+          <View style={s.row}><Text style={s.k}>In plane</Text>{([['YZ', 'Left–right (YZ)'], ['XZ', 'Front–back (XZ)'], ['XY', 'Top–bottom (XY)']] as const).map(([p, l]) => <Chip key={p} label={l} on={step.plane === p} go={() => setStep(step.id, { plane: p })} />)}<Text style={s.k}>Offset</Text><Exp value={step.offset} width={60} onCommit={v => setStep(step.id, { offset: v })} /></View>
         </>
       )}
       {step?.type === 'sketch' && (
@@ -314,14 +356,21 @@ export default function Parts() {
 
   const Viewport = (
     <View ref={wrap} testID="viewport3d" style={s.canvas} {...pan.panHandlers}>
-      {R.mesh.f.length ? (showWire && !wire && vpaint ? <Image source={{ uri: vpaint }} style={{ width: '100%', height: '100%', transform: [{ scale: zoom }] }} resizeMode="contain" /> : showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} vspec={doc.vspec} params={R.values} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
+      {R.mesh.f.length ? (showWire && !wire && vpaint ? <Image source={{ uri: vpaint }} style={{ width: '100%', height: '100%', transform: [{ scale: zoom }] }} resizeMode="contain" /> : showWire ? <Svg width="100%" height="100%" viewBox="0 0 700 460" preserveAspectRatio="xMidYMid meet"><SvgG transform={`translate(350 230) scale(${zoom}) translate(-350 -230)`}><Path d={wireD} stroke="#146c43" strokeWidth={1.2} fill="none" /></SvgG></Svg> : <PartScene mesh={R.mesh} quat={quat} zoom={zoom} name={doc.name} density={doc.density} vehicle={doc.kind === 'vehicle'} vspec={doc.vspec} params={R.values} finish={doc.finish} />) : <Text style={[s.k, { padding: 20 }]}>Nothing to show yet. Sketch a closed shape on a plane and extrude it.</Text>}
       <View style={s.vbtns}>{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <Chip key={k} label={v.label} go={() => setQuat(v.q)} />)}<Chip label="Turn 15° ↻" go={() => setQuat(q => turn(q, 'y', Math.PI / 12))} />{glOk && <Chip label={wire ? 'Solid view' : 'Wire view'} go={() => setWire(w => !w)} />}</View>
     </View>
   );
 
   const Center = (
     <View style={s.center}>
-      {view === 'sketch' && editingSketch ? <>{SketchTools}{SketchCanvas}{editingSketch && sk && sk.cons.length > 0 && (
+      {tab === 'draw' ? (
+        <ScrollView contentContainerStyle={{ padding: 10 }}>
+          {Platform.OS !== 'web' ? <Text style={s.errT}>Drawing sheets are created in the web version.</Text>
+            : doc.kind === 'vehicle' ? <Text style={s.errT}>Drawing sheets are for machine parts. Vehicle models use the 3D view.</Text>
+            : sheet ? React.createElement('div', { 'data-testid': 'drawing-sheet', style: { width: '100%', background: '#fff', borderRadius: 4, lineHeight: 0 }, dangerouslySetInnerHTML: { __html: sheet.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:auto;display:block"') } })
+            : <Text style={s.errT}>Nothing to draw yet. Build a solid first.</Text>}
+        </ScrollView>
+      ) : view === 'sketch' && editingSketch ? <>{SketchTools}{SketchCanvas}{editingSketch && sk && sk.cons.length > 0 && (
         <ScrollView horizontal style={{ maxHeight: 34 }} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>{sk.cons.map(c => <Pressable key={c.id} onPress={() => edit(s2 => ({ ...s2, cons: s2.cons.filter(q => q.id !== c.id) }))}><Text style={s.conT}>{c.t}{'v' in c ? ` ${c.v}` : ''} ✕</Text></Pressable>)}</ScrollView>
       )}</> : Viewport}
     </View>
@@ -334,7 +383,20 @@ export default function Parts() {
   const dimPts = (c: 'dx' | 'dy') => (pts.length === 2 && dimv ? addCon({ t: c, a: pts[0].id, b: pts[1].id, v: dimv }) : setMsg('Select two points and type the distance first.'));
   const doChamfer = () => { if (pts.length !== 1) { setMsg('Select one corner point where two lines meet.'); return; } const r = chamferCorner(sk!, pts[0].id, parseFloat(opt.chamfer)); if (!r) { setMsg('That point is not a corner of exactly two lines, or the cut is longer than a line.'); return; } edit(() => r); setSel([]); };
   const doBolt = () => { edit(s2 => boltCircle(s2, [0, 0], parseFloat(opt.pcd) || 100, parseInt(opt.bn) || 4, parseFloat(opt.bd) || 10)); setMsg('Bolt circle drawn about the sketch origin. Select a circle to dimension or move it.'); };
-  const featureId = () => (step && (step.type === 'extrude' || step.type === 'revolve') ? step.id : [...doc.steps].reverse().find(x => x.type === 'extrude' || x.type === 'revolve')?.id);
+  const isSolid = (x: Step) => x.type !== 'sketch' && x.type !== 'pattern';
+  const featureId = () => (step && isSolid(step) ? step.id : [...doc.steps].reverse().find(isSolid)?.id);
+  const addStep = (st: Step, name: string) => { commit(d => ({ ...d, upTo: undefined, steps: [...d.steps, st] })); setSelStep(st.id); setView('3d'); setMsg(name); };
+  const addHole = (kind: 'simple' | 'cbore' | 'csink') => {
+    const sk = lastSketchId(); if (!sk || !doc.steps.some(x => x.type !== 'sketch' && x.type !== 'pattern')) { setMsg('Make a body first, then sketch circles where the holes go on one of its faces and add a hole.'); return; }
+    addStep({ id: uid('f'), type: 'hole', name: kind === 'simple' ? 'Hole' : kind === 'cbore' ? 'Counterbored hole' : 'Countersunk hole', sketch: sk, hole: kind, dia: '0', cdia: kind === 'simple' ? '0' : '18', cdepth: '6', depth: '20' } as HoleStep, 'Hole added. Each circle centre in the sketch gets a hole. Depth goes along the sketch normal; use a negative depth to drill the other way.');
+  };
+  const addLoft = () => {
+    const sks = doc.steps.filter(x => x.type === 'sketch'); if (sks.length < 2) { setMsg('Draw two closed sketches on the same plane (give the second one an offset), then loft.'); return; }
+    addStep({ id: uid('f'), type: 'loft', name: 'Loft', sketch: sks[sks.length - 2].id, sketch2: sks[sks.length - 1].id, op: doc.steps.some(isSolid) ? 'join' : 'new' } as LoftStep, 'Loft added. Choose the two sketches it blends between.');
+  };
+  const addSweep = () => addStep({ id: uid('f'), type: 'sweep', name: 'Sweep', path: '0,0,0; 0,0,80; 60,0,80; 60,0,0', dia: '16', bore: '0', bend: '15', op: doc.steps.some(isSolid) ? 'join' : 'new' } as SweepStep, 'Sweep added: a bar or tube along the path, with rounded bends. Edit the path points, diameter and bend radius.');
+  const addMirror = () => { const f = featureId(); if (!f) { setMsg('Add a feature first, then mirror it.'); return; } addStep({ id: uid('f'), type: 'mirror', name: 'Mirror', of: f, plane: 'YZ', offset: '0' } as MirrorStep, 'Mirror added. Choose the feature and the plane.'); };
+  const doFillet = () => { if (pts.length !== 1) { setMsg('Select one corner point where two lines meet.'); return; } const r = filletCorner(sk!, pts[0].id, parseFloat(opt.fillet)); if (!r) { setMsg('That point is not a corner of exactly two lines, or the radius is too big for the lines.'); return; } edit(() => r); setMsg('Corner rounded.'); };
   const addPattern = (mode: 'linear' | 'circular') => {
     const f = featureId(); if (!f) { setMsg('Add an extrude or revolve first, then pattern it.'); return; }
     const pid = uid('f');
@@ -351,6 +413,7 @@ export default function Parts() {
   }, [ready, tpl, tabQ]);
   const fromTemplate = (mk: () => PartDoc) => { newDoc(mk()); setTab('edit'); setMsg('Template opened as a new part. Change its parameters on the left, or any step in the timeline.'); };
   const TAB_HINT: Record<Tab, string> = {
+    draw: 'An engineering drawing sheet made from the part: three views, a hatched half section, an isometric view, sizes, callouts and a title block. Download it as SVG or print it.',
     tpl: ws === 'mech' ? 'Ready-made parametric machine parts. Each opens as a new part: change the parameters (left) to resize it, or open any step to see how it was built.' : 'Complete vehicles, brand models, vehicle parts and components. Open one, then change its parameters and the whole thing rebuilds. Brand models use the maker\'s published dimensions and kerb weight with a generic body style, not the maker\'s own design.',
     edit: '1 New sketch on a plane. 2 Draw a closed shape and constrain it. 3 Extrude or revolve it into a solid (join, cut or new body). 4 Repeat features with patterns.',
     file: 'Parts are kept on this device. Export STL for printing or CAM; save a part file to share or back up, and paste one back to open it. Sign out is here too.',
@@ -382,20 +445,22 @@ export default function Parts() {
             <B testID="set-length" icon="↔" label="Length" go={() => dimLine('length')} /><B icon="∠" label="Angle°" go={() => dimLine('angle')} /><B testID="set-radius" icon="R" label="Radius" go={() => (circs.length === 1 && dimv ? addCon({ t: 'radius', c: circs[0].id, v: dimv }) : setMsg('Select one circle and type the radius first.'))} /><B icon="⇥" label="Δ X" go={() => dimPts('dx')} /><B icon="⇧" label="Δ Y" go={() => dimPts('dy')} />
           </Grp>
           <Grp title="Modify">
-            <View style={s.fld}><Text style={s.fl}>Dist.</Text><Exp value={opt.chamfer} width={48} onCommit={setO('chamfer')} /></View><B icon="◣" label="Chamfer corner" go={doChamfer} />
+            <View style={s.fld}><Text style={s.fl}>Dist.</Text><Exp value={opt.chamfer} width={48} onCommit={setO('chamfer')} /></View><B icon="◣" label="Chamfer corner" go={doChamfer} /><View style={s.fld}><Text style={s.fl}>R</Text><Exp value={opt.fillet} width={48} onCommit={setO('fillet')} /></View><B testID="fillet-corner" icon="◜" label="Round corner" go={doFillet} />
             <View style={s.fld}><Text style={s.fl}>Count</Text><Exp value={opt.bn} width={44} onCommit={setO('bn')} /><Text style={s.fl}>PCD</Text><Exp value={opt.pcd} width={56} onCommit={setO('pcd')} /><Text style={s.fl}>Hole ⌀</Text><Exp value={opt.bd} width={48} onCommit={setO('bd')} /></View><B testID="bolt-circle" icon="✲" label="Bolt circle" go={doBolt} />
             <B testID="del-sel" icon="🗑" label="Delete" danger go={delSel} /><B icon="⤢" label="Fit view" go={fit} />
             <View style={s.fld}><Text style={s.fl}>Snap</Text>{[1, 5, 10].map(n => <Chip key={n} label={`${n}`} on={snap === n} go={() => setSnap(n)} />)}</View>
           </Grp>
         </>}
         {tab === 'edit' && <>
-          <Grp title="Create"><B testID="add-extrude" icon="▮" label="Extrude" sub="Push a sketch into a solid" go={() => addFeature('extrude')} /><B testID="add-revolve" icon="◐" label="Revolve" sub="Turn a sketch about its axis" go={() => addFeature('revolve')} /></Grp>
+          <Grp title="Create"><B testID="add-extrude" icon="▮" label="Extrude" sub="Push a sketch into a solid" go={() => addFeature('extrude')} /><B testID="add-revolve" icon="◐" label="Revolve" sub="Turn a sketch about its axis" go={() => addFeature('revolve')} /><B testID="add-loft" icon="◭" label="Loft" sub="Blend two sketches" go={addLoft} /><B testID="add-sweep" icon="〰" label="Sweep" sub="Bar or tube along a path" go={addSweep} /><B testID="add-mirror" icon="⇋" label="Mirror" sub="Reflect a feature" go={addMirror} /></Grp>
+          <Grp title="Hole wizard"><B testID="add-hole" icon="○" label="Simple hole" sub="Drill at circle centres" go={() => addHole('simple')} /><B testID="add-cbore" icon="◎" label="Counterbore" sub="Socket-head seat" go={() => addHole('cbore')} /><B testID="add-csink" icon="◉" label="Countersink" sub="Flat-head seat" go={() => addHole('csink')} /></Grp>
           <Grp title="Pattern"><B testID="add-linear" icon="⋮⋮" label="Linear" sub="Copies along a line" go={() => addPattern('linear')} /><B testID="add-circular" icon="✲" label="Circular" sub="Copies around an axis" go={() => addPattern('circular')} /></Grp>
-          {step && (step.type === 'extrude' || step.type === 'revolve') && <Grp title={`Operation: ${step.name}`}>{(['new', 'join', 'cut'] as Op[]).map(o => <B key={o} testID={`op-${o}`} icon={o === 'new' ? '＋' : o === 'join' ? '∪' : '−'} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</Grp>}
+          {step && (step.type === 'extrude' || step.type === 'revolve' || step.type === 'loft' || step.type === 'sweep') && <Grp title={`Operation: ${step.name}`}>{(['new', 'join', 'cut'] as Op[]).map(o => <B key={o} testID={`op-${o}`} icon={o === 'new' ? '＋' : o === 'join' ? '∪' : '−'} label={o === 'new' ? 'New body' : o === 'join' ? 'Join' : 'Cut'} on={step.op === o} go={() => setStep(step.id, { op: o })} />)}</Grp>}
           <Grp title="History"><B testID="undo" icon="↶" label="Undo" sub="Ctrl+Z" go={undo} /><B testID="redo" icon="↷" label="Redo" sub="Ctrl+Y" go={redo} /><B icon="◀" label="Roll back" go={() => roll(Math.max(0, shown - 1))} /><B icon="▶" label="Roll forward" go={() => roll(shown + 1 >= doc.steps.length ? undefined : shown + 1)} /></Grp>
         </>}
         {tab === 'tpl' && <Grp title="Empty canvas"><B testID="blank-part" icon="▢" label="Empty design" sub="Nothing in it, start from zero" go={() => { newDoc(newPart(`Design ${parts.length + 1}`)); setView('3d' as any); setTab('edit'); setMsg('Empty design. Add a sketch, then extrude or revolve it. Undo (Ctrl+Z) reverses any step.'); }} /><B testID="blank-sketch" icon="✎" label="Blank sketch" sub="Empty drawing sheet, ready to draw" go={() => { const sid = uid('s'), d = newPart(`Design ${parts.length + 1}`); d.steps = [{ id: sid, type: 'sketch', name: 'Sketch 1 (XY)', plane: 'XY', offset: '0', sk: emptySketch() }]; newDoc(d); setSelStep(sid); setView('sketch'); setTool('line'); setTab('edit'); setMsg('Blank sketch. Pick Line, Rectangle or Circle and draw; undo reverses the last change.'); }} /></Grp>}
-        {tab === 'tpl' && ws === 'mech' && <Grp title="Machine parts">{TEMPLATES.filter(x => x.group === 'mechanical').map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
+        {tab === 'tpl' && ws === 'mech' && <Grp title="Standard machine parts">{TEMPLATES.filter(x => x.group === 'mechanical' && !x.brand).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} thumb={THUMBS.get(x.key)} img={IMGS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}<B testID="tpl-bracket" icon="∟" label="L bracket" sub="Bent bracket with a bolt hole" thumb={THUMBS.get('bracket')} img={IMGS.get('bracket')} go={() => fromTemplate(sampleBracket)} wide /></Grp>}
+        {tab === 'tpl' && ws === 'mech' && ['Brackets & housings', 'Plates & blocks', 'Turned parts & discs', 'Pipes, hoses & gears'].map(c => <Grp key={c} title={`${c} (${TEMPLATES.filter(x => x.group === 'mechanical' && x.brand === c).length})`}>{TEMPLATES.filter(x => x.group === 'mechanical' && x.brand === c).map(x => <B key={x.key} testID={`tpl-${x.key}`} icon="⚙" label={x.label} sub={x.blurb} img={IMGS.get(x.key)} thumb={THUMBS.get(x.key)} go={() => fromTemplate(x.make)} wide />)}</Grp>)}
         {tab === 'tpl' && ws === 'auto' && <Grp title="New vehicle project"><View style={{ gap: 6, width: 250 }}>
           <TextInput testID="vp-name" value={vpName} onChangeText={setVpName} placeholder="Project name, e.g. City runabout" style={s.inp} />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>{VEHICLE_KINDS.map(k => <Chip key={k.key} testID={`vp-${k.key}`} label={k.label} on={vpKind === k.key} go={() => setVpKind(k.key)} />)}</View>
@@ -417,9 +482,14 @@ export default function Parts() {
           <Grp title="Account"><B testID="parts-signout" icon="⏻" label="Sign out" sub="Leave Unibuild on this device" danger wide go={() => { void supabase.auth.signOut(); }} /><B testID="parts-launcher" icon="⬡" label="Launcher" go={() => router.replace('/launcher' as any)} /><B icon="▤" label="All projects" go={() => router.replace('/projects' as any)} /></Grp>
           <Grp title="Open"><B testID="paste-open" icon="⬆" label="Paste a part file" go={() => setPaste(paste === null ? '' : null)} /></Grp>
         </>}
+        {tab === 'draw' && <>
+          <Grp title="Drawing sheet"><B testID="draw-svg" icon="⬇" label="Download SVG" sub="Vector, opens in any CAD or editor" go={() => { if (!sheet) { setMsg('Nothing to draw yet.'); return; } void saveFile(`${base}-drawing.svg`, sheet).then(() => setMsg('Drawing saved')); }} />
+            <B testID="draw-print" icon="🖨" label="Print or save PDF" sub="A3 landscape" go={() => { if (!sheet || typeof window === 'undefined') return; const w = window.open('', '_blank'); if (!w) { setMsg('Allow pop-ups to print.'); return; } w.document.write(`<html><head><title>${doc.name}</title><style>@page{size:A3 landscape;margin:0}body{margin:0}svg{width:100vw;height:auto}</style></head><body>${sheet.replace(/width="\d+" height="\d+"/, '')}</body></html>`); w.document.close(); setTimeout(() => w.print(), 400); }} /></Grp>
+          <Grp title="What is on the sheet"><Text style={s.errT2}>Front, top and right views with hidden lines, half section A–A with hatching, shaded isometric, overall sizes, hole and edge callouts from the timeline, notes and title block.</Text></Grp>
+        </>}
         {tab === 'opts' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
-          <Grp title="Material">{[['Steel', 7850], ['Stainless', 8000], ['Aluminium', 2700], ['Titanium', 4500], ['Cast iron', 7200], ['Brass', 8500], ['ABS', 1050]].map(([n, v]) => <B key={n as string} icon="◼" label={n as string} on={doc.density === v} go={() => commit(d => ({ ...d, density: v as number }))} />)}</Grp>
+          <Grp title="Material and finish">{FINISHES.map(x => <B key={x.key} testID={`fin-${x.key}`} icon="◼" label={x.label} on={doc.finish ? doc.finish === x.key : doc.density === x.density && x.key !== 'yellow' && x.key !== 'cream' && x.key !== 'blue' && FINISHES.find(y => y.density === doc.density)?.key === x.key} go={() => commit(d => ({ ...d, density: x.density, finish: x.key }))} />)}</Grp>
           <Grp title="Display"><B icon="◩" label={wire ? 'Solid view' : 'Wire view'} on={wire} go={() => setWire(w => !w)} /></Grp>
         </>}
         {tab === 'mods' && <>
@@ -513,6 +583,7 @@ const s = StyleSheet.create({
   stepOn: { backgroundColor: '#e3f2ea' },
   stepT: { fontSize: 13, fontWeight: '600', color: '#0a2e1f' },
   errT: { fontSize: 11, color: '#b71c1c' },
+  errT2: { fontSize: 11, color: '#33413a', maxWidth: 260 },
   ic: { fontSize: 15, paddingHorizontal: 4, color: '#146c43', fontWeight: '800' },
   center: { gap: 8 },
   tools: { gap: 6 },

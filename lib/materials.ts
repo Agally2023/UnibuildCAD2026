@@ -102,6 +102,22 @@ export function partLook(density: number): PartLook {
   const t: [number, PartLook][] = [[7850, { color: '#aeb4bb', metal: 1, rough: 0.34 }], [8000, { color: '#cfd3d6', metal: 1, rough: 0.28 }], [2700, { color: '#d0d4d8', metal: 1, rough: 0.38 }], [4500, { color: '#9c9ea3', metal: 1, rough: 0.4 }], [7200, { color: '#686b70', metal: 0.9, rough: 0.55 }], [8500, { color: '#cfa24a', metal: 1, rough: 0.28 }], [1050, { color: '#2e3236', metal: 0, rough: 0.45 }]];
   return (t.find(x => x[0] === density) ?? t[0])[1];
 }
+// Finishes offered in the Material group: density for mass, colour and sheen for the viewport and drawings.
+export const FINISHES: { key: string; label: string; density: number; look: PartLook & { coat?: number } }[] = [
+  { key: 'steel', label: 'Steel', density: 7850, look: { color: '#aeb4bb', metal: 1, rough: 0.34 } },
+  { key: 'stainless', label: 'Stainless', density: 8000, look: { color: '#cfd3d6', metal: 1, rough: 0.26 } },
+  { key: 'aluminium', label: 'Aluminium', density: 2700, look: { color: '#d3d6da', metal: 1, rough: 0.36 } },
+  { key: 'titanium', label: 'Titanium', density: 4500, look: { color: '#9c9ea3', metal: 1, rough: 0.4 } },
+  { key: 'castiron', label: 'Cast iron', density: 7200, look: { color: '#8b8f95', metal: 0.6, rough: 0.5 } },
+  { key: 'brass', label: 'Brass', density: 8500, look: { color: '#d4a84b', metal: 1, rough: 0.26 } },
+  { key: 'bronze', label: 'Bronze', density: 8800, look: { color: '#b9803f', metal: 1, rough: 0.3 } },
+  { key: 'yellow', label: 'Yellow enamel', density: 7850, look: { color: '#f2e21c', metal: 0.1, rough: 0.32, coat: 1 } },
+  { key: 'cream', label: 'Cream enamel', density: 7850, look: { color: '#efe892', metal: 0.1, rough: 0.34, coat: 1 } },
+  { key: 'blue', label: 'Blue enamel', density: 7850, look: { color: '#2d5fb4', metal: 0.15, rough: 0.3, coat: 1 } },
+  { key: 'abs', label: 'ABS plastic', density: 1050, look: { color: '#3a3e43', metal: 0, rough: 0.45 } },
+  { key: 'nylon', label: 'Nylon', density: 1150, look: { color: '#ece9df', metal: 0, rough: 0.5 } },
+];
+export const finishLook = (density: number, finish?: string): PartLook & { coat?: number } => FINISHES.find(f => f.key === finish)?.look ?? partLook(density);
 // ---- vehicles ----
 export function paintFor(name: string): string {
   const n = name.toLowerCase(), has = (...w: string[]) => w.some(x => n.includes(x));

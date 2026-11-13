@@ -234,6 +234,22 @@ export function chamferCorner(sk: Sketch, pointId: string, d: number): Sketch | 
   return { ...sk, pts: [...sk.pts.filter(p => p.id !== pointId), ...news], lines: [...lines, { id: uid('l'), a: news[0].id, b: news[1].id }], circles: sk.circles, cons };
 }
 
+// Round a corner where exactly two lines meet: both lines are shortened and an arc of radius r (as short line segments) joins them.
+export function filletCorner(sk: Sketch, pointId: string, r: number): Sketch | null {
+  const at = sk.pts.find(p => p.id === pointId), two = sk.lines.filter(l => !l.axis && (l.a === pointId || l.b === pointId));
+  if (!at || two.length !== 2 || r <= 0) return null;
+  const ends = two.map(l => sk.pts.find(p => p.id === (l.a === pointId ? l.b : l.a))!), u = ends.map(e => { const L = Math.hypot(e.x - at.x, e.y - at.y) || 1; return [(e.x - at.x) / L, (e.y - at.y) / L]; });
+  const th = Math.acos(Math.max(-1, Math.min(1, u[0][0] * u[1][0] + u[0][1] * u[1][1])));
+  if (th < 0.02 || th > Math.PI - 0.02) return null;
+  const out = chamferCorner(sk, pointId, r / Math.tan(th / 2)); if (!out) return null;
+  const last = out.lines[out.lines.length - 1], A = out.pts.find(p => p.id === last.a)!, B = out.pts.find(p => p.id === last.b)!;
+  const bx = u[0][0] + u[1][0], by = u[0][1] + u[1][1], bl = Math.hypot(bx, by) || 1, k = r / Math.sin(th / 2), C = [at.x + (bx / bl) * k, at.y + (by / bl) * k];
+  const a0 = Math.atan2(A.y - C[1], A.x - C[0]); let d = Math.atan2(B.y - C[1], B.x - C[0]) - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+  const n = 6, mid: Pt[] = Array.from({ length: n - 1 }, (_, i) => ({ id: uid('p'), x: C[0] + r * Math.cos(a0 + (d * (i + 1)) / n), y: C[1] + r * Math.sin(a0 + (d * (i + 1)) / n) }));
+  const chain = [A, ...mid, B], ls: Ln[] = chain.slice(0, -1).map((p, i) => ({ id: uid('l'), a: p.id, b: chain[i + 1].id }));
+  return { ...out, pts: [...out.pts, ...mid], lines: [...out.lines.slice(0, -1), ...ls] };
+}
+
 // n circles of diameter dia, evenly spaced on a pitch circle of diameter pcd about the centre c, the first at angle start (degrees).
 export function boltCircle(sk: Sketch, c: [number, number], pcd: number, n: number, dia: number, start = 0): Sketch {
   let out = sk; const k = Math.max(1, Math.round(n));

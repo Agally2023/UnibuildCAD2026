@@ -1,15 +1,26 @@
 // A part is a timeline of steps (sketches and solid features) driven by named parameters.
 // Rebuilding replays the timeline from the top: parameters are evaluated, each sketch is solved, each feature adds to or cuts the body.
 import { calc, evalParams, profiles, solveSketch, type Sketch, type SolveInfo } from './sketch';
+import { extrudeEdges, holeProfile, insetRegions, latheAt, loft, mirrorMesh, sweepTube, type HoleKind } from './feat';
 import { boolean, bounds, centroid, concat, extrude, revolve, rotateMesh, surfaceArea, translateMesh, volume, type Mesh, type Plane } from './solid';
 
 export type Op = 'new' | 'join' | 'cut';
 export type SketchStep = { id: string; type: 'sketch'; name: string; plane: Plane; offset: string; sk: Sketch };
-export type FeatureStep = { id: string; type: 'extrude' | 'revolve'; name: string; sketch: string; op: Op; depth: string; angle: string; symmetric?: boolean; off?: boolean };
+export type FeatureStep = { id: string; type: 'extrude' | 'revolve'; name: string; sketch: string; op: Op; depth: string; angle: string; symmetric?: boolean; off?: boolean;
+  // optional finishing: rounded or chamfered end edges, draft angle, shell (wall thickness, open end)
+  fillet?: string; chamfer?: string; draft?: string; edges?: 'both' | 'top' | 'bottom'; wall?: string; open?: 'top' | 'bottom' | 'both' | 'none' };
 // Repeats an earlier feature: along a line (spacing dx, dy, dz per copy) or around a world axis (copies spread over the angle).
 export type PatternStep = { id: string; type: 'pattern'; name: string; of: string; mode: 'linear' | 'circular'; count: string; dx: string; dy: string; dz: string; axis: 'x' | 'y' | 'z'; angle: string; cx: string; cy: string; cz: string; off?: boolean };
-export type Step = SketchStep | FeatureStep | PatternStep;
-export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; vspec?: VSpec; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number };   // density kg/m³
+// Hole wizard: drills simple, counterbored or countersunk holes at every circle centre of a sketch (dia 0 = use each circle's own diameter).
+export type HoleStep = { id: string; type: 'hole'; name: string; sketch: string; hole: HoleKind; dia: string; cdia: string; cdepth: string; depth: string; off?: boolean };
+// Loft: blends the sketch into a second sketch on a parallel plane.
+export type LoftStep = { id: string; type: 'loft'; name: string; sketch: string; sketch2: string; op: Op; off?: boolean };
+// Sweep: a round bar or tube along a path "x,y,z; x,y,z; ..." with rounded bends.
+export type SweepStep = { id: string; type: 'sweep'; name: string; path: string; dia: string; bore: string; bend: string; op: Op; off?: boolean };
+// Mirror: repeats an earlier feature reflected in a plane.
+export type MirrorStep = { id: string; type: 'mirror'; name: string; of: string; plane: Plane; offset: string; off?: boolean };
+export type Step = SketchStep | FeatureStep | PatternStep | HoleStep | LoftStep | SweepStep | MirrorStep;
+export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; vspec?: VSpec; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number; finish?: string };   // density kg/m³
 
 import type { VSpec } from './vmodel';
 export const newPart = (name = 'Part 1'): PartDoc => ({ v: 1, name, params: [], steps: [], density: 7850 });
@@ -70,6 +81,37 @@ export function rebuild(doc: PartDoc): Rebuilt {
         remember(mkey, { bodies: [...bodies], tools: { ...tools } });
         continue;
       }
+      if (st.type === 'mirror') {
+        const tool = tools[st.of]; if (!tool) throw new Error('The feature to mirror is missing, switched off or comes later');
+        const m = mirrorMesh(tool.m, st.plane, calc(st.offset || '0', values)); tools[st.id] = { m, op: tool.op }; apply(m, tool.op);
+        remember(mkey, { bodies: [...bodies], tools: { ...tools } }); continue;
+      }
+      if (st.type === 'sweep') {
+        const pts = st.path.split(';').map(p => p.trim()).filter(Boolean).map(p => p.split(',').map(c => calc(c.trim(), values))).map(p => { if (p.length !== 3) throw new Error('Each path point needs x, y, z'); return p as [number, number, number]; });
+        const dia = calc(st.dia, values); if (dia <= 0) throw new Error('Diameter must be above zero');
+        const m = sweepTube(pts, dia, calc(st.bore || '0', values), calc(st.bend || '0', values)); tools[st.id] = { m, op: st.op }; apply(m, st.op);
+        remember(mkey, { bodies: [...bodies], tools: { ...tools } }); continue;
+      }
+      if (st.type === 'hole' || st.type === 'loft') {
+        const hs = steps.find(s => s.id === st.sketch && s.type === 'sketch') as SketchStep | undefined, hsol = solved[st.sketch];
+        if (!hs || !hsol) throw new Error('The sketch for this feature is missing or comes later in the timeline');
+        let m: Mesh, op: Op = 'cut';
+        if (st.type === 'hole') {
+          const dpt = calc(st.depth, values); if (!dpt) throw new Error('Depth is zero');
+          const dia0 = calc(st.dia || '0', values), cd = calc(st.cdia || '0', values), ch = calc(st.cdepth || '0', values), hoff = calc(hs.offset || '0', values);
+          if (!hsol.sk.circles.length) throw new Error('Draw a circle where each hole goes (its centre is used)');
+          const parts = hsol.sk.circles.map(c => { const p = hsol.sk.pts.find(q => q.id === c.c)!; return latheAt(holeProfile(st.hole, dia0 > 0 ? dia0 : c.r * 2, dpt, cd, ch), hs.plane, hoff, [p.x, p.y], dpt < 0 ? -1 : 1); });
+          m = parts.reduce((a, b) => concat(a, b));
+        } else {
+          const hs2 = steps.find(s => s.id === st.sketch2 && s.type === 'sketch') as SketchStep | undefined, hsol2 = solved[st.sketch2];
+          if (!hs2 || !hsol2) throw new Error('Choose the second sketch to loft to');
+          if (hs2.plane !== hs.plane) throw new Error('Both sketches must be on the same plane (use an offset to separate them)');
+          const r1 = profiles(hsol.sk).regions[0], r2 = profiles(hsol2.sk).regions[0]; if (!r1 || !r2) throw new Error('Both sketches need a closed shape');
+          m = loft(r1, r2, hs.plane, calc(hs.offset || '0', values), calc(hs2.offset || '0', values)); op = st.op;
+        }
+        tools[st.id] = { m, op }; apply(m, op);
+        remember(mkey, { bodies: [...bodies], tools: { ...tools } }); continue;
+      }
       const src = steps.find(s => s.id === st.sketch && s.type === 'sketch') as SketchStep | undefined, sol = solved[st.sketch];
       if (!src || !sol) throw new Error('The sketch for this feature is missing or comes later in the timeline');
       const { regions, open } = profiles(sol.sk);
@@ -78,7 +120,13 @@ export function rebuild(doc: PartDoc): Rebuilt {
       let m: Mesh;
       if (st.type === 'extrude') {
         const d = calc(st.depth, values); if (!d) throw new Error('Depth is zero');
-        m = extrude(regions, src.plane, off, d, st.symmetric);
+        const fl = calc(st.fillet || '0', values), chf = calc(st.chamfer || '0', values), dr = calc(st.draft || '0', values), wall = calc(st.wall || '0', values);
+        m = fl > 0 || chf > 0 || dr ? extrudeEdges(regions, src.plane, off, d, { symmetric: st.symmetric, fillet: fl, chamfer: chf, draft: dr, edges: st.edges }) : extrude(regions, src.plane, off, d, st.symmetric);
+        if (wall > 0) {
+          const L = Math.abs(d), zlo = st.symmetric ? -L / 2 : Math.min(0, d), zhi = zlo + L, open = st.open ?? 'top', inner = insetRegions(regions, wall);
+          const a = open === 'top' || open === 'none' ? zlo + wall : zlo - 1, b = open === 'bottom' || open === 'none' ? zhi - wall : zhi + 1;
+          if (b - a > 0.01 && inner.every(r => r.outer.length >= 3)) m = boolean(m, extrude(inner, src.plane, off + a, b - a), 'cut');
+        }
       } else {
         const ax = sol.sk.lines.find(l => l.axis); if (!ax) throw new Error('Draw an axis line (construction line) in the sketch to revolve about');
         const a = sol.sk.pts.find(p => p.id === ax.a)!, b = sol.sk.pts.find(p => p.id === ax.b)!;
