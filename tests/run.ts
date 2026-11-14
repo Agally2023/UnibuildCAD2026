@@ -62,6 +62,8 @@ import { CATALOG, CATALOG_TEMPLATES } from '../lib/catalog';
 import { BRAND_TEMPLATES as BT2 } from '../lib/brands';
 import { VEHICLE_TEMPLATES as VT2 } from '../lib/vehicles';
 import { evalParams as evalParams2 } from '../lib/sketch';
+import { CUSTOM, PAPERS, PAPER_GROUPS, defaultSetup, fillSvg, fitBox, pageMm, printPages, svgBox } from '../lib/paper';
+import { areaOf, paperMm } from '../lib/sheet';
 import { paintFor as paintFor2 } from '../lib/materials';
 
 let pass = 0, fail = 0;
@@ -1098,6 +1100,29 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('machine parts are grouped in four categories', new Set(MECH_TEMPLATES.map(t => t.brand)).size === 4);
   ok('machine parts use the new features', MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'hole')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'loft')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'sweep')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'mirror')) && MECH_TEMPLATES.some(t => t.make().steps.some(s => s.type === 'extrude' && !!s.wall)));
   ok('machine parts appear in the template list', MECH_TEMPLATES.every(t => ALL_TEMPLATES.some(a => a.key === t.key)));
+}
+
+// ===== Print and canvas sizes =====
+{
+  const sz = (k: string, o: 'landscape' | 'portrait' = 'landscape') => pageMm({ ...defaultSetup(), key: k, orient: o });
+  ok('A0 to A6 have the ISO sizes', sz('A0')[0] === 1189 && sz('A0')[1] === 841 && sz('A4')[0] === 297 && sz('A4')[1] === 210 && sz('A6')[0] === 148);
+  ok('each ISO A size is half the one before it', PAPERS.filter(p => /^A\d$/.test(p.key)).every((p, i, a) => i === 0 || Math.abs(p.w - a[i - 1].h) < 1.5));
+  ok('US, ANSI, architectural and canvas sizes are listed', ['Letter', 'Legal', 'Tabloid', 'ANSI-C', 'ANSI-E', 'Arch-D', 'C-24x36', 'B2'].every(k => PAPERS.some(p => p.key === k)) && PAPER_GROUPS.every(g => PAPERS.some(p => p.group === g)));
+  ok('Letter is 279.4 x 215.9 mm', Math.abs(sz('Letter')[0] - 279.4) < 0.05 && Math.abs(sz('Letter')[1] - 215.9) < 0.05);
+  ok('portrait swaps the sides', sz('A3', 'portrait')[0] === 297 && sz('A3', 'portrait')[1] === 420);
+  ok('every size is listed landscape and unique', PAPERS.every(p => p.w >= p.h) && new Set(PAPERS.map(p => p.key)).size === PAPERS.length);
+  const cu = pageMm({ key: CUSTOM, orient: 'landscape', custom: [200, 500], margin: 0 });
+  ok('a custom size takes the orientation too', cu[0] === 500 && cu[1] === 200 && pageMm({ key: CUSTOM, orient: 'portrait', custom: [500, 200], margin: 0 })[1] === 500);
+  ok('a custom size is kept to a sane range', pageMm({ key: CUSTOM, orient: 'landscape', custom: [0, 99999], margin: 0 })[0] <= 3000);
+  const fb = fitBox([400, 200], [297, 210], 10);
+  ok('artwork fits inside the margins and is centred', Math.abs(fb.w - 277) < 1e-6 && fb.x === 10 && Math.abs(fb.y - (210 - fb.h) / 2) < 1e-6 && fb.h < 190);
+  ok('svgBox reads the viewBox', svgBox('<svg viewBox="0 0 1260 891" width="3780">')[0] === 1260 && svgBox('<svg width="300" height="200">')[1] === 200);
+  ok('fillSvg makes the svg fill its box', fillSvg('<svg viewBox="0 0 10 5" width="30" height="15">').includes('width="100%" height="100%"') && !fillSvg('<svg viewBox="0 0 10 5" width="30" height="15">').includes('width="30"'));
+  const ph = printPages(['<svg viewBox="0 0 10 5"></svg>', '<svg viewBox="0 0 10 5"></svg>'], [841, 594], 'T', 10, true);
+  ok('print pages set the page size and margin, one page per drawing', ph.includes('size:841mm 594mm') && (ph.match(/class="p"/g) ?? []).length === 2 && ph.includes('padding:10mm'));
+  ok('drawing sheets can be built on any page size', paperMm([594, 841])[1] === 841 && areaOf([594, 841])[0] === 594 - 28 && areaOf('A3')[0] === 392);
+  const svgP = sheetSvg(makeDrawing([], [], [] as any, { kind: 'plan', storyId: 'x' }, 100), [841, 594], 100, 'A-01', { project: 'T' }, 'A1');
+  ok('a sheet on A1 is 841 x 594 mm and names the paper', svgP.includes('width="841mm"') && svgP.includes('height="594mm"') && svgP.includes('A1'));
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

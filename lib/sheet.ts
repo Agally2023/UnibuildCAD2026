@@ -8,6 +8,8 @@ import { buildView, modelExtent, viewSvg, Side, VCOL } from './views';
 type Pt = [number, number];
 export const PAPER = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594] } as const;
 export type Paper = keyof typeof PAPER;
+export type PaperArg = Paper | [number, number];   // a named sheet, or any page size in mm (width, height)
+export const paperMm = (p: PaperArg): [number, number] => (Array.isArray(p) ? p : [PAPER[p][0], PAPER[p][1]]);
 export const SCALES = [20, 50, 100, 200, 500, 1000];
 export type SheetView = { kind: 'plan'; storyId: string } | { kind: 'elevation'; side: Side } | { kind: 'section'; axis: 'x' | 'y'; pos: number; flip: boolean };
 export type TitleInfo = { project: string; client?: string; drawnBy?: string; date?: string };
@@ -56,7 +58,7 @@ export function makeDrawing(els: El[], lib: Lib[], stories: Story[], v: SheetVie
 }
 
 // the largest standard scale at which the drawing fits the free area of the paper
-export function fitScale(els: El[], lib: Lib[], stories: Story[], v: SheetView, paper: Paper): number {
+export function fitScale(els: El[], lib: Lib[], stories: Story[], v: SheetView, paper: PaperArg): number {
   const [aw, ah] = areaOf(paper);
   for (const sc of SCALES) { const d = makeDrawing(els, lib, stories, v, sc); if (d.w <= aw && d.h <= ah) return sc; }
   return SCALES[SCALES.length - 1];
@@ -67,12 +69,12 @@ export function layoutCells(n: number, area: [number, number], gap = 6): [number
   return Array.from({ length: n }, (_, i) => [(i % cols) * (cw + gap), Math.floor(i / cols) * (ch + gap), cw, ch]);
 }
 const CAP = 8;   // mm kept under each drawing for its caption
-export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: Paper): number {
+export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg): number {
   const cells = layoutCells(vs.length, areaOf(paper));
   for (const sc of SCALES) if (vs.every((v, i) => { const d = makeDrawing(els, lib, stories, v, sc); return d.w <= cells[i][2] && d.h <= cells[i][3] - CAP; })) return sc;
   return SCALES[SCALES.length - 1];
 }
-export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: Paper, scale: number, title: string): Drawing {
+export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg, scale: number, title: string): Drawing {
   const area = areaOf(paper), cells = layoutCells(vs.length, area);
   const inner = vs.map((v, i) => {
     const d = makeDrawing(els, lib, stories, v, scale), [cx, cy, cw, ch] = cells[i], ox = cx + Math.max(0, (cw - d.w) / 2), oy = cy + Math.max(0, (ch - CAP - d.h) / 2);
@@ -81,24 +83,24 @@ export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: Sh
   return { name: title, inner, w: area[0], h: area[1] };
 }
 
-export const areaOf = (paper: Paper): [number, number] => { const [W, H] = PAPER[paper]; return [W - 20 - 8, H - 20 - 8 - 34]; };   // 10 mm margin, 34 mm title block strip
+export const areaOf = (paper: PaperArg): [number, number] => { const [W, H] = paperMm(paper); return [W - 20 - 8, H - 20 - 8 - 34]; };   // 10 mm margin, 34 mm title block strip
 
 // a full sheet: border, the drawing centred in the free area, title block at the bottom right
-export function sheetSvg(drawing: Drawing, paper: Paper, scale: number, no: string, info: TitleInfo): string {
-  const [W, H] = PAPER[paper], [aw, ah] = areaOf(paper), dx = 14 + Math.max(0, (aw - drawing.w) / 2), dy = 14 + Math.max(0, (ah - drawing.h) / 2);
+export function sheetSvg(drawing: Drawing, paper: PaperArg, scale: number, no: string, info: TitleInfo, label?: string): string {
+  const [W, H] = paperMm(paper), [aw, ah] = areaOf(paper), dx = 14 + Math.max(0, (aw - drawing.w) / 2), dy = 14 + Math.max(0, (ah - drawing.h) / 2);
   const tw = 150, th = 30, tx = W - 10 - tw, ty = H - 10 - th;
   const row = (y: number, a: string, b: string) => `<text x="${tx + 2}" y="${ty + y}" font-size="2.2" fill="#4f6a5b">${a}</text><text x="${tx + 2 + 22}" y="${ty + y}" font-size="3" fill="#0a2e1f">${esc(b)}</text>`;
   const title = `<g><rect x="${tx}" y="${ty}" width="${tw}" height="${th}" fill="#fff" stroke="#0a2e1f" stroke-width="0.5"/><line x1="${tx}" x2="${tx + tw}" y1="${ty + 11}" y2="${ty + 11}" stroke="#0a2e1f" stroke-width="0.25"/><line x1="${tx + tw - 40}" x2="${tx + tw - 40}" y1="${ty + 11}" y2="${ty + th}" stroke="#0a2e1f" stroke-width="0.25"/>
     <text x="${tx + 2}" y="${ty + 8}" font-size="5.5" font-weight="bold" fill="#146c43">${esc(drawing.name)}</text>
     ${row(17, 'Project', info.project)}${row(22, 'Client', info.client ?? '')}${row(27, 'Drawn by', info.drawnBy ?? '')}
     <text x="${tx + tw - 38}" y="${ty + 16}" font-size="2.2" fill="#4f6a5b">Scale</text><text x="${tx + tw - 38}" y="${ty + 21}" font-size="3.6" font-weight="bold" fill="#0a2e1f">1:${scale}</text>
-    <text x="${tx + tw - 38}" y="${ty + 25}" font-size="2.2" fill="#4f6a5b">Sheet ${esc(no)}  ${esc(paper)}</text><text x="${tx + tw - 38}" y="${ty + 29}" font-size="2.4" fill="#0a2e1f">${esc(info.date ?? '')}</text></g>`;
+    <text x="${tx + tw - 38}" y="${ty + 25}" font-size="2.2" fill="#4f6a5b">Sheet ${esc(no)}  ${esc(label ?? (Array.isArray(paper) ? `${Math.round(W)} x ${Math.round(H)} mm` : paper))}</text><text x="${tx + tw - 38}" y="${ty + 29}" font-size="2.4" fill="#0a2e1f">${esc(info.date ?? '')}</text></g>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/><rect x="10" y="10" width="${W - 20}" height="${H - 20}" fill="none" stroke="#0a2e1f" stroke-width="0.7"/><g transform="translate(${dx.toFixed(2)} ${dy.toFixed(2)})">${drawing.inner}</g>${title}</svg>`;
 }
 
 // print document: one sheet per page, sized by @page. Used by the web "Print / save as PDF" button.
-export function printHtml(sheets: string[], paper: Paper, title: string): string {
-  const [W, H] = PAPER[paper];
+export function printHtml(sheets: string[], paper: PaperArg, title: string): string {
+  const [W, H] = paperMm(paper);
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>@page{size:${W}mm ${H}mm;margin:0}html,body{margin:0;padding:0}.p{width:${W}mm;height:${H}mm;page-break-after:always;overflow:hidden}.p:last-child{page-break-after:auto}svg{display:block}</style></head><body>${sheets.map(s => `<div class="p">${s}</div>`).join('')}</body></html>`;
 }
 export { VCOL };
