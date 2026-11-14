@@ -27,7 +27,7 @@ export default function Layout() {
   const toHub = ({ route }: { route: { name: string; params?: any } }) => ({
     headerTitleStyle: { fontWeight: '700' as const },
     headerRight: route.params?.id && route.name !== 'hub/[id]' && route.name !== 'project/[id]'
-      ? () => <Pressable onPress={() => router.navigate(`/hub/${route.params.id}` as any)}><Text style={{ color: '#146c43', fontWeight: '700' }}>☰ Modules</Text></Pressable>
+      ? () => <Pressable style={{ paddingHorizontal: 12, paddingVertical: 8 }} onPress={() => router.navigate(`/hub/${route.params.id}` as any)}><Text style={{ color: '#146c43', fontWeight: '700' }}>☰ Modules</Text></Pressable>
       : undefined,
   });
 

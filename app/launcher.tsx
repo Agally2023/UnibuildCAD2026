@@ -12,6 +12,7 @@ const TONE: Record<Kind, { c: string; dim: string }> = {
   gear: { c: '#ffb02e', dim: '#3a2a0a' }, building: { c: '#27e1ff', dim: '#0a2f3a' }, car: { c: '#ff5ea8', dim: '#3a0f26' }, power: { c: '#3dff9a', dim: '#0a3a24' },
 };
 const S3 = Math.sqrt(3);
+const SHORT: Record<string, string> = { '1': 'Machines', '2': 'Buildings', '3': 'Cars, trucks' };   // captions for small screens
 
 // ----- line icons, drawn in a box of about 60 units around (0,0) -----
 const gearPath = (rO: number, rI: number, n: number) => {
@@ -53,11 +54,11 @@ function Hex({ t, R, on, lit, press, hot }: { t: Tile; R: number; on: boolean; l
         <Polygon points={pts(0.96)} fill={`url(#g-${t.id})`} stroke={tone.c} strokeWidth={a ? 3.2 : 2.2} strokeLinejoin="round" />
         <Polygon points={pts(0.86)} fill="none" stroke={tone.c} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="3 5" />
         {[0, 1, 2, 3, 4, 5].map(i => { const ang = (i * Math.PI) / 3, x = R + 0.96 * R * Math.cos(ang), y = h / 2 + 0.96 * R * Math.sin(ang); return <Circle key={i} cx={x} cy={y} r={3.4} fill={tone.c} opacity={0.9} />; })}
-        <G transform={`translate(${R} ${h / 2 - R * 0.1}) scale(${R / 100 * 1.25})`}><Icon kind={t.kind} color={tone.c} /></G>
+        <G transform={`translate(${R} ${h / 2 - R * (R < 85 ? 0.24 : 0.1)}) scale(${R / 100 * (R < 85 ? 1.0 : 1.25)})`}><Icon kind={t.kind} color={tone.c} /></G>
       </Svg>
       <View pointerEvents="none" style={s.tileText}>
         <Text style={[s.tLabel, { color: tone.c, fontSize: Math.max(9, R * 0.12), letterSpacing: R < 80 ? 0.6 : 2.5 }]}>{t.label}</Text>
-        <Text style={[s.tSub, { fontSize: Math.max(8, R * 0.085) }]}>{hot ? 'Booting…' : t.sub}</Text>
+        <Text style={[s.tSub, { fontSize: Math.max(8, R * 0.085) }]}>{hot ? 'Booting…' : R < 85 ? SHORT[t.key] ?? t.sub : t.sub}</Text>
       </View>
     </Pressable>
   );
