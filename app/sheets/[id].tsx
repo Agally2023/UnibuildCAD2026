@@ -4,7 +4,10 @@ import { SvgXml } from 'react-native-svg';
 import { useLocalSearchParams } from 'expo-router';
 import { useModel } from '../../lib/useModel';
 import { modelExtent } from '../../lib/views';
-import { compositeDrawing, fitScale, fitScaleMany, makeDrawing, PAPER, Paper, printHtml, SCALES, sheetSvg, SheetView } from '../../lib/sheet';
+import { compositeDrawing, fitScale, fitScaleMany, makeDrawing, SCALES, sheetSvg, SheetView } from '../../lib/sheet';
+import { defaultSetup, PAPERS, pageMm } from '../../lib/paper';
+import { pdfSupported, printSvgs, savePdf } from '../../lib/pdf';
+import PrintOptions from '../../components/PrintOptions';
 import { saveFile } from '../../components/saveFile';
 import { supabase } from '../../lib/supabase';
 
@@ -16,7 +19,8 @@ export default function Sheets() {
   const ext = useMemo(() => modelExtent(els), [els]);
   const [sel, setSel] = useState<string[]>(['plan:0']);
   const [sheetTitle, setSheetTitle] = useState('General arrangement');
-  const [paper, setPaper] = useState<Paper>('A3');
+  const [setup, setSetup] = useState(defaultSetup());
+  const paper = useMemo(() => pageMm(setup), [setup]), plabel = PAPERS.find(p => p.key === setup.key)?.label ?? 'Custom';
   const [scale, setScale] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [client, setClient] = useState('');
@@ -34,26 +38,22 @@ export default function Sheets() {
   const chosen = views.filter(x => sel.includes(x.key)), picked = chosen.length ? chosen : views.slice(0, 1), many = picked.length > 1, cur = picked[0];
   const toggle = (k: string) => setSel(a => (a.includes(k) ? (a.length > 1 ? a.filter(x => x !== k) : a) : [...a, k]));
   const date = new Date().toISOString().slice(0, 10), info = { project: name || 'Project', client, drawnBy: by, date };
-  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper); return sheetSvg(makeDrawing(els, lib, stories, v, s), paper, s, no, info); };
+  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper); return sheetSvg(makeDrawing(els, lib, stories, v, s), paper, s, no, info, plabel); };
   const manyScale = (sc: number | null) => sc ?? fitScaleMany(els, lib, stories, picked.map(x => x.v), paper);
   const svg = useMemo(() => {
     if (!cur) return '';
-    if (many) { const sc = manyScale(scale); return sheetSvg(compositeDrawing(els, lib, stories, picked.map(x => x.v), paper, sc, sheetTitle), paper, sc, 'A-C1', info); }
+    if (many) { const sc = manyScale(scale); return sheetSvg(compositeDrawing(els, lib, stories, picked.map(x => x.v), paper, sc, sheetTitle), paper, sc, 'A-C1', info, plabel); }
     return build(cur.v, `A-${String(views.indexOf(cur) + 1).padStart(2, '0')}`, scale);
   }, [sel, paper, scale, name, client, by, sheetTitle, els, lib, stories]);
   const used = !cur ? 100 : many ? manyScale(scale) : scale ?? fitScale(els, lib, stories, cur.v, paper);
 
-  const web = Platform.OS === 'web';
-  const printSet = (all: boolean) => {
-    if (!web) return setMsg('PDF printing works in the web version. Use Download SVG here, or open the app in a browser.');
-    const sheets = all ? views.map((x, i) => build(x.v, `A-${String(i + 1).padStart(2, '0')}`, null)) : [svg];
-    const w = window.open('', '_blank'); if (!w) return setMsg('The browser blocked the print window. Allow pop-ups for this site and try again.');
-    w.document.write(printHtml(sheets, paper, `${name || 'Unibuild'} drawings`)); w.document.close(); setTimeout(() => { w.focus(); w.print(); }, 400);
-    setMsg('In the print window choose "Save as PDF" as the printer. Set margins to none and scale to 100%.');
-  };
+  const fname = `${(name || 'Unibuild').replace(/[^A-Za-z0-9_-]+/g, '_')}-${many ? 'composite' : sel[0].replace(':', '-')}`;
+  const setSvgs = (all: boolean) => (all ? views.map((x, i) => build(x.v, `A-${String(i + 1).padStart(2, '0')}`, null)) : [svg]);
+  const printSet = (all: boolean) => setMsg(printSvgs(setSvgs(all), paper, `${name || 'Unibuild'} drawings`, 0, false));
+  const pdfSet = async (all: boolean) => { try { setMsg('Making the PDF…'); await savePdf(setSvgs(all), paper, all ? `${fname.replace(/-[^-]*$/, '')}-drawing-set` : fname, 0, false); setMsg(`PDF saved: ${all ? views.length + ' sheets' : '1 sheet'}, ${plabel} ${paper[0] >= paper[1] ? 'landscape' : 'portrait'}`); } catch (e: any) { setMsg('Could not make the PDF: ' + (e?.message ?? e)); } };
   const dl = async () => { try { await saveFile(`${(name || 'Unibuild').replace(/[^A-Za-z0-9_-]+/g, '_')}-${many ? 'composite' : sel[0].replace(':', '-')}.svg`, svg); setMsg('Sheet saved as SVG'); } catch (e: any) { setMsg('Could not save: ' + (e?.message ?? e)); } };
 
-  const W = Math.min(width - 32, 900), H = W * PAPER[paper][1] / PAPER[paper][0];
+  const W = Math.min(width - 32, 900), H = W * paper[1] / paper[0];
   const Chip = ({ on, label, go }: { on: boolean; label: string; go: () => void }) => <Pressable onPress={go} style={[s.chip, on && s.on]}><Text style={[s.ct, on && { color: '#fff' }]}>{label}</Text></Pressable>;
   const F = ({ l, v, set }: { l: string; v: string; set: (x: string) => void }) => <View style={{ flex: 1, minWidth: 150 }}><Text style={s.k}>{l}</Text><TextInput value={v} onChangeText={set} style={s.in} placeholder={l} /></View>;
   return (
@@ -63,14 +63,16 @@ export default function Sheets() {
       <Text style={s.h2}>Drawing</Text>
       <Text style={s.k}>Tap one drawing for a single sheet, or tap several to put them together on one sheet at a common scale.</Text>
       <View style={s.row}>{views.map(x => <Chip key={x.key} on={sel.includes(x.key)} label={x.label} go={() => toggle(x.key)} />)}</View>
-      <Text style={s.h2}>Paper and scale</Text>
-      <View style={s.row}>{(Object.keys(PAPER) as Paper[]).map(p => <Chip key={p} on={paper === p} label={p} go={() => setPaper(p)} />)}</View>
+      <Text style={s.h2}>Paper size, canvas and scale</Text>
+      <PrintOptions setup={setup} set={setSetup} margins={false} testID="print-options" />
       <View style={s.row}><Chip on={scale === null} label={`Best fit (1:${used})`} go={() => setScale(null)} />{SCALES.map(x => <Chip key={x} on={scale === x} label={`1:${x}`} go={() => setScale(x)} />)}</View>
       <Text style={s.h2}>Title block</Text>
       <View style={s.row}>{many && <F l="Sheet title" v={sheetTitle} set={setSheetTitle} />}<F l="Project" v={name} set={setName} /><F l="Client" v={client} set={setClient} /><F l="Drawn by" v={by} set={setBy} /></View>
       <View style={s.row}>
-        <Pressable onPress={() => printSet(false)} style={s.btn}><Text style={s.bt}>Print / save this sheet as PDF</Text></Pressable>
-        <Pressable onPress={() => printSet(true)} style={s.btn}><Text style={s.bt}>Print the full set ({views.length} sheets)</Text></Pressable>
+        <Pressable testID="sheet-pdf" onPress={() => pdfSet(false)} style={s.btn}><Text style={s.bt}>Save this sheet as PDF</Text></Pressable>
+        <Pressable testID="sheet-pdf-all" onPress={() => pdfSet(true)} style={s.btn}><Text style={s.bt}>Save the full set as PDF ({views.length} sheets)</Text></Pressable>
+        <Pressable testID="sheet-print" onPress={() => printSet(false)} style={s.btn2}><Text style={s.bt2}>Print this sheet</Text></Pressable>
+        <Pressable onPress={() => printSet(true)} style={s.btn2}><Text style={s.bt2}>Print the full set</Text></Pressable>
         <Pressable onPress={dl} style={s.btn2}><Text style={s.bt2}>Download SVG</Text></Pressable>
       </View>
       {!!msg && <Text style={s.msg}>{msg}</Text>}

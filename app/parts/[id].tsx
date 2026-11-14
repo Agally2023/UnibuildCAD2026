@@ -11,6 +11,9 @@ import { BRANDS } from '../../lib/brands';
 import { CATALOG } from '../../lib/catalog';
 import { paintMeshURL, paintVehicleURL } from '../../lib/vpaint';
 import { drawingSvg } from '../../lib/drawing';
+import { defaultSetup, PAPERS, pageMm, type PageSetup } from '../../lib/paper';
+import { printSvgs, savePdf } from '../../lib/pdf';
+import PrintOptions from '../../components/PrintOptions';
 import { evalParams } from '../../lib/sketch';
 import { buildVehicle } from '../../lib/vmodel';
 import { FINISHES, finishLook, paintFor } from '../../lib/materials';
@@ -21,6 +24,7 @@ import { wirePath } from '../../lib/wire';
 import WorkspaceBar from '../../components/WorkspaceBar';
 import PartScene from '../../components/PartScene';
 import { saveFile } from '../../components/saveFile';
+import { askConfirm } from '../../components/confirm';
 
 type Tool = 'select' | 'line' | 'rect' | 'circle' | 'axis' | 'polygon';
 // Each workspace (Mechanical, Automotive) has the same six tabs; what is inside Templates differs
@@ -181,6 +185,23 @@ export default function Parts() {
     try { const lk = finishLook(doc.density, doc.finish); return drawingSvg(doc, R.mesh, { values: R.values, material: matName, mass: R.stats?.mass ?? 0, date: new Date().toISOString().slice(0, 10), color: lk.color, shine: lk.metal }); } catch (e: any) { return ''; }
   }, [tab, R.mesh, doc.name, doc.density, doc.finish, matName]);
 
+  // ----- print and PDF: the drawing sheet (machine parts) or a picture of the current 3D view (any design, vehicles too) -----
+  const [pset, setPset] = useState<PageSetup>(() => ({ ...defaultSetup(), margin: 10 }));
+  const [what, setWhat] = useState<'sheet' | 'view'>('sheet');
+  const printWhat: 'sheet' | 'view' = doc.kind === 'vehicle' ? 'view' : what;
+  const viewSvg = (long: number): string => {
+    const [pw, ph] = pageMm(pset), aw = Math.max(20, pw - 2 * pset.margin), ah = Math.max(20, ph - 2 * pset.margin), k = long / Math.max(aw, ah), w = Math.round(aw * k), h = Math.round(ah * k);
+    let u = '';
+    try { if (doc.vspec) u = paintVehicleURL(buildVehicle(doc.vspec, R.values, paintFor(doc.name)), quat, w, h, 1, Math.round(w * 0.04)); else { const lk = finishLook(doc.density, doc.finish); u = paintMeshURL(R.mesh, quat, w, h, lk.color, lk.metal, 1, Math.round(w * 0.04)); } } catch { u = ''; }
+    if (!u) return '';
+    const fs = Math.round(h * 0.022), nm = doc.name.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#ffffff"/><image href="${u}" xlink:href="${u}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/><text x="${Math.round(fs * 0.8)}" y="${h - Math.round(fs * 0.9)}" font-family="Arial" font-size="${fs}" fill="#0a2e1f">${nm}  ·  ${new Date().toISOString().slice(0, 10)}</text></svg>`;
+  };
+  const viewPrev = useMemo(() => (tab === 'draw' && printWhat === 'view' && Platform.OS === 'web' ? viewSvg(900) : ''), [tab, printWhat, pset, quat, R.mesh, R.values, doc.name, doc.finish, doc.density, doc.vspec]);
+  const printArt = (long: number): string => (printWhat === 'sheet' ? sheet : viewSvg(long));
+  const pageName = (PAPERS.find(q => q.key === pset.key)?.label ?? 'Custom').replace(/[^A-Za-z0-9]+/g, '');
+  const doPrint = () => { const a = printArt(2000); if (!a) { setMsg('Nothing to print yet. Build a solid first.'); return; } setMsg(printSvgs([a], pageMm(pset), doc.name, pset.margin, true)); };
+  const doPdf = async () => { const a = printArt(2000); if (!a) { setMsg('Nothing to save yet. Build a solid first.'); return; } try { setMsg('Making the PDF…'); await savePdf([a], pageMm(pset), `${base}-${printWhat === 'sheet' ? 'drawing' : 'view'}-${pageName}`, pset.margin, true); setMsg('PDF saved'); } catch (e: any) { setMsg('Could not make the PDF: ' + (e?.message ?? e)); } };
   const showWire = wire || !glOk;
   const vpaint = useMemo(() => (showWire && !wire && Platform.OS === 'web' && doc.vspec ? paintVehicleURL(buildVehicle(doc.vspec, R.values, paintFor(doc.name)), quat, 700, 460, 1.5, 30) : ''), [showWire, wire, doc.vspec, doc.name, R.values, quat]);
   const wireD = useMemo(() => (showWire ? wirePath(R.mesh, quat, 700, 460, 30, edges) : ''), [showWire, R.mesh, quat, edges]);
@@ -365,10 +386,12 @@ export default function Parts() {
     <View style={s.center}>
       {tab === 'draw' ? (
         <ScrollView contentContainerStyle={{ padding: 10 }}>
-          {Platform.OS !== 'web' ? <Text style={s.errT}>Drawing sheets are created in the web version.</Text>
-            : doc.kind === 'vehicle' ? <Text style={s.errT}>Drawing sheets are for machine parts. Vehicle models use the 3D view.</Text>
-            : sheet ? React.createElement('div', { 'data-testid': 'drawing-sheet', style: { width: '100%', background: '#fff', borderRadius: 4, lineHeight: 0 }, dangerouslySetInnerHTML: { __html: sheet.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:auto;display:block"') } })
-            : <Text style={s.errT}>Nothing to draw yet. Build a solid first.</Text>}
+          {Platform.OS !== 'web' ? <Text style={s.errT}>Printing and PDF are in the web version.</Text> : <>
+            <View style={s.printBox}><Text style={s.printH}>Print or save as PDF: choose the paper or canvas size</Text><PrintOptions setup={pset} set={setPset} testID="print-options" /></View>
+            {printWhat === 'sheet'
+              ? (sheet ? React.createElement('div', { 'data-testid': 'drawing-sheet', style: { width: '100%', background: '#fff', borderRadius: 4, lineHeight: 0 }, dangerouslySetInnerHTML: { __html: sheet.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:auto;display:block"') } }) : <Text style={s.errT}>Nothing to draw yet. Build a solid first.</Text>)
+              : (viewPrev ? React.createElement('div', { 'data-testid': 'view-sheet', style: { width: '100%', maxWidth: 900, background: '#fff', borderRadius: 4, lineHeight: 0, border: '1px solid #cfdcd4', aspectRatio: `${pageMm(pset)[0] - 2 * pset.margin} / ${pageMm(pset)[1] - 2 * pset.margin}`, padding: 0 }, dangerouslySetInnerHTML: { __html: viewPrev.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:100%;display:block"') } }) : <Text style={s.errT}>Nothing to show yet. Build a solid first.</Text>)}
+          </>}
         </ScrollView>
       ) : view === 'sketch' && editingSketch ? <>{SketchTools}{SketchCanvas}{editingSketch && sk && sk.cons.length > 0 && (
         <ScrollView horizontal style={{ maxHeight: 34 }} contentContainerStyle={{ gap: 6, alignItems: 'center' }}>{sk.cons.map(c => <Pressable key={c.id} onPress={() => edit(s2 => ({ ...s2, cons: s2.cons.filter(q => q.id !== c.id) }))}><Text style={s.conT}>{c.t}{'v' in c ? ` ${c.v}` : ''} ✕</Text></Pressable>)}</ScrollView>
@@ -477,15 +500,16 @@ export default function Parts() {
           <Grp title="Measure"><View style={{ minWidth: 220 }}>{R.stats ? <><Text style={s.v}>Volume {r1(R.stats.volume / 1000)} cm³</Text><Text style={s.v}>Mass {R.stats.mass < 1 ? `${r1(R.stats.mass * 1000)} g` : `${r1(R.stats.mass)} kg`}</Text><Text style={s.v}>Size {R.stats.size.map(r1).join(' × ')} mm</Text><Text style={s.v}>Centre of mass {R.stats.com.map(r1).join(', ')} mm</Text></> : <Text style={s.k}>No solid yet.</Text>}</View></Grp>
         </>}
         {tab === 'file' && <>
-          <Grp title="Parts"><B testID="new-part" icon="＋" label="New part" go={() => newDoc(newPart(`Part ${parts.length + 1}`))} /><B icon="∟" label="Sample bracket" go={() => newDoc(sampleBracket())} />{parts.length > 1 && <B icon="🗑" label="Delete part" danger go={() => { setParts(ps => ps.filter((_, i) => i !== Math.min(ci, ps.length - 1))); setCi(0); }} />}</Grp>
+          <Grp title="Parts"><B testID="new-part" icon="＋" label="New part" go={() => newDoc(newPart(`Part ${parts.length + 1}`))} /><B icon="∟" label="Sample bracket" go={() => newDoc(sampleBracket())} /><B testID="delete-design" icon="🗑" label="Delete design" danger go={() => { void (async () => { const i = Math.min(ci, parts.length - 1); if (!(await askConfirm(`Delete "${parts[i]?.name ?? 'this design'}"?`, 'This design is removed from this project. This cannot be undone.'))) return; hist.current = []; fut.current = []; setParts(ps => { const r = ps.filter((_, j) => j !== i); return r.length ? r : [newPart('Design 1')]; }); setCi(0); setSelStep(null); setMsg('Design deleted'); })(); }} /></Grp>
           <Grp title="Export"><B testID="export-stl" icon="⬇" label="STL (print, CAM)" go={exportStl} /><B icon="💾" label="Part file" go={exportJson} /></Grp>
           <Grp title="Account"><B testID="parts-signout" icon="⏻" label="Sign out" sub="Leave Unibuild on this device" danger wide go={() => { void supabase.auth.signOut(); }} /><B testID="parts-launcher" icon="⬡" label="Launcher" go={() => router.replace('/launcher' as any)} /><B icon="▤" label="All projects" go={() => router.replace('/projects' as any)} /></Grp>
           <Grp title="Open"><B testID="paste-open" icon="⬆" label="Paste a part file" go={() => setPaste(paste === null ? '' : null)} /></Grp>
         </>}
         {tab === 'draw' && <>
-          <Grp title="Drawing sheet"><B testID="draw-svg" icon="⬇" label="Download SVG" sub="Vector, opens in any CAD or editor" go={() => { if (!sheet) { setMsg('Nothing to draw yet.'); return; } void saveFile(`${base}-drawing.svg`, sheet).then(() => setMsg('Drawing saved')); }} />
-            <B testID="draw-print" icon="🖨" label="Print or save PDF" sub="A3 landscape" go={() => { if (!sheet || typeof window === 'undefined') return; const w = window.open('', '_blank'); if (!w) { setMsg('Allow pop-ups to print.'); return; } w.document.write(`<html><head><title>${doc.name}</title><style>@page{size:A3 landscape;margin:0}body{margin:0}svg{width:100vw;height:auto}</style></head><body>${sheet.replace(/width="\d+" height="\d+"/, '')}</body></html>`); w.document.close(); setTimeout(() => w.print(), 400); }} /></Grp>
-          <Grp title="What is on the sheet"><Text style={s.errT2}>Front, top and right views with hidden lines, half section A–A with hatching, shaded isometric, overall sizes, hole and edge callouts from the timeline, notes and title block.</Text></Grp>
+          {doc.kind !== 'vehicle' && <Grp title="What to print"><B testID="what-sheet" icon="📐" label="Drawing sheet" sub="Views, section, sizes, title block" on={printWhat === 'sheet'} go={() => setWhat('sheet')} /><B testID="what-view" icon="🖼" label="3D picture" sub="The view you are looking at" on={printWhat === 'view'} go={() => setWhat('view')} /></Grp>}
+          <Grp title="Print and PDF"><B testID="draw-pdf" icon="⬇" label="Save as PDF" sub="Any paper or canvas size" go={() => { void doPdf(); }} /><B testID="draw-print" icon="🖨" label="Print" sub="Opens the printer dialog" go={doPrint} />
+            <B testID="draw-svg" icon="◇" label="Download SVG" sub="Vector, opens in any CAD or editor" go={() => { const a = printArt(2000); if (!a) { setMsg('Nothing to save yet.'); return; } void saveFile(`${base}-${printWhat === 'sheet' ? 'drawing' : 'view'}.svg`, a).then(() => setMsg('Saved')); }} /></Grp>
+          <Grp title="What is on the sheet"><Text style={s.errT2}>{printWhat === 'view' ? 'A shaded picture of the current 3D view, filling the chosen page, with the design name and date.' : 'Front, top and right views with hidden lines, half section A–A with hatching, shaded isometric, overall sizes, hole and edge callouts from the timeline, notes and title block.'}</Text></Grp>
         </>}
         {tab === 'opts' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
@@ -565,6 +589,7 @@ const s = StyleSheet.create({
   fld: { alignItems: 'center', gap: 3, paddingHorizontal: 4, flexDirection: 'row' },
   fl: { fontSize: 11, color: '#4f6a5b' },
   hint: { fontSize: 12, color: '#355846', backgroundColor: '#f1f7f3', paddingHorizontal: 12, paddingVertical: 6 },
+  printBox: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cfdcd4', borderRadius: 8, padding: 10, marginBottom: 10 }, printH: { fontWeight: '700', color: '#0a2e1f', marginBottom: 6 },
   msg: { fontSize: 12, color: '#7a4b00', backgroundColor: '#fff6e0', padding: 8, borderRadius: 6 },
   page: { flex: 1, backgroundColor: '#f1f5f2' },
   head: { gap: 6 },
