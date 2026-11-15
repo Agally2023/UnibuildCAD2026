@@ -50,6 +50,9 @@ import { addCircle, addLine, addPolygon, addRect, boltCircle, chamferCorner, cal
 import { boolean, featureEdges, extrude as extrudeR, isClosed, revolve as revolveR, toStl, volume as vol3, bounds as bnds } from '../lib/solid';
 import { wirePath } from '../lib/wire';
 import { newPart, rebuild, sampleBracket, type PartDoc } from '../lib/parts';
+import { renderDrawing, newDrawing, arrangeStandard, type Ctx as DwgCtx } from '../lib/dwg';
+import { toSvg, toDxf } from '../lib/dwgOut';
+import { addSection, autoDims, circle3, cloneDoc, cutChoices } from '../lib/dwgEdit';
 import { TEMPLATES } from '../lib/partlib';
 import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
 import { buildLateralReport } from '../lib/report';
@@ -1123,6 +1126,37 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('drawing sheets can be built on any page size', paperMm([594, 841])[1] === 841 && areaOf([594, 841])[0] === 594 - 28 && areaOf('A3')[0] === 392);
   const svgP = sheetSvg(makeDrawing([], [], [] as any, { kind: 'plan', storyId: 'x' }, 100), [841, 594], 100, 'A-01', { project: 'T' }, 'A1');
   ok('a sheet on A1 is 841 x 594 mm and names the paper', svgP.includes('width="841mm"') && svgP.includes('height="594mm"') && svgP.includes('A1'));
+}
+{
+  const part = MECH_TEMPLATES.find(t => t.key === 'm-cup') ?? MECH_TEMPLATES[0], doc = part.make(), rb = rebuild(doc);
+  const ctx: DwgCtx = { doc, mesh: rb.mesh, values: rb.values, material: 'Steel', mass: 1.2, date: '2026-01-01', images: false };
+  const dd = newDrawing(ctx), r0 = renderDrawing(dd, 0, ctx);
+  ok('drawing: standard layout has front, top, right and iso views', dd.sheets[0].views.map(v => v.kind).join() === 'front,top,right,iso');
+  ok('drawing: renders lines, text and a title block', r0.prims.some(p => p.k === 'l') && r0.prims.some(p => p.k === 't' && p.s.includes('SCALE')) || r0.prims.some(p => p.k === 't'));
+  ok('drawing: views are inside the sheet', r0.views.every(v => v.sheetBox[0] >= 0 && v.sheetBox[2] <= r0.page[0] && v.sheetBox[3] <= r0.page[1]));
+  const svg = toSvg(r0.prims, r0.page), dxf = toDxf(r0.prims, r0.page);
+  ok('drawing: SVG and DXF outputs are well formed', svg.startsWith('<svg') && svg.endsWith('</svg>') && dxf.includes('SECTION') && dxf.trimEnd().endsWith('EOF'));
+  const nd = cloneDoc(dd), sh = nd.sheets[0], rr = renderDrawing(nd, 0, ctx), par = rr.views.find(v => v.kind === 'front')!;
+  const secs = addSection(nd, sh, ctx, rr, par.id, { axis: 'x', pos: cutChoices(par.cam, ctx).find(c => c.axis === 'x')!.mid, flip: false, kind: 'full' });
+  ok('drawing: a section view can be added from the front view', !!secs && sh.views.length === 5 && secs.letter === 'A');
+  const r1b = renderDrawing(nd, 0, ctx);
+  ok('drawing: a section has hatching and a cutting line on the parent', r1b.prims.some(p => p.k === 'l' && p.layer === 'hat') && r1b.prims.some(p => p.k === 'l' && p.layer === 'sym'));
+  ok('drawing: cut choices only offer axes lying in the view plane', cutChoices(par.cam, ctx).length === 2 && cutChoices(par.cam, ctx).every(c => c.axis !== 'y'));
+  const dm = autoDims(nd.sheets[0], r1b);
+  ok('drawing: auto dimensions give overall width and height per view', dm.filter(a => a.t === 'dim' && a.kind === 'hor').length >= 2 && dm.some(a => a.t === 'dim' && a.kind === 'ver'));
+  nd.sheets[0].anns.push(...dm);
+  const r2 = renderDrawing(nd, 0, ctx), texts = r2.prims.filter(p => p.k === 't').map(p => (p as any).s as string);
+  ok('drawing: dimension values are written as text', dm.length > 0 && texts.some(t => /^\d+(\.\d+)?$/.test(t)));
+  const w = cloneDoc(nd); w.sheets[0].anns.push({ id: 'x1', t: 'dim', view: par.id, kind: 'hor', a: [0, 0], b: [10, 0], p: [5, 8], tol: { type: 'bilateral', plus: 0.1, minus: 0.05 }, prec: 2 } as any);
+  ok('drawing: tolerances appear on a dimension', renderDrawing(w, 0, ctx).prims.some(p => p.k === 't' && p.s.includes('+0.10')));
+  const c3 = circle3([1, 0], [0, 1], [-1, 0]); ok('drawing: a circle through three points', !!c3 && Math.abs(c3.r - 1) < 1e-9 && Math.abs(c3.cx) < 1e-9);
+  const hid = cloneDoc(dd); hid.layers.hid = false;
+  ok('drawing: a hidden layer is left out', !renderDrawing(hid, 0, ctx).prims.some(p => p.layer === 'hid') && renderDrawing(dd, 0, ctx).prims.some(p => p.layer === 'hid'));
+  const fa = cloneDoc(dd); fa.projection = 'first'; arrangeStandard(fa, fa.sheets[0], ctx);
+  ok('drawing: first angle puts the top view below the front view', fa.sheets[0].views[1].cy > fa.sheets[0].views[0].cy && dd.sheets[0].views[1].cy < dd.sheets[0].views[0].cy);
+  const a4 = cloneDoc(dd); a4.sheets[0].size = { key: 'A4', orient: 'portrait', custom: [210, 297], margin: 0 };
+  ok('drawing: sheet size follows the chosen paper', renderDrawing(a4, 0, ctx).page[0] === 210 && renderDrawing(a4, 0, ctx).page[1] === 297);
+  ok('drawing: the drawing is stored in the part file as plain data', JSON.parse(JSON.stringify({ ...doc, drawing: nd })).drawing.sheets[0].views.length === 5);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -10,7 +10,8 @@ import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
 import { CATALOG } from '../../lib/catalog';
 import { paintMeshURL, paintVehicleURL } from '../../lib/vpaint';
-import { drawingSvg } from '../../lib/drawing';
+import { drawingOf, sheetSvgs } from '../../lib/dwgEdit';
+import DrawingStudio from '../../components/DrawingStudio';
 import { defaultSetup, PAPERS, pageMm, type PageSetup } from '../../lib/paper';
 import { printSvgs, savePdf } from '../../lib/pdf';
 import PrintOptions from '../../components/PrintOptions';
@@ -180,10 +181,8 @@ export default function Parts() {
   }, [tab, ws]);
   const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
   const matName = useMemo(() => FINISHES.find(x => x.key === doc.finish)?.label ?? FINISHES.find(x => x.density === doc.density)?.label ?? 'Steel', [doc.finish, doc.density]);
-  const sheet = useMemo(() => {
-    if (tab !== 'draw' || Platform.OS !== 'web' || doc.kind === 'vehicle') return '';
-    try { const lk = finishLook(doc.density, doc.finish); return drawingSvg(doc, R.mesh, { values: R.values, material: matName, mass: R.stats?.mass ?? 0, date: new Date().toISOString().slice(0, 10), color: lk.color, shine: lk.metal }); } catch (e: any) { return ''; }
-  }, [tab, R.mesh, doc.name, doc.density, doc.finish, matName]);
+  const lookD = useMemo(() => finishLook(doc.density, doc.finish), [doc.density, doc.finish]);
+  const sheetList = (): string[] => { if (Platform.OS !== 'web' || doc.kind === 'vehicle') return []; try { const ctx = { doc, mesh: R.mesh, values: R.values, material: matName, mass: R.stats?.mass ?? 0, date: new Date().toISOString().slice(0, 10), color: lookD.color, shine: lookD.metal }; return sheetSvgs(drawingOf(ctx), ctx).map(x => x.svg); } catch (e: any) { return []; } };
 
   // ----- print and PDF: the drawing sheet (machine parts) or a picture of the current 3D view (any design, vehicles too) -----
   const [pset, setPset] = useState<PageSetup>(() => ({ ...defaultSetup(), margin: 10 }));
@@ -198,10 +197,11 @@ export default function Parts() {
     return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#ffffff"/><image href="${u}" xlink:href="${u}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/><text x="${Math.round(fs * 0.8)}" y="${h - Math.round(fs * 0.9)}" font-family="Arial" font-size="${fs}" fill="#0a2e1f">${nm}  ·  ${new Date().toISOString().slice(0, 10)}</text></svg>`;
   };
   const viewPrev = useMemo(() => (tab === 'draw' && printWhat === 'view' && Platform.OS === 'web' ? viewSvg(900) : ''), [tab, printWhat, pset, quat, R.mesh, R.values, doc.name, doc.finish, doc.density, doc.vspec]);
-  const printArt = (long: number): string => (printWhat === 'sheet' ? sheet : viewSvg(long));
+  const printArts = (long: number): string[] => (printWhat === 'sheet' ? sheetList() : [viewSvg(long)].filter(Boolean));
+  const printArt = (long: number): string => printArts(long)[0] ?? '';
   const pageName = (PAPERS.find(q => q.key === pset.key)?.label ?? 'Custom').replace(/[^A-Za-z0-9]+/g, '');
-  const doPrint = () => { const a = printArt(2000); if (!a) { setMsg('Nothing to print yet. Build a solid first.'); return; } setMsg(printSvgs([a], pageMm(pset), doc.name, pset.margin, true)); };
-  const doPdf = async () => { const a = printArt(2000); if (!a) { setMsg('Nothing to save yet. Build a solid first.'); return; } try { setMsg('Making the PDF…'); await savePdf([a], pageMm(pset), `${base}-${printWhat === 'sheet' ? 'drawing' : 'view'}-${pageName}`, pset.margin, true); setMsg('PDF saved'); } catch (e: any) { setMsg('Could not make the PDF: ' + (e?.message ?? e)); } };
+  const doPrint = () => { const a = printArts(2000); if (!a.length) { setMsg('Nothing to print yet. Build a solid first.'); return; } setMsg(printSvgs(a, pageMm(pset), doc.name, pset.margin, true)); };
+  const doPdf = async () => { const a = printArts(2000); if (!a.length) { setMsg('Nothing to save yet. Build a solid first.'); return; } try { setMsg('Making the PDF…'); await savePdf(a, pageMm(pset), `${base}-${printWhat === 'sheet' ? 'drawing' : 'view'}-${pageName}`, pset.margin, true); setMsg('PDF saved'); } catch (e: any) { setMsg('Could not make the PDF: ' + (e?.message ?? e)); } };
   const showWire = wire || !glOk;
   const vpaint = useMemo(() => (showWire && !wire && Platform.OS === 'web' && doc.vspec ? paintVehicleURL(buildVehicle(doc.vspec, R.values, paintFor(doc.name)), quat, 700, 460, 1.5, 30) : ''), [showWire, wire, doc.vspec, doc.name, R.values, quat]);
   const wireD = useMemo(() => (showWire ? wirePath(R.mesh, quat, 700, 460, 30, edges) : ''), [showWire, R.mesh, quat, edges]);
@@ -384,12 +384,14 @@ export default function Parts() {
 
   const Center = (
     <View style={s.center}>
-      {tab === 'draw' ? (
+      {tab === 'draw' && Platform.OS === 'web' && doc.kind !== 'vehicle' && printWhat === 'sheet' ? (
+        <DrawingStudio doc={doc} mesh={R.mesh} values={R.values} mass={R.stats?.mass ?? 0} matName={matName} look={lookD} commit={commit} setMsg={setMsg} base={base} save={saveFile} onPdf={() => { void doPdf(); }} onPrint={doPrint} phone={!wide} />
+      ) : tab === 'draw' ? (
         <ScrollView contentContainerStyle={{ padding: 10 }}>
           {Platform.OS !== 'web' ? <Text style={s.errT}>Printing and PDF are in the web version.</Text> : <>
             <View style={s.printBox}><Text style={s.printH}>Print or save as PDF: choose the paper or canvas size</Text><PrintOptions setup={pset} set={setPset} testID="print-options" /></View>
             {printWhat === 'sheet'
-              ? (sheet ? React.createElement('div', { 'data-testid': 'drawing-sheet', style: { width: '100%', background: '#fff', borderRadius: 4, lineHeight: 0 }, dangerouslySetInnerHTML: { __html: sheet.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:auto;display:block"') } }) : <Text style={s.errT}>Nothing to draw yet. Build a solid first.</Text>)
+              ? <Text style={s.errT}>Nothing to draw yet. Build a solid first.</Text>
               : (viewPrev ? React.createElement('div', { 'data-testid': 'view-sheet', style: { width: '100%', maxWidth: 900, background: '#fff', borderRadius: 4, lineHeight: 0, border: '1px solid #cfdcd4', aspectRatio: `${pageMm(pset)[0] - 2 * pset.margin} / ${pageMm(pset)[1] - 2 * pset.margin}`, padding: 0 }, dangerouslySetInnerHTML: { __html: viewPrev.replace(/width="\d+" height="\d+"/, 'style="width:100%;height:100%;display:block"') } }) : <Text style={s.errT}>Nothing to show yet. Build a solid first.</Text>)}
           </>}
         </ScrollView>
@@ -509,7 +511,7 @@ export default function Parts() {
           {doc.kind !== 'vehicle' && <Grp title="What to print"><B testID="what-sheet" icon="📐" label="Drawing sheet" sub="Views, section, sizes, title block" on={printWhat === 'sheet'} go={() => setWhat('sheet')} /><B testID="what-view" icon="🖼" label="3D picture" sub="The view you are looking at" on={printWhat === 'view'} go={() => setWhat('view')} /></Grp>}
           <Grp title="Print and PDF"><B testID="draw-pdf" icon="⬇" label="Save as PDF" sub="Any paper or canvas size" go={() => { void doPdf(); }} /><B testID="draw-print" icon="🖨" label="Print" sub="Opens the printer dialog" go={doPrint} />
             <B testID="draw-svg" icon="◇" label="Download SVG" sub="Vector, opens in any CAD or editor" go={() => { const a = printArt(2000); if (!a) { setMsg('Nothing to save yet.'); return; } void saveFile(`${base}-${printWhat === 'sheet' ? 'drawing' : 'view'}.svg`, a).then(() => setMsg('Saved')); }} /></Grp>
-          <Grp title="What is on the sheet"><Text style={s.errT2}>{printWhat === 'view' ? 'A shaded picture of the current 3D view, filling the chosen page, with the design name and date.' : 'Front, top and right views with hidden lines, half section A–A with hatching, shaded isometric, overall sizes, hole and edge callouts from the timeline, notes and title block.'}</Text></Grp>
+          <Grp title="What is on the sheet"><Text style={s.errT2}>{printWhat === 'view' ? 'A shaded picture of the current 3D view, filling the chosen page, with the design name and date.' : 'An editable drawing: standard, projected, section, detail, auxiliary, broken and cropped views, dimensions with tolerances, symbols, tables, several sheets and a title block. Save as PDF, SVG or DXF.'}</Text></Grp>
         </>}
         {tab === 'opts' && <>
           <Grp title="View"><B testID="view-sketch" icon="✎" label="Sketch" on={view === 'sketch'} go={() => { if (!editingSketch) { const f = doc.steps.find(x => x.type === 'sketch'); if (f) setSelStep(f.id); else return; } setView('sketch'); }} /><B testID="view-3d" icon="🧊" label="3D" on={view === '3d'} go={() => setView('3d')} />{Object.entries(VIEWS).filter(([k]) => ['iso', 'front', 'right', 'top'].includes(k)).map(([k, v]) => <B key={k} icon="◫" label={v.label} go={() => { setView('3d'); setQuat(v.q); }} />)}<B icon="↻" label="Turn 15°" go={() => { setView('3d'); setQuat(q => turn(q, 'y', Math.PI / 12)); }} /></Grp>
