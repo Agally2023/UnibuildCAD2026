@@ -18,7 +18,7 @@ const CAM = { front: mkCam([0, -1, 0]), right: mkCam([1, 0, 0]), top: ((): Cam =
 const proj = (c: Cam, p: V3): [number, number] => [dot(p, c.right), dot(p, c.up)];
 
 // Which parts of each edge can be seen? Ray from the edge sample towards the viewer against the triangles (bucketed by screen cell).
-function visibility(mesh: Mesh, edges: number[], cam: Cam, grid = 40) {
+export function visibility(mesh: Mesh, edges: number[], cam: Cam, grid = 40) {
   const T = mesh.f.length / 3, P2: number[] = [], zs: number[] = [];
   for (let i = 0; i < mesh.v.length; i += 3) { const p: V3 = [mesh.v[i], mesh.v[i + 1], mesh.v[i + 2]], q = proj(cam, p); P2.push(q[0], q[1]); zs.push(dot(p, cam.fwd)); }
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -126,7 +126,7 @@ export function edgePieces(m: Mesh): Piece[] {
 }
 // Edges to draw in one view: sharp feature edges plus silhouettes (where one face looks at the viewer and its neighbour looks away),
 // so smooth rims and cylinders still get their outline.
-function viewEdges(pieces: Piece[], cam: Cam, thresholdDeg = 30): number[] {
+export function viewEdges(pieces: Piece[], cam: Cam, thresholdDeg = 30): number[] {
   const cosT = Math.cos((thresholdDeg * Math.PI) / 180), out: number[] = [];
   for (const pc of pieces) {
     if (pc.ns.length < 2) continue;

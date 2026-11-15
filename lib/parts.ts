@@ -20,7 +20,7 @@ export type SweepStep = { id: string; type: 'sweep'; name: string; path: string;
 // Mirror: repeats an earlier feature reflected in a plane.
 export type MirrorStep = { id: string; type: 'mirror'; name: string; of: string; plane: Plane; offset: string; off?: boolean };
 export type Step = SketchStep | FeatureStep | PatternStep | HoleStep | LoftStep | SweepStep | MirrorStep;
-export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; vspec?: VSpec; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number; finish?: string };   // density kg/m³
+export type PartDoc = { v: 1; name: string; kind?: 'vehicle'; vspec?: VSpec; params: { name: string; expr: string }[]; steps: Step[]; upTo?: number; density: number; finish?: string; drawing?: import('./dwgTypes').DrawingDoc };   // density kg/m³
 
 import type { VSpec } from './vmodel';
 export const newPart = (name = 'Part 1'): PartDoc => ({ v: 1, name, params: [], steps: [], density: 7850 });

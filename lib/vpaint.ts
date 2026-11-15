@@ -42,7 +42,7 @@ export function paintVehicleURL(parts: VPart[], q: Q, w: number, h: number, scal
 }
 
 // Shaded preview of a machine part (a closed mesh) with its sharp edges drawn dark, as in a CAD viewport. Web only.
-export function paintMeshURL(mesh: Mesh, q: Q, w: number, h: number, color: string, shine = 0.5, scale = 2, pad = 6): string {
+export function paintMeshURL(mesh: Mesh, q: Q, w: number, h: number, color: string, shine = 0.5, scale = 2, pad = 6, edges = true): string {
   if (typeof document === 'undefined' || !mesh.f.length) return '';
   const n = mesh.v.length / 3, P = new Array<number>(n * 3);
   for (let i = 0; i < n; i++) { const r = qRotate(q, [mesh.v[i * 3], mesh.v[i * 3 + 2], -mesh.v[i * 3 + 1]]); P[i * 3] = r[0]; P[i * 3 + 1] = -r[1]; P[i * 3 + 2] = r[2]; }
@@ -60,7 +60,7 @@ export function paintMeshURL(mesh: Mesh, q: Q, w: number, h: number, color: stri
     const d = Math.max(0, (nx * L[0] + -ny * L[1] + nz * L[2]) / ll), sh = 0.42 + 0.7 * d + shine * 0.45 * Math.pow(d, 10), cl = (v: number) => Math.max(0, Math.min(255, Math.round(v * sh)));
     items.push({ z: (P[a + 2] + P[b + 2] + P[c + 2]) / 3, kind: 0, a, b, c, col: `rgb(${cl(base[0])},${cl(base[1])},${cl(base[2])})` });
   }
-  const ev = featureEdges(mesh, 30);
+  const ev = edges ? featureEdges(mesh, 30) : [];
   for (let i = 0; i < ev.length; i += 6) {
     const r1 = qRotate(q, [ev[i], ev[i + 2], -ev[i + 1]]), r2 = qRotate(q, [ev[i + 3], ev[i + 5], -ev[i + 4]]);
     items.push({ z: (r1[2] + r2[2]) / 2 + bias, kind: 1, a: 0, b: 0, c: 0, col: `${r1[0]},${-r1[1]},${r2[0]},${-r2[1]}` });
