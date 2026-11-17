@@ -5,6 +5,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useModel } from '../../lib/useModel';
 import { modelExtent } from '../../lib/views';
 import { compositeDrawing, fitScale, fitScaleMany, makeDrawing, SCALES, sheetSvg, SheetView } from '../../lib/sheet';
+import { defaultOpts, rebarLabels, SCHEDULES, type SheetOpts } from '../../lib/sheetx';
 import { defaultSetup, PAPERS, pageMm } from '../../lib/paper';
 import { pdfSupported, printSvgs, savePdf } from '../../lib/pdf';
 import PrintOptions from '../../components/PrintOptions';
@@ -26,6 +27,10 @@ export default function Sheets() {
   const [client, setClient] = useState('');
   const [by, setBy] = useState('');
   const [msg, setMsg] = useState('');
+  const [opts, setOpts] = useState<SheetOpts>(defaultOpts());
+  useEffect(() => { try { const t = typeof localStorage !== 'undefined' ? localStorage.getItem(`sheetopts:${id}`) : null; if (t) setOpts({ ...defaultOpts(), ...JSON.parse(t) }); } catch { /* ignore */ } }, [id]);
+  useEffect(() => { try { if (typeof localStorage !== 'undefined') localStorage.setItem(`sheetopts:${id}`, JSON.stringify({ ...opts, secs: [], rc: undefined })); } catch { /* ignore */ } }, [opts, id]);
+  const up = (p: Partial<SheetOpts>) => setOpts(o => ({ ...o, ...p }));
   useEffect(() => { supabase.from('projects').select('name').eq('id', id).single().then(({ data }) => data?.name && setName(n => n || data.name)); }, [id]);
 
   const views = useMemo(() => {
@@ -33,18 +38,23 @@ export default function Sheets() {
     for (const [side, n] of [['S', 'South'], ['N', 'North'], ['E', 'East'], ['W', 'West']] as const) v.push({ key: 'el:' + side, label: `${n} elevation`, v: { kind: 'elevation', side } });
     v.push({ key: 'sec:y', label: 'Section through the middle (Y)', v: { kind: 'section', axis: 'y', pos: Math.round(((ext.y0 + ext.y1) / 2) * 10) / 10, flip: false } });
     v.push({ key: 'sec:x', label: 'Section through the middle (X)', v: { kind: 'section', axis: 'x', pos: Math.round(((ext.x0 + ext.x1) / 2) * 10) / 10, flip: false } });
+    for (const sc of SCHEDULES) v.push({ key: 'sch:' + sc.key, label: sc.label, v: { kind: 'schedule', what: sc.key } });
     return v;
   }, [list, ext]);
   const chosen = views.filter(x => sel.includes(x.key)), picked = chosen.length ? chosen : views.slice(0, 1), many = picked.length > 1, cur = picked[0];
   const toggle = (k: string) => setSel(a => (a.includes(k) ? (a.length > 1 ? a.filter(x => x !== k) : a) : [...a, k]));
+  const secs = useMemo(() => views.filter(x => x.v.kind === 'section').map((x, i) => ({ axis: (x.v as any).axis, pos: (x.v as any).pos, flip: (x.v as any).flip, letter: 'AB'[i] })), [views]);
+  const rc = useMemo(() => rebarLabels(els, lib, stories), [els, lib, stories]);
+  const o: SheetOpts = { ...opts, secs, rc };
+  const reg = views.map((x, i) => ({ no: `A-${String(i + 1).padStart(2, '0')}`, title: x.label }));
   const date = new Date().toISOString().slice(0, 10), info = { project: name || 'Project', client, drawnBy: by, date };
-  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper); return sheetSvg(makeDrawing(els, lib, stories, v, s), paper, s, no, info, plabel); };
+  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper); return sheetSvg(makeDrawing(els, lib, stories, v, s, o, reg), paper, s, no, info, plabel, o); };
   const manyScale = (sc: number | null) => sc ?? fitScaleMany(els, lib, stories, picked.map(x => x.v), paper);
   const svg = useMemo(() => {
     if (!cur) return '';
-    if (many) { const sc = manyScale(scale); return sheetSvg(compositeDrawing(els, lib, stories, picked.map(x => x.v), paper, sc, sheetTitle), paper, sc, 'A-C1', info, plabel); }
+    if (many) { const sc = manyScale(scale); return sheetSvg(compositeDrawing(els, lib, stories, picked.map(x => x.v), paper, sc, sheetTitle, o, reg), paper, sc, 'A-C1', info, plabel, o); }
     return build(cur.v, `A-${String(views.indexOf(cur) + 1).padStart(2, '0')}`, scale);
-  }, [sel, paper, scale, name, client, by, sheetTitle, els, lib, stories]);
+  }, [sel, paper, scale, name, client, by, sheetTitle, els, lib, stories, opts, rc]);
   const used = !cur ? 100 : many ? manyScale(scale) : scale ?? fitScale(els, lib, stories, cur.v, paper);
 
   const fname = `${(name || 'Unibuild').replace(/[^A-Za-z0-9_-]+/g, '_')}-${many ? 'composite' : sel[0].replace(':', '-')}`;
@@ -63,6 +73,16 @@ export default function Sheets() {
       <Text style={s.h2}>Drawing</Text>
       <Text style={s.k}>Tap one drawing for a single sheet, or tap several to put them together on one sheet at a common scale.</Text>
       <View style={s.row}>{views.map(x => <Chip key={x.key} on={sel.includes(x.key)} label={x.label} go={() => toggle(x.key)} />)}</View>
+      <Text style={s.h2}>Drawing aids</Text>
+      <View style={s.row}>
+        {([['north', 'North arrow'], ['scalebar', 'Scale bar'], ['tags', 'Door and window tags'], ['chains', 'Dimension chains'], ['secMarks', 'Section markers'], ['struct', 'Column and beam marks'], ['rebar', 'Reinforcement on marks'], ['hatch', 'Material hatches'], ['cloud', 'Revision cloud']] as const).map(([k, l]) => <Chip key={k} on={!!opts[k]} label={l} go={() => up({ [k]: !opts[k] } as any)} />)}
+      </View>
+      <Text style={s.k}>Tags and marks match the door, window and structural schedules. Reinforcement is a preliminary design (C30/37, Eurocode 2, office loading): check it in the Design module before use.</Text>
+      <Text style={s.h2}>General notes (one per line)</Text>
+      <TextInput testID="sheet-notes" value={opts.notes} onChangeText={t => up({ notes: t })} multiline style={[s.in, { minHeight: 70 }]} placeholder="ALL DIMENSIONS IN MILLIMETRES UNLESS STATED&#10;CHECK ALL SIZES ON SITE" />
+      <Text style={s.h2}>Revisions</Text>
+      {opts.revs.map((r, i) => <View key={i} style={s.row}>{(['rev', 'desc', 'date', 'by'] as const).map(f => <View key={f} style={{ width: f === 'desc' ? 220 : 90 }}><TextInput value={r[f]} onChangeText={t => up({ revs: opts.revs.map((q, j) => (j === i ? { ...q, [f]: t } : q)) })} style={s.in} placeholder={f} /></View>)}<Pressable onPress={() => up({ revs: opts.revs.filter((_, j) => j !== i) })} style={s.btn2}><Text style={s.bt2}>Remove</Text></Pressable></View>)}
+      <View style={s.row}><Pressable testID="add-rev" onPress={() => up({ revs: [...opts.revs, { rev: String.fromCharCode(65 + opts.revs.length), desc: 'ISSUED FOR REVIEW', date, by: by || '' }] })} style={s.btn2}><Text style={s.bt2}>Add a revision</Text></Pressable></View>
       <Text style={s.h2}>Paper size, canvas and scale</Text>
       <PrintOptions setup={setup} set={setSetup} margins={false} testID="print-options" />
       <View style={s.row}><Chip on={scale === null} label={`Best fit (1:${used})`} go={() => setScale(null)} />{SCALES.map(x => <Chip key={x} on={scale === x} label={`1:${x}`} go={() => setScale(x)} />)}</View>

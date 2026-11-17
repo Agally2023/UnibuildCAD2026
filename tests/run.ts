@@ -36,6 +36,7 @@ import { overhangOf, roofPlanBox } from '../lib/roof';
 import { faceCut, faceOutline, isPitched, ridgeAxis, roofFaces, roofLines, roofTop, slopeFactor } from '../lib/roof';
 import { circlePoints, holesOf, netArea, openingCount, roundsOf } from '../lib/model';
 import { centreOf, transformGeometry } from '../lib/transform';
+import { defaultOpts, rebarLabels, scheduleDrawing, scaleBar, cloudPath } from '../lib/sheetx';
 import { compositeDrawing, fitScale, fitScaleMany, layoutCells, makeDrawing, printHtml, sheetSvg } from '../lib/sheet';
 import { parseIfc } from '../lib/ifcImport';
 import { analyse } from '../lib/engineering';
@@ -1157,6 +1158,37 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   const a4 = cloneDoc(dd); a4.sheets[0].size = { key: 'A4', orient: 'portrait', custom: [210, 297], margin: 0 };
   ok('drawing: sheet size follows the chosen paper', renderDrawing(a4, 0, ctx).page[0] === 210 && renderDrawing(a4, 0, ctx).page[1] === 297);
   ok('drawing: the drawing is stored in the part file as plain data', JSON.parse(JSON.stringify({ ...doc, drawing: nd })).drawing.sheets[0].views.length === 5);
+}
+{
+  const st: any = [{ id: 's0', name: 'Ground', elevation_m: 0, height_m: 3 }];
+  const wl = (id: string, a: number[], b: number[]) => ({ id, type: 'wall', geometry: { start: a, end: b, thickness: 0.2, height: 3 }, story_id: 's0', library_item_id: null });
+  const els: any[] = [wl('w1', [0, 0], [10, 0]), wl('w2', [10, 0], [10, 8]), wl('w3', [10, 8], [0, 8]), wl('w4', [0, 8], [0, 0]), wl('w5', [5, 0], [5, 8]),
+    { id: 'd1', type: 'door', geometry: { wall_id: 'w1', offset_m: 3, width_m: 1, height_m: 2.1 }, story_id: 's0', library_item_id: null },
+    { id: 'wi', type: 'window', geometry: { wall_id: 'w3', offset_m: 3, width_m: 1.5, height_m: 1.2, sill_m: 0.9 }, story_id: 's0', library_item_id: null },
+    { id: 'c1', type: 'column', geometry: { at: [0, 0], b: 0.3, h: 0.3, height: 3 }, story_id: 's0', library_item_id: null },
+    { id: 'b1', type: 'beam', geometry: { start: [0, 0], end: [10, 0], b: 0.3, h: 0.5, z: 3 }, story_id: 's0', library_item_id: null },
+    { id: 'z1', type: 'zone', geometry: { poly: [[0, 0], [5, 0], [5, 8], [0, 8]], rect: [0, 0, 5, 8], name: 'Living' }, story_id: 's0' }];
+  const o = defaultOpts(); o.secs = [{ axis: 'y', pos: 4, flip: false, letter: 'A' }]; o.rc = rebarLabels(els, [], st);
+  const plain = makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100), aid = makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, o);
+  ok('construction: aids add to the plan without changing its size', aid.inner.length > plain.inner.length && aid.w === plain.w && aid.h === plain.h);
+  ok('construction: door and window tags D01 and W01', aid.inner.includes('>D01<') && aid.inner.includes('>W01<'));
+  ok('construction: dimension chain shows 5000 and the overall 10000', aid.inner.includes('>5000<') && aid.inner.includes('>10000<'));
+  ok('construction: section marker letter A on the plan', (aid.inner.match(/>A</g) ?? []).length >= 2);
+  ok('construction: column and beam marks with sizes', aid.inner.includes('C1 300x300') && aid.inner.includes('B1 300x500'));
+  const off = { ...o, tags: false, chains: false, secMarks: false, struct: false };
+  ok('construction: each aid can be switched off', makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, off).inner === plain.inner);
+  ok('construction: reinforcement text from the preliminary design', !!o.rc!.cols.c1 && !!o.rc!.beams.b1 && makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, { ...o, rebar: true }).inner.includes(o.rc!.cols.c1));
+  const sec = makeDrawing(els, [], st, { kind: 'section', axis: 'y', pos: 4, flip: false }, 100, o), sec0 = makeDrawing(els, [], st, { kind: 'section', axis: 'y', pos: 4, flip: false }, 100);
+  ok('construction: section is named A–A and hatched when hatches are on', sec.name === 'Section A–A' && sec.inner.includes('url(#h-brick)') && !sec0.inner.includes('url(#h-'));
+  const svg = sheetSvg(aid, 'A3', 100, 'A-01', { project: 'T' }, 'A3', { ...o, notes: 'CHECK ON SITE', revs: [{ rev: 'A', desc: 'ISSUE', date: '2026', by: 'EO' }] });
+  ok('construction: sheet has north arrow, scale bar, notes, revision table and hatch patterns', svg.includes('>N<') && svg.includes('Scale bar') && svg.includes('GENERAL NOTES') && svg.includes('>DESCRIPTION<') && svg.includes('id="h-conc"'));
+  const door = scheduleDrawing('door', els, [], st, o), room = scheduleDrawing('room', els, [], st, o), reg = scheduleDrawing('register', els, [], st, o, [{ no: 'A-01', title: 'Plan' }]);
+  ok('construction: door schedule lists D01 with width 1000', door.inner.includes('>D01<') && door.inner.includes('>1000<') && door.nts === true);
+  ok('construction: room schedule gives area and total', room.inner.includes('>40.0<') && room.inner.includes('TOTAL'));
+  ok('construction: drawing register lists the sheets', reg.inner.includes('>A-01<') && reg.inner.includes('>Plan<'));
+  ok('construction: scale bar uses round lengths', scaleBar(0, 0, 100).includes('>2<') || scaleBar(0, 0, 100).includes('>5<'));
+  ok('construction: schedule sheets read NTS', sheetSvg(door, 'A3', 100, 'A-09', { project: 'T' }, 'A3', o).includes('>NTS<'));
+  ok('construction: revision cloud is a closed path', cloudPath(0, 0, 40, 30).endsWith('Z" fill="none" stroke="#c62828" stroke-width="0.5"/>'));
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
