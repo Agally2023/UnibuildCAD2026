@@ -4,6 +4,7 @@ import type { El, Lib, Story } from './engineering';
 import { isPitched, roofLines, roofPlanBox } from './roof';
 import { footprint, holesOf, roundsOf, polyArea, polyCentroid, wallT } from './model';
 import { buildView, modelExtent, viewSvg, Side, VCOL } from './views';
+import { HATCH_DEFS, planExtras, scheduleDrawing, sheetExtras, type ScheduleKind, type SheetOpts } from './sheetx';
 
 type Pt = [number, number];
 export const PAPER = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594] } as const;
@@ -11,9 +12,9 @@ export type Paper = keyof typeof PAPER;
 export type PaperArg = Paper | [number, number];   // a named sheet, or any page size in mm (width, height)
 export const paperMm = (p: PaperArg): [number, number] => (Array.isArray(p) ? p : [PAPER[p][0], PAPER[p][1]]);
 export const SCALES = [20, 50, 100, 200, 500, 1000];
-export type SheetView = { kind: 'plan'; storyId: string } | { kind: 'elevation'; side: Side } | { kind: 'section'; axis: 'x' | 'y'; pos: number; flip: boolean };
+export type SheetView = { kind: 'schedule'; what: ScheduleKind } | { kind: 'plan'; storyId: string } | { kind: 'elevation'; side: Side } | { kind: 'section'; axis: 'x' | 'y'; pos: number; flip: boolean };
 export type TitleInfo = { project: string; client?: string; drawnBy?: string; date?: string };
-export type Drawing = { name: string; inner: string; w: number; h: number };
+export type Drawing = { name: string; inner: string; w: number; h: number; nts?: boolean; hatched?: boolean };
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const rect = (a: Pt, b: Pt, w: number): Pt[] => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = (-dy / L) * (w / 2), ny = (dx / L) * (w / 2); return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]; };
@@ -50,11 +51,12 @@ export function planDrawing(els: El[], lib: Lib[], stories: Story[], storyId: st
 }
 
 // a drawing for any kind of sheet view
-export function makeDrawing(els: El[], lib: Lib[], stories: Story[], v: SheetView, scale: number): Drawing {
-  if (v.kind === 'plan') return planDrawing(els, lib, stories, v.storyId, scale);
+export function makeDrawing(els: El[], lib: Lib[], stories: Story[], v: SheetView, scale: number, o?: SheetOpts, register: { no: string; title: string }[] = []): Drawing {
+  if (v.kind === 'schedule') return scheduleDrawing(v.what, els, lib, stories, o ?? ({ revs: [] } as any), register);
+  if (v.kind === 'plan') { const d = planDrawing(els, lib, stories, v.storyId, scale); return o ? { ...d, inner: d.inner + planExtras(els, lib, stories, v.storyId, scale, o) } : d; }
   const view = buildView(els, lib, stories, v.kind === 'elevation' ? { kind: 'elevation', side: v.side } : { kind: 'section', axis: v.axis, pos: v.pos, flip: v.flip });
-  const d = viewSvg(view, scale);
-  return { name: view.title, inner: d.inner, w: d.w, h: d.h };
+  const d = viewSvg(view, scale, 8, !!o?.hatch), sec = v.kind === 'section' ? o?.secs.find(q => q.axis === v.axis && Math.abs(q.pos - v.pos) < 1e-6) : undefined;
+  return { name: sec && o?.secMarks ? `Section ${sec.letter}–${sec.letter}` : view.title, inner: d.inner, w: d.w, h: d.h, hatched: !!o?.hatch && v.kind === 'section' };
 }
 
 // the largest standard scale at which the drawing fits the free area of the paper
@@ -74,28 +76,28 @@ export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetV
   for (const sc of SCALES) if (vs.every((v, i) => { const d = makeDrawing(els, lib, stories, v, sc); return d.w <= cells[i][2] && d.h <= cells[i][3] - CAP; })) return sc;
   return SCALES[SCALES.length - 1];
 }
-export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg, scale: number, title: string): Drawing {
+export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg, scale: number, title: string, o?: SheetOpts, register: { no: string; title: string }[] = []): Drawing {
   const area = areaOf(paper), cells = layoutCells(vs.length, area);
   const inner = vs.map((v, i) => {
-    const d = makeDrawing(els, lib, stories, v, scale), [cx, cy, cw, ch] = cells[i], ox = cx + Math.max(0, (cw - d.w) / 2), oy = cy + Math.max(0, (ch - CAP - d.h) / 2);
-    return `<g transform="translate(${ox.toFixed(2)} ${oy.toFixed(2)})">${d.inner}</g><text x="${(cx + cw / 2).toFixed(2)}" y="${(cy + ch - 2).toFixed(2)}" font-size="4" font-weight="bold" text-anchor="middle" fill="#146c43">${esc(d.name)}  1:${scale}</text><rect x="${cx.toFixed(2)}" y="${cy.toFixed(2)}" width="${cw.toFixed(2)}" height="${ch.toFixed(2)}" fill="none" stroke="#cfdcd4" stroke-width="0.2"/>`;
+    const d = makeDrawing(els, lib, stories, v, scale, o, register), [cx, cy, cw, ch] = cells[i], ox = cx + Math.max(0, (cw - d.w) / 2), oy = cy + Math.max(0, (ch - CAP - d.h) / 2);
+    return `<g transform="translate(${ox.toFixed(2)} ${oy.toFixed(2)})">${d.inner}</g><text x="${(cx + cw / 2).toFixed(2)}" y="${(cy + ch - 2).toFixed(2)}" font-size="4" font-weight="bold" text-anchor="middle" fill="#146c43">${esc(d.name)}${d.nts ? '' : `  1:${scale}`}</text><rect x="${cx.toFixed(2)}" y="${cy.toFixed(2)}" width="${cw.toFixed(2)}" height="${ch.toFixed(2)}" fill="none" stroke="#cfdcd4" stroke-width="0.2"/>`;
   }).join('');
-  return { name: title, inner, w: area[0], h: area[1] };
+  return { name: title, inner, w: area[0], h: area[1], hatched: vs.some(v => v.kind === 'section') && !!o?.hatch, nts: vs.every(v => v.kind === 'schedule') };
 }
 
 export const areaOf = (paper: PaperArg): [number, number] => { const [W, H] = paperMm(paper); return [W - 20 - 8, H - 20 - 8 - 34]; };   // 10 mm margin, 34 mm title block strip
 
 // a full sheet: border, the drawing centred in the free area, title block at the bottom right
-export function sheetSvg(drawing: Drawing, paper: PaperArg, scale: number, no: string, info: TitleInfo, label?: string): string {
+export function sheetSvg(drawing: Drawing, paper: PaperArg, scale: number, no: string, info: TitleInfo, label?: string, o?: SheetOpts): string {
   const [W, H] = paperMm(paper), [aw, ah] = areaOf(paper), dx = 14 + Math.max(0, (aw - drawing.w) / 2), dy = 14 + Math.max(0, (ah - drawing.h) / 2);
   const tw = 150, th = 30, tx = W - 10 - tw, ty = H - 10 - th;
   const row = (y: number, a: string, b: string) => `<text x="${tx + 2}" y="${ty + y}" font-size="2.2" fill="#4f6a5b">${a}</text><text x="${tx + 2 + 22}" y="${ty + y}" font-size="3" fill="#0a2e1f">${esc(b)}</text>`;
   const title = `<g><rect x="${tx}" y="${ty}" width="${tw}" height="${th}" fill="#fff" stroke="#0a2e1f" stroke-width="0.5"/><line x1="${tx}" x2="${tx + tw}" y1="${ty + 11}" y2="${ty + 11}" stroke="#0a2e1f" stroke-width="0.25"/><line x1="${tx + tw - 40}" x2="${tx + tw - 40}" y1="${ty + 11}" y2="${ty + th}" stroke="#0a2e1f" stroke-width="0.25"/>
     <text x="${tx + 2}" y="${ty + 8}" font-size="5.5" font-weight="bold" fill="#146c43">${esc(drawing.name)}</text>
     ${row(17, 'Project', info.project)}${row(22, 'Client', info.client ?? '')}${row(27, 'Drawn by', info.drawnBy ?? '')}
-    <text x="${tx + tw - 38}" y="${ty + 16}" font-size="2.2" fill="#4f6a5b">Scale</text><text x="${tx + tw - 38}" y="${ty + 21}" font-size="3.6" font-weight="bold" fill="#0a2e1f">1:${scale}</text>
+    <text x="${tx + tw - 38}" y="${ty + 16}" font-size="2.2" fill="#4f6a5b">Scale</text><text x="${tx + tw - 38}" y="${ty + 21}" font-size="3.6" font-weight="bold" fill="#0a2e1f">${drawing.nts ? 'NTS' : `1:${scale}`}</text>
     <text x="${tx + tw - 38}" y="${ty + 25}" font-size="2.2" fill="#4f6a5b">Sheet ${esc(no)}  ${esc(label ?? (Array.isArray(paper) ? `${Math.round(W)} x ${Math.round(H)} mm` : paper))}</text><text x="${tx + tw - 38}" y="${ty + 29}" font-size="2.4" fill="#0a2e1f">${esc(info.date ?? '')}</text></g>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/><rect x="10" y="10" width="${W - 20}" height="${H - 20}" fill="none" stroke="#0a2e1f" stroke-width="0.7"/><g transform="translate(${dx.toFixed(2)} ${dy.toFixed(2)})">${drawing.inner}</g>${title}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}mm" height="${H}mm" viewBox="0 0 ${W} ${H}">${HATCH_DEFS}<rect width="${W}" height="${H}" fill="#fff"/><rect x="10" y="10" width="${W - 20}" height="${H - 20}" fill="none" stroke="#0a2e1f" stroke-width="0.7"/><g transform="translate(${dx.toFixed(2)} ${dy.toFixed(2)})">${drawing.inner}</g>${o ? sheetExtras(W, H, scale, o, !!drawing.hatched, { x: dx, y: dy, w: drawing.w, h: drawing.h }, !!drawing.nts) : ''}${title}</svg>`;
 }
 
 // print document: one sheet per page, sized by @page. Used by the web "Print / save as PDF" button.

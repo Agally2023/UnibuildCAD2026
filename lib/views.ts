@@ -131,15 +131,16 @@ export const VCOL: Record<string, string> = { wall: '#c9d3cd', column: '#9aa7a0'
 
 // A view as a standalone SVG string, for download and for drawing sheets. Drawing units are millimetres at the given scale
 // (e.g. scale 100 means 1:100), so it prints at true size.
-export function viewSvg(v: View2D, scale = 100, pad = 8): { svg: string; w: number; h: number; inner: string } {
+const HATCH: Record<string, string> = { wall: 'url(#h-brick)', column: 'url(#h-conc)', beam: 'url(#h-conc)', slab: 'url(#h-conc)', roof: 'url(#h-conc)', stair: 'url(#h-conc)' };
+export function viewSvg(v: View2D, scale = 100, pad = 8, hatch = false): { svg: string; w: number; h: number; inner: string } {
   const k = 1000 / scale, X = (u: number) => (u - v.u0) * k + pad + 14, Y = (z: number) => (v.zmax - z) * k + pad + 6;
   const w = (v.u1 - v.u0) * k + pad * 2 + 40, h = (v.zmax - v.zmin) * k + pad * 2 + 12;
   let inner = '';
   for (const l of v.levels) inner += `<line x1="${X(v.u0) - 12}" x2="${X(v.u1) + 8}" y1="${Y(l.z)}" y2="${Y(l.z)}" stroke="#146c43" stroke-width="0.25" stroke-dasharray="4 2"/><text x="${X(v.u0) - 13}" y="${Y(l.z) - 1}" font-size="3" text-anchor="end" fill="#146c43">${l.name} ${l.z.toFixed(2)}</text>`;
   for (const s of v.shapes) {
-    if (s.poly) { inner += `<polygon points="${s.poly.map(q => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}" fill="${s.cut ? '#2b3a33' : VCOL.roof}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`; continue; }
+    if (s.poly) { inner += `<polygon points="${s.poly.map(q => `${X(q[0]).toFixed(2)},${Y(q[1]).toFixed(2)}`).join(' ')}" fill="${s.cut ? (hatch ? HATCH[s.type] ?? '#2b3a33' : '#2b3a33') : VCOL.roof}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`; continue; }
     const x = X(s.u0), y = Y(s.z1), ww = Math.max((s.u1 - s.u0) * k, 0.2), hh = Math.max((s.z1 - s.z0) * k, 0.2);
-    inner += s.open ? `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${VCOL[s.type]}" stroke="#0a2e1f" stroke-width="0.3"/>` : `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${s.cut ? '#2b3a33' : VCOL[s.type] ?? '#ccc'}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`;
+    inner += s.open ? `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${VCOL[s.type]}" stroke="#0a2e1f" stroke-width="0.3"/>` : `<rect x="${x}" y="${y}" width="${ww}" height="${hh}" fill="${s.cut ? (hatch ? HATCH[s.type] ?? '#2b3a33' : '#2b3a33') : VCOL[s.type] ?? '#ccc'}" stroke="#0a2e1f" stroke-width="${s.cut ? 0.5 : 0.2}"/>`;
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w.toFixed(1)}mm" height="${h.toFixed(1)}mm" viewBox="0 0 ${w.toFixed(1)} ${h.toFixed(1)}"><rect width="100%" height="100%" fill="#fff"/>${inner}</svg>`;
   return { svg, w, h, inner };
