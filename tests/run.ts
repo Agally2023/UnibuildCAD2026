@@ -1209,6 +1209,9 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('construction: dimension chain shows 5000 and the overall 10000', aid.inner.includes('>5000<') && aid.inner.includes('>10000<'));
   ok('construction: section marker letter A on the plan', (aid.inner.match(/>A</g) ?? []).length >= 2);
   ok('construction: column and beam marks with sizes', aid.inner.includes('C1 300x300') && aid.inner.includes('B1 300x500'));
+  const eo = { ...o, elevs: [{ side: 'S' as const, n: 1 }, { side: 'E' as const, n: 2 }] }, ep = makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, eo);
+  ok('construction: elevation markers 1 and 2 on the plan, with a wider margin', ep.inner.includes('>1<') && ep.inner.includes('>2<') && ep.w > aid.w);
+  ok('construction: an elevation is named after its marker', makeDrawing(els, [], st, { kind: 'elevation', side: 'S' }, 100, eo).name === 'Elevation 1 – South' && makeDrawing(els, [], st, { kind: 'elevation', side: 'N' }, 100, eo).name === 'North elevation');
   const off = { ...o, tags: false, chains: false, secMarks: false, struct: false };
   ok('construction: each aid can be switched off', makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, off).inner === plain.inner);
   ok('construction: reinforcement text from the preliminary design', !!o.rc!.cols.c1 && !!o.rc!.beams.b1 && makeDrawing(els, [], st, { kind: 'plan', storyId: 's0' }, 100, { ...o, rebar: true }).inner.includes(o.rc!.cols.c1));

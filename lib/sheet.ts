@@ -4,7 +4,7 @@ import type { El, Lib, Story } from './engineering';
 import { isPitched, roofLines, roofPlanBox } from './roof';
 import { footprint, holesOf, roundsOf, polyArea, polyCentroid, wallT } from './model';
 import { buildView, modelExtent, viewSvg, Side, VCOL } from './views';
-import { HATCH_DEFS, planExtras, scheduleDrawing, sheetExtras, type ScheduleKind, type SheetOpts } from './sheetx';
+import { HATCH_DEFS, planMargin, planExtras, scheduleDrawing, sheetExtras, type ScheduleKind, type SheetOpts } from './sheetx';
 
 type Pt = [number, number];
 export const PAPER = { A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594] } as const;
@@ -20,9 +20,9 @@ const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 const rect = (a: Pt, b: Pt, w: number): Pt[] => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = (-dy / L) * (w / 2), ny = (dx / L) * (w / 2); return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]; };
 
 // the plan of one storey at 1:scale; origin is the model's top-left corner with a margin for dimensions and bubbles
-export function planDrawing(els: El[], lib: Lib[], stories: Story[], storyId: string, scale: number): Drawing {
+export function planDrawing(els: El[], lib: Lib[], stories: Story[], storyId: string, scale: number, margin = 2.5): Drawing {
   const list = [...stories].sort((a, b) => a.elevation_m - b.elevation_m), first = list[0]?.id, st = list.find(s => s.id === storyId);
-  const k = 1000 / scale, ex = modelExtent(els), m = 2.5;                       // 2.5 m of margin round the model
+  const k = 1000 / scale, ex = modelExtent(els), m = margin;                       // 2.5 m of margin round the model
   const X = (x: number) => (x - ex.x0 + m) * k, Y = (y: number) => (y - ex.y0 + m) * k, P = (p: Pt) => `${X(p[0]).toFixed(2)},${Y(p[1]).toFixed(2)}`;
   const here = els.filter(e => (e.type === 'grid' ? true : (e.story_id ?? first) === storyId));
   const of = (t: string) => here.filter(e => e.type === t), poly = (pts: Pt[]) => pts.map(P).join(' ');
@@ -53,16 +53,17 @@ export function planDrawing(els: El[], lib: Lib[], stories: Story[], storyId: st
 // a drawing for any kind of sheet view
 export function makeDrawing(els: El[], lib: Lib[], stories: Story[], v: SheetView, scale: number, o?: SheetOpts, register: { no: string; title: string }[] = []): Drawing {
   if (v.kind === 'schedule') return scheduleDrawing(v.what, els, lib, stories, o ?? ({ revs: [] } as any), register);
-  if (v.kind === 'plan') { const d = planDrawing(els, lib, stories, v.storyId, scale); return o ? { ...d, inner: d.inner + planExtras(els, lib, stories, v.storyId, scale, o) } : d; }
+  if (v.kind === 'plan') { const d = planDrawing(els, lib, stories, v.storyId, scale, planMargin(o)); return o ? { ...d, inner: d.inner + planExtras(els, lib, stories, v.storyId, scale, o) } : d; }
   const view = buildView(els, lib, stories, v.kind === 'elevation' ? { kind: 'elevation', side: v.side } : { kind: 'section', axis: v.axis, pos: v.pos, flip: v.flip });
   const d = viewSvg(view, scale, 8, !!o?.hatch), sec = v.kind === 'section' ? o?.secs.find(q => q.axis === v.axis && Math.abs(q.pos - v.pos) < 1e-6) : undefined;
-  return { name: sec && o?.secMarks ? `Section ${sec.letter}–${sec.letter}` : view.title, inner: d.inner, w: d.w, h: d.h, hatched: !!o?.hatch && v.kind === 'section' };
+  const el = v.kind === 'elevation' ? o?.elevs?.find(q => q.side === v.side) : undefined;
+  return { name: sec && o?.secMarks ? `Section ${sec.letter}–${sec.letter}` : el && o?.secMarks ? `Elevation ${el.n} – ${view.title.replace(' elevation', '')}` : view.title, inner: d.inner, w: d.w, h: d.h, hatched: !!o?.hatch && v.kind === 'section' };
 }
 
 // the largest standard scale at which the drawing fits the free area of the paper
-export function fitScale(els: El[], lib: Lib[], stories: Story[], v: SheetView, paper: PaperArg): number {
+export function fitScale(els: El[], lib: Lib[], stories: Story[], v: SheetView, paper: PaperArg, o?: SheetOpts): number {
   const [aw, ah] = areaOf(paper);
-  for (const sc of SCALES) { const d = makeDrawing(els, lib, stories, v, sc); if (d.w <= aw && d.h <= ah) return sc; }
+  for (const sc of SCALES) { const d = makeDrawing(els, lib, stories, v, sc, o); if (d.w <= aw && d.h <= ah) return sc; }
   return SCALES[SCALES.length - 1];
 }
 // several views on one sheet: a grid of cells, each with a drawing and a caption, all at the same scale
@@ -71,9 +72,9 @@ export function layoutCells(n: number, area: [number, number], gap = 6): [number
   return Array.from({ length: n }, (_, i) => [(i % cols) * (cw + gap), Math.floor(i / cols) * (ch + gap), cw, ch]);
 }
 const CAP = 8;   // mm kept under each drawing for its caption
-export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg): number {
+export function fitScaleMany(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg, o?: SheetOpts): number {
   const cells = layoutCells(vs.length, areaOf(paper));
-  for (const sc of SCALES) if (vs.every((v, i) => { const d = makeDrawing(els, lib, stories, v, sc); return d.w <= cells[i][2] && d.h <= cells[i][3] - CAP; })) return sc;
+  for (const sc of SCALES) if (vs.every((v, i) => { const d = makeDrawing(els, lib, stories, v, sc, o); return d.w <= cells[i][2] && d.h <= cells[i][3] - CAP; })) return sc;
   return SCALES[SCALES.length - 1];
 }
 export function compositeDrawing(els: El[], lib: Lib[], stories: Story[], vs: SheetView[], paper: PaperArg, scale: number, title: string, o?: SheetOpts, register: { no: string; title: string }[] = []): Drawing {
