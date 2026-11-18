@@ -1,5 +1,6 @@
 // The drawing engine. renderDrawing() turns a drawing document and a part into primitives on a sheet (mm): views with hidden lines, sections,
 // details, auxiliary and broken views, dimensions, symbols, tables, border and title block. Output formats (SVG, DXF) are in dwgOut.ts.
+import { placeDxf } from './dxfIn';
 import { uid } from './sketch';
 import type { PartDoc } from './parts';
 import type { Mesh, V3 } from './solid';
@@ -10,7 +11,7 @@ import { NAMED, VIEW_NAMES, circlesInCam, findCylinders, camAzEl, chain, clipBan
 import type { Ann, Brk, Cut, DView, DrawingDoc, Layer, Prim, Props, Sheet, Tol } from './dwgTypes';
 import { INK, arrowhead, balloonShape, circle, cloud, finishSymbol, gdtFrame, line, poly, table, text, weldSymbol } from './dwgSym';
 
-export type Ctx = { doc: PartDoc; mesh: Mesh; values: Record<string, number>; material: string; mass: number; date: string; color?: string; shine?: number; images?: boolean };
+export type Ctx = { bom?: { item: number; name: string; material: string; qty: number; mass: number; lo: number[]; hi: number[] }[]; doc: PartDoc; mesh: Mesh; values: Record<string, number>; material: string; mass: number; date: string; color?: string; shine?: number; images?: boolean };
 export type ViewInfo = { id: string; kind: DView['kind']; label: string; cx: number; cy: number; uc: number; vc: number; s: number; box: [number, number, number, number]; sheetBox: [number, number, number, number]; cam: Cam; parent?: string };
 export type Snap = { view: string; u: number; v: number; x: number; y: number; kind: 'end' | 'mid' | 'center' | 'arc'; r?: number };
 export type CircleInfo = { view: string; c: Circ; x: number; y: number; r: number };
@@ -315,6 +316,12 @@ function drawFrame(out: Prim[], page: [number, number], dd: DrawingDoc, sh: Shee
 }
 
 // ---------- the sheet ----------
+const SYMBOL_ROWS: Record<string, { title: string; rows: string[][] }> = {
+  gentol: { title: 'GENERAL TOLERANCES  ISO 2768-m', rows: [['RANGE mm', 'LINEAR ±'], ['0.5 to 3', '0.1'], ['over 3 to 6', '0.1'], ['over 6 to 30', '0.2'], ['over 30 to 120', '0.3'], ['over 120 to 400', '0.5'], ['over 400 to 1000', '0.8']] },
+  notes: { title: 'NOTES', rows: [['1. ALL DIMENSIONS IN MILLIMETRES'], ['2. BREAK SHARP EDGES 0.3 MAX'], ['3. REMOVE ALL BURRS'], ['4. DO NOT SCALE THE DRAWING']] },
+  finish: { title: 'SURFACE FINISH', rows: [['ALL SURFACES Ra 3.2 UNLESS STATED']] },
+  edges: { title: 'UNLESS STATED', rows: [['INTERNAL FILLETS R2'], ['EXTERNAL EDGES 1 x 45° CHAMFER']] },
+};
 export function resolveSheetScale(sh: Sheet): number { return sh.scale > 0 ? sh.scale : 1; }
 export function bboxOfPrims(ps: Prim[]): [number, number, number, number] {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; const pt = (x: number, y: number) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
@@ -422,10 +429,16 @@ export function renderDrawing(dd: DrawingDoc, sheetIndex: number, ctx: Ctx): Ren
       case 'cline': { const a = P(an.a), b = P(an.b), dl = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / dl, uy = (b[1] - a[1]) / dl; line(out, [a[0] - ux * 3, a[1] - uy * 3], [b[0] + ux * 3, b[1] + uy * 3], 'cen', 0.18, [8, 1.4, 1.2, 1.4], '#b02020'); break; }
       case 'hole': { const C = P(an.c), r = an.r * (vw?.s ?? 1), at = P(an.at), dl = Math.hypot(at[0] - C[0], at[1] - C[1]) || 1, ux = (at[0] - C[0]) / dl, uy = (at[1] - C[1]) / dl, edge: Pt = [C[0] + ux * r, C[1] + uy * r];
         line(out, edge, at, 'dim', 0.3); arrowhead(out, edge, -ux, -uy, dd.arrow, 'dim', ts * 0.8); const right = at[0] >= C[0]; line(out, at, [at[0] + (right ? 1 : -1) * (an.text.length * ts * 0.6 + 2), at[1]], 'dim', 0.25); text(out, [at[0] + (right ? 1 : -1) * 1, at[1] - 0.8], an.text, ts, 'dim', right ? 'start' : 'end'); break; }
-      case 'htable': { if (!vw) break; const cs = circlesInView(vw.id, circles).filter(q => q.c.full).sort((a, b) => a.c.cx - b.c.cx || a.c.cy - b.c.cy), rows: string[][] = [['TAG', 'X', 'Y', 'DIA']];
-        cs.forEach((q, j) => { const tag = `A${j + 1}`; rows.push([tag, fmtVal(q.c.cx - an.org[0], dd), fmtVal(q.c.cy - an.org[1], dd), `Ø${fmtVal(2 * q.c.r, dd)}`]); text(out, [q.x + q.r * 0.8 + 1, q.y - q.r * 0.8 - 0.6], tag, 2.8, 'tbl', 'start', 0, true); });
+      case 'thread': { const C = P(an.c), r = an.r * (vw?.s ?? 1), nr = an.nom * (vw?.s ?? 1), at = P(an.at), dl = Math.hypot(at[0] - C[0], at[1] - C[1]) || 1, ux = (at[0] - C[0]) / dl, uy = (at[1] - C[1]) / dl, edge: Pt = [C[0] + ux * nr, C[1] + uy * nr];
+        out.push({ k: 'a', c: C, r: nr, a0: 0, a1: 270, w: 0.18, layer: 'cen' }); void r;   // cosmetic thread: three quarters of the major (or minor) circle
+        line(out, edge, at, 'dim', 0.3); arrowhead(out, edge, -ux, -uy, dd.arrow, 'dim', ts * 0.8); const right = at[0] >= C[0]; line(out, at, [at[0] + (right ? 1 : -1) * (an.text.length * ts * 0.6 + 2), at[1]], 'dim', 0.25); text(out, [at[0] + (right ? 1 : -1) * 1, at[1] - 0.8], an.text, ts, 'dim', right ? 'start' : 'end'); break; }
+      case 'dxf': { for (const q of placeDxf(an.prims, an.box, an.x, an.y, an.s)) out.push(q); break; }
+      case 'symbol': { const rows = SYMBOL_ROWS[an.name]; if (rows) table(out, an.x, an.y, rows.rows, 2.8, true, rows.title); break; }
+      case 'htable': { if (!vw) break; const cs = circlesInView(vw.id, circles).filter(q => q.c.full).sort((a, b) => a.c.cx - b.c.cx || a.c.cy - b.c.cy), st = an.style ?? 'xy', rows: string[][] = [st === 'group' ? ['TAGS', 'QTY', 'DIA'] : st === 'polar' ? ['TAG', 'R', 'ANGLE', 'DIA'] : ['TAG', 'X', 'Y', 'DIA']];
+        if (st === 'group') { const g = new Map<string, string[]>(); cs.forEach((q, j) => { const d = fmtVal(2 * q.c.r, dd); g.set(d, [...(g.get(d) ?? []), `A${j + 1}`]); text(out, [q.x + q.r * 0.8 + 1, q.y - q.r * 0.8 - 0.6], `A${j + 1}`, 2.8, 'tbl', 'start', 0, true); }); for (const [d, tags] of g) rows.push([tags.join(','), String(tags.length), `Ø${d}`]); }
+        else cs.forEach((q, j) => { const tag = `A${j + 1}`, dx = q.c.cx - an.org[0], dy = q.c.cy - an.org[1]; rows.push(st === 'polar' ? [tag, fmtVal(Math.hypot(dx, dy), dd), `${Math.round(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360 * 10) / 10}°`, `Ø${fmtVal(2 * q.c.r, dd)}`] : [tag, fmtVal(dx, dd), fmtVal(dy, dd), `Ø${fmtVal(2 * q.c.r, dd)}`]); text(out, [q.x + q.r * 0.8 + 1, q.y - q.r * 0.8 - 0.6], tag, 2.8, 'tbl', 'start', 0, true); });
         table(out, an.x, an.y, rows, 2.8, true, 'HOLE TABLE'); break; }
-      case 'bom': { const nm = ctx.doc.name, rows = [['ITEM', 'PART NO.', 'DESCRIPTION', 'MATERIAL', 'QTY', 'MASS'], ['1', dd.props.partNo || nm.toUpperCase().replace(/\s+/g, '-'), dd.props.description || nm, ctx.material, '1', `${num(ctx.mass)} kg`]]; const t = table(out, an.x, an.y, rows, 2.8, true, 'BILL OF MATERIALS'); void t; break; }
+      case 'bom': { const nm = ctx.doc.name, rows = ctx.bom?.length ? [['ITEM', 'PART NO.', 'DESCRIPTION', 'MATERIAL', 'QTY', 'MASS'], ...ctx.bom.map(b => [String(b.item), b.name.toUpperCase().replace(/\s+/g, '-'), b.name, b.material, String(b.qty), `${num(b.mass)} kg`])] : [['ITEM', 'PART NO.', 'DESCRIPTION', 'MATERIAL', 'QTY', 'MASS'], ['1', dd.props.partNo || nm.toUpperCase().replace(/\s+/g, '-'), dd.props.description || nm, ctx.material, '1', `${num(ctx.mass)} kg`]]; const t = table(out, an.x, an.y, rows, 2.8, true, 'BILL OF MATERIALS'); void t; break; }
       case 'rev': table(out, an.x, an.y, [['REV', 'DESCRIPTION', 'DATE', 'APPROVED'], ...an.rows.map(r => [r.rev, r.desc, r.date, r.by])], 2.8, true, 'REVISIONS'); break;
       case 'table': table(out, an.x, an.y, an.rows, 2.8, true, an.title); break;
       case 'cloud': { cloud(out, an.x, an.y, an.w, an.h); poly(out, [[an.x + an.w + 3, an.y - 3], [an.x + an.w + 9, an.y - 3], [an.x + an.w + 6, an.y - 8]], 'note', 0.3, true); text(out, [an.x + an.w + 6, an.y - 3.8], an.tag, 2.6, 'note'); break; }

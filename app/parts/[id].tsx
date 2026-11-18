@@ -10,6 +10,7 @@ import { ALL_TEMPLATES as TEMPLATES } from '../../lib/templates';
 import { BRANDS } from '../../lib/brands';
 import { CATALOG } from '../../lib/catalog';
 import { paintMeshURL, paintVehicleURL } from '../../lib/vpaint';
+import { buildAssembly } from '../../lib/assembly';
 import { drawingOf, sheetSvgs } from '../../lib/dwgEdit';
 import DrawingStudio from '../../components/DrawingStudio';
 import { defaultSetup, PAPERS, pageMm, type PageSetup } from '../../lib/paper';
@@ -181,8 +182,11 @@ export default function Parts() {
   }, [tab, ws]);
   const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
   const matName = useMemo(() => FINISHES.find(x => x.key === doc.finish)?.label ?? FINISHES.find(x => x.density === doc.density)?.label ?? 'Steel', [doc.finish, doc.density]);
+  const matOf = (d: PartDoc) => FINISHES.find(x => x.key === d.finish)?.label ?? FINISHES.find(x => x.density === d.density)?.label ?? 'Steel';
+  const asmData = useMemo(() => (doc.asm?.on && doc.kind !== 'vehicle' ? buildAssembly(parts, doc.asm, matOf) : null), [doc.asm, parts]);
+  const dMesh = asmData?.mesh ?? R.mesh, dMass = asmData ? asmData.mass : R.stats?.mass ?? 0;
   const lookD = useMemo(() => finishLook(doc.density, doc.finish), [doc.density, doc.finish]);
-  const sheetList = (): string[] => { if (Platform.OS !== 'web' || doc.kind === 'vehicle') return []; try { const ctx = { doc, mesh: R.mesh, values: R.values, material: matName, mass: R.stats?.mass ?? 0, date: new Date().toISOString().slice(0, 10), color: lookD.color, shine: lookD.metal }; return sheetSvgs(drawingOf(ctx), ctx).map(x => x.svg); } catch (e: any) { return []; } };
+  const sheetList = (): string[] => { if (Platform.OS !== 'web' || doc.kind === 'vehicle') return []; try { const ctx = { doc, mesh: dMesh, values: R.values, material: asmData ? 'VARIOUS' : matName, mass: dMass, date: new Date().toISOString().slice(0, 10), color: lookD.color, shine: lookD.metal, bom: asmData?.bom }; return sheetSvgs(drawingOf(ctx), ctx).map(x => x.svg); } catch (e: any) { return []; } };
 
   // ----- print and PDF: the drawing sheet (machine parts) or a picture of the current 3D view (any design, vehicles too) -----
   const [pset, setPset] = useState<PageSetup>(() => ({ ...defaultSetup(), margin: 10 }));
@@ -385,7 +389,7 @@ export default function Parts() {
   const Center = (
     <View style={s.center}>
       {tab === 'draw' && Platform.OS === 'web' && doc.kind !== 'vehicle' && printWhat === 'sheet' ? (
-        <DrawingStudio doc={doc} mesh={R.mesh} values={R.values} mass={R.stats?.mass ?? 0} matName={matName} look={lookD} commit={commit} setMsg={setMsg} base={base} save={saveFile} onPdf={() => { void doPdf(); }} onPrint={doPrint} phone={!wide} />
+        <DrawingStudio doc={doc} parts={parts} bom={asmData?.bom} mesh={dMesh} values={R.values} mass={dMass} matName={asmData ? 'VARIOUS' : matName} look={lookD} commit={commit} setMsg={setMsg} base={base} save={saveFile} onPdf={() => { void doPdf(); }} onPrint={doPrint} phone={!wide} />
       ) : tab === 'draw' ? (
         <ScrollView contentContainerStyle={{ padding: 10 }}>
           {Platform.OS !== 'web' ? <Text style={s.errT}>Printing and PDF are in the web version.</Text> : <>
