@@ -69,13 +69,18 @@ export type Ann =
   | (Base & { t: 'cmark'; view: string; c: [number, number]; r: number })
   | (Base & { t: 'cline'; view: string; a: [number, number]; b: [number, number] })
   | (Base & { t: 'hole'; view: string; c: [number, number]; r: number; at: [number, number]; text: string })
-  | (Base & { t: 'htable'; view: string; x: number; y: number; org: [number, number] })
+  | (Base & { t: 'thread'; view: string; c: [number, number]; r: number; nom: number; at: [number, number]; text: string; ext: boolean })
+  | (Base & { t: 'dxf'; x: number; y: number; s: number; box: [number, number, number, number]; prims: Prim[]; name: string })
+  | (Base & { t: 'symbol'; x: number; y: number; name: SymName })
+  | (Base & { t: 'htable'; view: string; x: number; y: number; org: [number, number]; style?: 'xy' | 'group' | 'polar' })
   | (Base & { t: 'bom'; x: number; y: number })
   | (Base & { t: 'rev'; x: number; y: number; rows: { rev: string; desc: string; date: string; by: string }[] })
   | (Base & { t: 'table'; x: number; y: number; title: string; rows: string[][] })
   | (Base & { t: 'cloud'; x: number; y: number; w: number; h: number; tag: string })
   | (Base & { t: 'fill'; view: string; u0: number; v0: number; u1: number; v1: number; style: HatchStyle; angle: number; gap: number });
 export type AnnType = Ann['t'];
+export type SymName = 'gentol' | 'notes' | 'finish' | 'edges';
+export const SYMBOLS: { key: SymName; label: string }[] = [{ key: 'gentol', label: 'General tolerances (ISO 2768-m)' }, { key: 'notes', label: 'Standard notes' }, { key: 'finish', label: 'Surface finish, all over' }, { key: 'edges', label: 'Edges, fillets and chamfers' }];
 
 export type Sheet = { id: string; name: string; size: PageSetup; scale: number; views: DView[]; anns: Ann[] };
 export type Props = { company: string; title: string; drawnBy: string; checkedBy: string; approvedBy: string; drawingNo: string; revision: string; partNo: string; description: string; finish: string; tolerance: string; weight: string };

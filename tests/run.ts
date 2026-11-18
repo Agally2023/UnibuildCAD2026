@@ -53,7 +53,9 @@ import { wirePath } from '../lib/wire';
 import { newPart, rebuild, sampleBracket, type PartDoc } from '../lib/parts';
 import { renderDrawing, newDrawing, arrangeStandard, type Ctx as DwgCtx } from '../lib/dwg';
 import { toSvg, toDxf } from '../lib/dwgOut';
-import { addSection, autoDims, circle3, cloneDoc, cutChoices } from '../lib/dwgEdit';
+import { parseDxf, placeDxf } from '../lib/dxfIn';
+import { buildAssembly, arrangeInRow } from '../lib/assembly';
+import { nextTablePos, autoBalloons, addSection, autoDims, circle3, cloneDoc, cutChoices, threadText } from '../lib/dwgEdit';
 import { TEMPLATES } from '../lib/partlib';
 import { analyse3D, coreSection, coresFromGroups, loadsOf, wallGroups } from '../lib/core3d';
 import { buildLateralReport } from '../lib/report';
@@ -1157,6 +1159,38 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('drawing: first angle puts the top view below the front view', fa.sheets[0].views[1].cy > fa.sheets[0].views[0].cy && dd.sheets[0].views[1].cy < dd.sheets[0].views[0].cy);
   const a4 = cloneDoc(dd); a4.sheets[0].size = { key: 'A4', orient: 'portrait', custom: [210, 297], margin: 0 };
   ok('drawing: sheet size follows the chosen paper', renderDrawing(a4, 0, ctx).page[0] === 210 && renderDrawing(a4, 0, ctx).page[1] === 297);
+  const th = threadText(8.376); ok('drawing: a hole of 8.4 mm is read as M10x1.5 tapped', th.text.startsWith('M10x1.5') && !th.ext && Math.abs(th.nom - 5) < 1e-9);
+  ok('drawing: a 12 mm shaft is read as an external M12 thread', threadText(12).ext && threadText(12).text.startsWith('M12x1.75'));
+  const wt = cloneDoc(nd), vw0 = wt.sheets[0].views[0].id; wt.sheets[0].anns.push({ id: 't1', t: 'thread', view: vw0, c: [0, 0], r: 4, nom: 5, at: [10, 10], text: 'M10x1.5 - 6H', ext: false } as any, { id: 's1', t: 'symbol', x: 20, y: 40, name: 'gentol' } as any, { id: 'h1', t: 'htable', view: vw0, x: 200, y: 200, org: [0, 0], style: 'group' } as any);
+  const rt = renderDrawing(wt, 0, ctx), tx = rt.prims.filter(p => p.k === 't').map(p => (p as any).s as string);
+  ok('drawing: thread callout, standard tolerance table and grouped hole table render', tx.includes('M10x1.5 - 6H') && tx.some(t => t.includes('ISO 2768')) && tx.includes('QTY'));
+  {
+    const a = sampleBracket(), b = { ...sampleBracket(), name: 'Second bracket' }, ps = [a, b], items = arrangeInRow(ps, [a.name, b.name], 20), mat = () => 'Steel';
+    const as1 = buildAssembly(ps, { on: true, items, explode: 0, axis: 2 }, mat), as2 = buildAssembly(ps, { on: true, items, explode: 50, axis: 2 }, mat);
+    ok('assembly: two parts give two BOM rows and a joined mesh', as1.bom.length === 2 && as1.mesh.v.length === 2 * rebuild(a).mesh.v.length && as1.mass > 0);
+    ok('assembly: parts placed in a row do not overlap in X', as1.bom[0].hi[0] <= as1.bom[1].lo[0] + 1e-6);
+    ok('assembly: exploding moves the second part up by the distance', Math.abs(as2.bom[1].lo[2] - as1.bom[1].lo[2] - 50) < 1e-6 && Math.abs(as2.bom[0].lo[2] - as1.bom[0].lo[2]) < 1e-9);
+    const actx: DwgCtx = { doc: a, mesh: as1.mesh, values: rebuild(a).values, material: 'VARIOUS', mass: as1.mass, date: '2026-01-01', images: false, bom: as1.bom };
+    const ad = newDrawing(actx), ar = renderDrawing(ad, 0, actx), bal = autoBalloons(ad.sheets[0], ar, actx);
+    ok('assembly: one balloon per part, numbered like the BOM', bal.length === 2 && bal.map(x => (x as any).text).join() === '1,2');
+    ad.sheets[0].anns.push({ id: 'bm', t: 'bom', x: 20, y: 40 } as any);
+    ok('assembly: the BOM table lists every part', renderDrawing(ad, 0, actx).prims.filter(p => p.k === 't' && p.s === 'Second bracket').length >= 1);
+  }
+  {
+    const im = parseDxf(toDxf(r0.prims, r0.page)), kinds = (k: string) => im.prims.filter(p => p.k === k).length;
+    ok('dxf import: reads back the lines, circles, arcs and text of an exported sheet', kinds('l') > 100 && kinds('t') > 10 && im.prims.length >= r0.prims.filter(p => p.k !== 'i').length * 0.9);
+    ok('dxf import: the box covers the sheet frame', im.box[2] - im.box[0] > r0.page[0] - 30 && im.box[2] - im.box[0] <= r0.page[0] + 1 && im.box[3] - im.box[1] > r0.page[1] - 30);
+    const sm = parseDxf('0\nSECTION\n2\nENTITIES\n0\nLINE\n10\n0\n20\n0\n11\n10\n21\n5\n0\nCIRCLE\n10\n5\n20\n5\n40\n2\n0\nARC\n10\n0\n20\n0\n40\n3\n50\n0\n51\n90\n0\nSPLINE\n0\nENDSEC\n0\nEOF\n');
+    const arc = sm.prims.find(p => p.k === 'a') as any;
+    ok('dxf import: line, circle and arc are read, a spline is counted as skipped', sm.prims.length === 3 && sm.skipped.SPLINE === 1);
+    ok('dxf import: y flips to point down and a quarter arc keeps 90 degrees', (sm.prims[0] as any).b[1] === -5 && Math.abs(arc.a1 - arc.a0 - 90) < 1e-9);
+    const placed = placeDxf(sm.prims, sm.box, 100, 50, 2);
+    ok('dxf import: placing scales and moves to the sheet position', Math.abs((placed[0] as any).a[0] - (100 + (0 - sm.box[0]) * 2)) < 1e-9 && Math.abs((placed[0] as any).b[0] - (placed[0] as any).a[0] - 20) < 1e-9);
+  }
+  {
+    const sh0 = cloneDoc(dd).sheets[0], p1 = nextTablePos(sh0, r0); sh0.anns.push({ id: 'q1', t: 'symbol', x: p1[0], y: p1[1], name: 'gentol' } as any);
+    const p2 = nextTablePos(sh0, r0); ok('drawing: the next table is stacked below the last one', p2[0] === p1[0] && p2[1] > p1[1] + 7 * 5.8);
+  }
   ok('drawing: the drawing is stored in the part file as plain data', JSON.parse(JSON.stringify({ ...doc, drawing: nd })).drawing.sheets[0].views.length === 5);
 }
 {

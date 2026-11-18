@@ -2,17 +2,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PrintOptions from './PrintOptions';
-import { DISPLAYS, HATCHES, GDT, WELDS, LAYERS, type Ann, type DView, type DrawingDoc, type Sheet, type Layer, type Display, type HatchStyle, type TolType } from '../lib/dwgTypes';
+import { SYMBOLS, DISPLAYS, HATCHES, GDT, WELDS, LAYERS, type Ann, type DView, type DrawingDoc, type Sheet, type Layer, type Display, type HatchStyle, type TolType } from '../lib/dwgTypes';
 import { SCALES, renderDrawing, scaleText, newDrawing, arrangeStandard, blankDoc, camOf, type Ctx, type Rendered, type ViewInfo } from '../lib/dwg';
 import { VIEW_NAMES, dot, type NamedView, type Pt } from '../lib/dwgGeom';
 import { toSvg, toDxf } from '../lib/dwgOut';
-import { addAux, addDetail, addModelView, addSection, aid, autoBalloons, autoDims, circle3, cloneDoc, cutChoices, holeText, meshBox } from '../lib/dwgEdit';
+import { addAux, addDetail, addModelView, addSection, aid, autoBalloons, autoDims, circle3, cloneDoc, cutChoices, holeText, meshBox, nextTablePos, threadText } from '../lib/dwgEdit';
 import { uid } from '../lib/sketch';
+import { parseDxf } from '../lib/dxfIn';
+import { arrangeInRow, defaultAsm, type Asm } from '../lib/assembly';
 import { pageMm } from '../lib/paper';
 import type { PartDoc } from '../lib/parts';
 import type { Mesh } from '../lib/solid';
 
-type Props = { doc: PartDoc; mesh: Mesh; values: Record<string, number>; mass: number; matName: string; look: { color: string; metal: number }; commit: (fn: (d: PartDoc) => PartDoc) => void; setMsg: (m: string) => void; base: string; save: (name: string, content: string) => Promise<void>; onPdf: () => void; onPrint: () => void; phone: boolean };
+type Props = { parts: PartDoc[]; bom?: import('../lib/assembly').BomRow[]; doc: PartDoc; mesh: Mesh; values: Record<string, number>; mass: number; matName: string; look: { color: string; metal: number }; commit: (fn: (d: PartDoc) => PartDoc) => void; setMsg: (m: string) => void; base: string; save: (name: string, content: string) => Promise<void>; onPdf: () => void; onPrint: () => void; phone: boolean };
 
 type Tool = { key: string; label: string; n: number; help: string };
 const T = (key: string, label: string, n: number, help: string): Tool => ({ key, label, n, help });
@@ -29,21 +31,25 @@ const NOTE_TOOLS: Tool[] = [
   T('note', 'Note', 1, 'Type the text in the panel, then tap where it goes.'), T('leader', 'Note with leader', 2, 'Tap the point it refers to, then where the text goes.'), T('balloon', 'Balloon', 2, 'Tap the part, then where the balloon goes.'),
   T('finish', 'Surface finish', 2, 'Tap the surface, then where the symbol goes.'), T('weld', 'Weld symbol', 2, 'Tap the joint, then where the symbol goes.'), T('gdt', 'Geometric tolerance', 2, 'Tap the feature, then where the frame goes.'),
   T('datum', 'Datum feature', 2, 'Tap the edge, then where the datum goes.'), T('dtarget', 'Datum target', 2, 'Tap the spot, then where the target goes.'), T('hole', 'Hole callout', 2, 'Tap a hole, then where the text goes.'),
-  T('cmark', 'Centre mark', 1, 'Tap a circle.'), T('cline', 'Centreline', 2, 'Tap the two ends.'), T('fill', 'Area hatch', 2, 'Tap two corners of the area.'), T('cloud', 'Revision cloud', 2, 'Tap two corners.'),
+  T('thread', 'Thread callout', 2, 'Tap a round hole or shaft, then where the text goes.'), T('cmark', 'Centre mark', 1, 'Tap a circle.'), T('cline', 'Centreline', 2, 'Tap the two ends.'), T('fill', 'Area hatch', 2, 'Tap two corners of the area.'), T('cloud', 'Revision cloud', 2, 'Tap two corners.'),
   T('htable', 'Hole table', 1, 'Tap where the table goes.'), T('bom', 'Bill of materials', 1, 'Tap where the table goes.'), T('rev', 'Revision table', 1, 'Tap where the table goes.'), T('table', 'General table', 1, 'Tap where the table goes.'), T('measure', 'Measure', 2, 'Tap two points to read the distance.'),
 ];
 const ALL_TOOLS = [...VIEW_TOOLS, ...DIM_TOOLS, ...NOTE_TOOLS];
 const r1 = (x: number) => Math.round(x * 100) / 100;
+const TEMPLATES = (): { name: string; props: Partial<Record<string, string>>; std?: 'iso' | 'ansi'; arrow?: any }[] => {
+  let mine: any[] = []; try { mine = JSON.parse(localStorage.getItem('dwg-tb-templates') ?? '[]'); } catch { /* none */ }
+  return [{ name: 'ISO 2768-m', props: { tolerance: 'GENERAL TOLERANCES ISO 2768-m   |   BREAK SHARP EDGES 0.3 MAX' }, std: 'iso', arrow: 'filled' }, { name: 'ANSI Y14.5', props: { tolerance: 'UNLESS OTHERWISE SPECIFIED: DIMENSIONS ARE IN MILLIMETRES   |   .X ±0.5   .XX ±0.25' }, std: 'ansi', arrow: 'filled' }, { name: 'Sheet metal', props: { tolerance: 'GENERAL TOLERANCES ISO 2768-m   |   BEND RADIUS = MATERIAL THICKNESS   |   DEBURR ALL EDGES', finish: 'AS SUPPLIED' }, std: 'iso' }, ...mine];
+};
 const nm = (t: string) => { const v = parseFloat(t.replace(',', '.')); return isNaN(v) ? undefined : v; };
 
 export default function DrawingStudio(p: Props) {
   const { doc, mesh, values, commit, setMsg } = p;
-  const [si, setSi] = useState(0), [group, setGroup] = useState<'view' | 'ann' | 'sheet' | 'out'>('view'), [tool, setTool] = useState('select'), [sel, setSel] = useState<string | null>(null);
+  const [si, setSi] = useState(0), [group, setGroup] = useState<'view' | 'ann' | 'sheet' | 'asm' | 'out'>('view'), [tool, setTool] = useState('select'), [sel, setSel] = useState<string | null>(null);
   const [pend, setPend] = useState<{ view: string; pts: Pt[]; circ?: { cx: number; cy: number; r: number } } | null>(null), [over, setOver] = useState<DrawingDoc | null>(null), [zoom, setZoom] = useState(1);
   const [txt, setTxt] = useState('NOTE'), [secKind, setSecKind] = useState<'full' | 'half' | 'offset'>('full'), [secDir, setSecDir] = useState<'h' | 'v'>('h'), [round, setRound] = useState(true), [gdtSym, setGdtSym] = useState<string>('pos'), [weldT, setWeldT] = useState<string>('fillet');
   const [hover, setHover] = useState<Pt | null>(null);
   const wrap = useRef<any>(null), drag = useRef<null | { id: string; kind: 'view' | 'ann'; x0: number; y0: number; moved: boolean; start: DrawingDoc }>(null);
-  const ctx: Ctx = useMemo(() => ({ doc, mesh, values, material: p.matName, mass: p.mass, date: new Date().toISOString().slice(0, 10), color: p.look.color, shine: p.look.metal, images: !over }), [doc, mesh, values, p.matName, p.mass, p.look, !!over]);
+  const ctx: Ctx = useMemo(() => ({ doc, mesh, values, material: p.matName, mass: p.mass, bom: p.bom, date: new Date().toISOString().slice(0, 10), color: p.look.color, shine: p.look.metal, images: !over }), [doc, mesh, values, p.matName, p.mass, p.look, p.bom, !!over]);
   const stored = doc.drawing;
   const auto = useMemo(() => (stored ? null : newDrawing(ctx)), [stored, doc.name, mesh]);   // shown until the first change is made
   const dd = over ?? stored ?? auto!;
@@ -123,6 +129,9 @@ export default function DrawingStudio(p: Props) {
       case 'hole': {
         if (circ) { addAnn({ id: aid(), t: 'hole', view: v.id, c: [circ.cx, circ.cy], r: circ.r, at: q, text: holeText(ctx, 2 * circ.r) }); done(); return; }
         const c = circleNear(v.id, q, v); if (!c) { setMsg('No circle found there. Tap on a hole.'); return; } next([], c); return; }
+      case 'thread': {
+        if (circ) { const th = threadText(2 * circ.r); addAnn({ id: aid(), t: 'thread', view: v.id, c: [circ.cx, circ.cy], r: circ.r, nom: th.nom, at: q, text: th.text, ext: th.ext }); done(); return; }
+        const c = circleNear(v.id, q, v); if (!c) { setMsg('No circle found there. Tap on a hole or shaft end.'); return; } next([], c); return; }
       case 'htable': { addAnn({ id: aid(), t: 'htable', view: v.id, x: X, y: Y, org: [u0, v0] }); setTool('select'); return; }
       case 'cline': { if (pts.length < 1) { next([q]); return; } addAnn({ id: aid(), t: 'cline', view: v.id, a: pts[0], b: q }); done(); return; }
       case 'fill': { if (pts.length < 1) { next([q]); return; } addAnn({ id: aid(), t: 'fill', view: v.id, u0: Math.min(pts[0][0], q[0]), v0: Math.min(pts[0][1], q[1]), u1: Math.max(pts[0][0], q[0]), v1: Math.max(pts[0][1], q[1]), style: dd.hatch === 'none' ? 'iron' : dd.hatch, angle: 45, gap: 3 }); done(); return; }
@@ -252,11 +261,14 @@ export default function DrawingStudio(p: Props) {
       {a.t === 'gdt' && <><Pick label="Characteristic" value={a.sym} opts={GDT} set={k => upAnn(x => { x.sym = k; })} /><View style={s.row}><Txt label="Tolerance" value={a.tol} set={t => upAnn(x => { x.tol = t; })} w={70} /><Txt label="Modifier (M, L, P)" value={a.mod} set={t => upAnn(x => { x.mod = t; })} w={70} /><Txt label="Datums (A,B,C)" value={a.datums.join(',')} set={t => upAnn(x => { x.datums = t.split(/[ ,]+/).filter(Boolean).slice(0, 3); })} w={90} /></View><Btn label="Diameter zone Ø" on={a.dia} go={() => upAnn(x => { x.dia = !x.dia; })} /></>}
       {(a.t === 'datum' || a.t === 'dtarget') && <Txt label="Letter" value={a.letter} set={t => upAnn(x => { x.letter = t.toUpperCase().slice(0, 2); })} w={60} />}
       {a.t === 'dtarget' && <Txt label="Target number" value={a.n} set={t => upAnn(x => { x.n = t; })} w={60} />}
+      {a.t === 'dxf' && <><Text style={s.k}>{a.name}: {a.prims.length} items. Drag to move.</Text><Num label="Scale (1 = true size)" value={a.s} set={n => upAnn(x => { if (n && n > 0) x.s = n; })} w={80} /></>}
+      {a.t === 'thread' && <><Txt label="Thread" value={a.text} set={t => upAnn(x => { x.text = t; })} w={200} /><Num label="Nominal diameter (mm)" value={r1(a.nom * 2)} set={n => upAnn(x => { if (n) x.nom = n / 2; })} /></>}
       {a.t === 'hole' && <Txt label="Callout" value={a.text} set={t => upAnn(x => { x.text = t; })} w={200} />}
       {a.t === 'cloud' && <Txt label="Revision tag" value={a.tag} set={t => upAnn(x => { x.tag = t; })} w={60} />}
       {a.t === 'fill' && <><Pick label="Pattern" value={a.style} opts={HATCHES} set={k => upAnn(x => { x.style = k; })} /><View style={s.row}><Num label="Angle (°)" value={a.angle} set={n => upAnn(x => { x.angle = n ?? 45; })} /><Num label="Spacing (mm)" value={a.gap} set={n => upAnn(x => { if (n) x.gap = n; })} /></View></>}
       {a.t === 'table' && <><Txt label="Title" value={a.title} set={t => upAnn(x => { x.title = t; })} w={160} /><Txt label="Cells (rows on lines, columns with ;)" value={a.rows.map(rw => rw.join(';')).join('\n')} set={t => upAnn(x => { x.rows = t.split('\n').map(l => l.split(';')); })} w={240} multi /></>}
       {a.t === 'rev' && <><Text style={s.fl}>One revision per line: REV; DESCRIPTION; DATE; BY</Text><Txt label="Revisions" value={a.rows.map(q => [q.rev, q.desc, q.date, q.by].join('; ')).join('\n')} set={t => upAnn(x => { x.rows = t.split('\n').filter(Boolean).map(l => { const c = l.split(';').map(z => z.trim()); return { rev: c[0] ?? '', desc: c[1] ?? '', date: c[2] ?? '', by: c[3] ?? '' }; }); })} w={280} multi /></>}
+      {a.t === 'htable' && <Pick label="Table style" value={a.style ?? 'xy'} opts={[{ key: 'xy', label: 'X and Y' }, { key: 'polar', label: 'Radius and angle' }, { key: 'group', label: 'Grouped by size' }]} set={k => upAnn(x => { x.style = k; })} />}
       {a.t === 'htable' && <Text style={s.k}>Lists the round features found in the view, with their position from the lower left corner.</Text>}
       <Pick label="Layer" value={(a.layer ?? 'note') as Layer} opts={LAYERS.slice(3, 7).map(l => ({ key: l.key, label: l.label.split(' ')[0] }))} set={k => upAnn(x => { x.layer = k; })} />
       <Btn label="Delete" danger go={() => edit((_d, s2) => { s2.anns = s2.anns.filter(q => q.id !== a.id); setSel(null); })} />
@@ -271,7 +283,7 @@ export default function DrawingStudio(p: Props) {
 
   return (
     <View style={s.wrap} testID="drawing-studio">
-      <View style={s.tabs}>{([['view', 'View layout'], ['ann', 'Annotation'], ['sheet', 'Sheet'], ['out', 'Output']] as const).map(([k, l]) => <Pressable key={k} testID={`dw-tab-${k}`} onPress={() => setGroup(k)} style={[s.tab, group === k && s.tabOn]}><Text style={[s.tabT, group === k && { color: '#fff' }]}>{l}</Text></Pressable>)}</View>
+      <View style={s.tabs}>{([['view', 'View layout'], ['ann', 'Annotation'], ['sheet', 'Sheet'], ['asm', 'Assembly'], ['out', 'Output']] as const).map(([k, l]) => <Pressable key={k} testID={`dw-tab-${k}`} onPress={() => setGroup(k)} style={[s.tab, group === k && s.tabOn]}><Text style={[s.tabT, group === k && { color: '#fff' }]}>{l}</Text></Pressable>)}</View>
       <ScrollView style={[s.ribbon, { maxHeight: p.phone ? 210 : 300 }]} contentContainerStyle={{ gap: 4 }} nestedScrollEnabled>
         {group === 'view' && <>
           <View style={s.row}>{VIEW_TOOLS.map(toolBtn)}</View>
@@ -286,10 +298,12 @@ export default function DrawingStudio(p: Props) {
           {(tool === 'note' || tool === 'leader') && <Txt label="Note text" value={txt} set={setTxt} w={240} />}
           {tool === 'gdt' && <Pick label="Characteristic" value={gdtSym as any} opts={GDT} set={k => setGdtSym(k)} />}
           {tool === 'weld' && <Pick label="Weld" value={weldT as any} opts={WELDS} set={k => setWeldT(k)} />}
+          <Text style={s.fl}>Standard notes and tables</Text>
+          <View style={s.row}>{SYMBOLS.map(y => <Btn key={y.key} id={`dw-sym-${y.key}`} label={y.label} go={() => edit((_d, s2) => { const [tx, ty] = nextTablePos(s2, r, ctx); s2.anns.push({ id: aid(), t: 'symbol', x: tx, y: ty, name: y.key }); })} />)}</View>
           <View style={s.row}>
             <Btn id="dw-auto-dims" label="Model items: auto dimensions" go={() => edit((_d, s2) => { const add = autoDims(s2, r); s2.anns.push(...add); setMsg(add.length ? `${add.length} dimensions added` : 'Everything is already dimensioned.'); })} />
             <Btn id="dw-auto-marks" label="Auto centre marks" go={() => edit((_d, s2) => { const have = (vv: string, c: any) => s2.anns.some(a => a.t === 'cmark' && a.view === vv && Math.abs(a.c[0] - c.cx) < 1e-3 && Math.abs(a.c[1] - c.cy) < 1e-3); let n = 0; for (const c of r.circles) if (c.c.full && !have(c.view, c.c)) { s2.anns.push({ id: aid(), t: 'cmark', view: c.view, c: [c.c.cx, c.c.cy], r: c.c.r }); n++; } setMsg(`${n} centre marks added`); })} />
-            <Btn id="dw-auto-balloon" label="Auto balloon" go={() => edit((_d, s2) => { s2.anns.push(...autoBalloons(s2, r)); })} />
+            <Btn id="dw-auto-balloon" label="Auto balloon" go={() => edit((_d, s2) => { const nb = autoBalloons(s2, r, ctx); s2.anns.push(...nb); setMsg(`${nb.length} balloon${nb.length === 1 ? '' : 's'} added`); })} />
             {pend && (tool === 'base' || tool === 'chain') && <Btn label="Done" go={() => setPend(null)} />}
           </View>
         </>}
@@ -306,15 +320,33 @@ export default function DrawingStudio(p: Props) {
           <Pick label="Section hatch" value={dd.hatch} opts={HATCHES} set={k => setDoc(d => { d.hatch = k; })} />
           <View style={s.row}><Btn label="Border" on={dd.border} go={() => setDoc(d => { d.border = !d.border; })} /><Btn label="Zones (A–D, 1–8)" on={dd.zones} go={() => setDoc(d => { d.zones = !d.zones; })} /><Btn label="Title block" on={dd.titleBlock} go={() => setDoc(d => { d.titleBlock = !d.titleBlock; })} /></View>
           <Text style={s.fl}>Layers</Text><View style={s.row}>{LAYERS.map(l => <Btn key={l.key} label={l.label} on={dd.layers[l.key] !== false} go={() => setDoc(d => { d.layers[l.key] = d.layers[l.key] === false; })} />)}</View>
+          <Text style={s.fl}>Title block templates</Text>
+          <View style={s.row}>{TEMPLATES().map(t => <Btn key={t.name} id={`dw-tpl-${t.name}`} label={t.name} go={() => { setDoc(d => { d.props = { ...d.props, ...t.props } as any; if (t.std) d.std = t.std; if (t.arrow) d.arrow = t.arrow; }); setMsg(`Template "${t.name}" applied.`); }} />)}<Btn id="dw-tpl-save" label="Save current as template" go={() => { try { const all = JSON.parse(localStorage.getItem('dwg-tb-templates') ?? '[]'); const name = `${P.company || 'My template'} ${all.length + 1}`; all.push({ name, props: { company: P.company, checkedBy: P.checkedBy, approvedBy: P.approvedBy, finish: P.finish, tolerance: P.tolerance, drawnBy: P.drawnBy }, std: dd.std, arrow: dd.arrow }); localStorage.setItem('dwg-tb-templates', JSON.stringify(all)); setMsg(`Saved as "${name}".`); } catch { setMsg('Could not save the template here.'); } }} /></View>
           <Text style={s.fl}>Title block properties</Text><View style={s.row}>{propRows.map(([k, l]) => <Txt key={k} label={l} value={P[k]} set={t => setDoc(d => { (d.props as any)[k] = t; })} w={160} />)}</View>
           <Btn id="dw-rearrange" label="Arrange the standard views again" go={() => edit((d, s2) => { arrangeStandard(d, s2, ctx); setSel(null); })} />
         </>}
+        {group === 'asm' && (() => {
+          const asm: Asm = doc.asm ?? defaultAsm(), names = p.parts.map(q => q.name), setAsm = (f: (a: Asm) => void) => { const n: Asm = JSON.parse(JSON.stringify(asm)); f(n); commit(d => ({ ...d, asm: n })); };
+          return <>
+            <Text style={s.k}>Build an assembly drawing from the parts in this workspace. Each part keeps its own shape; here you place them, spread them apart for an exploded view, and the bill of materials and balloons follow.</Text>
+            <View style={s.row}><Btn id="dw-asm-on" label={asm.on ? 'Assembly drawing: on' : 'Assembly drawing: off'} on={asm.on} go={() => setAsm(a => { a.on = !a.on; if (a.on && !a.items.length) { a.items = arrangeInRow(p.parts, names); } })} /></View>
+            {asm.on && <>
+              <Text style={s.fl}>Parts in the assembly</Text>
+              <View style={s.row}>{names.map(n => <Btn key={n} label={n} on={asm.items.some(i => i.name === n)} go={() => setAsm(a => { if (a.items.some(i => i.name === n)) a.items = a.items.filter(i => i.name !== n); else a.items.push({ name: n, at: [0, 0, 0], qty: 1 }); })} />)}<Btn id="dw-asm-row" label="Arrange in a row" go={() => setAsm(a => { a.items = arrangeInRow(p.parts, a.items.map(i => i.name)).map((q, k) => ({ ...q, qty: a.items[k].qty })); })} /></View>
+              {asm.items.map((it, k) => <View key={it.name} style={s.row}><Text style={[s.fl, { width: 90 }]} numberOfLines={1}>{k + 1}. {it.name}</Text>{(['X', 'Y', 'Z'] as const).map((ax, q) => <Num key={ax} label={`${ax} (mm)`} value={r1(it.at[q])} set={n => setAsm(a => { a.items[k].at[q] = n ?? 0; })} w={56} />)}<Num label="Qty" value={it.qty} set={n => setAsm(a => { a.items[k].qty = Math.max(1, Math.round(n ?? 1)); })} w={40} /></View>)}
+              <View style={s.row}><Num label="Explode distance (mm per part)" value={asm.explode} set={n => setAsm(a => { a.explode = n ?? 0; })} w={70} /><Pick label="Along" value={String(asm.axis) as any} opts={[{ key: '0', label: 'X' }, { key: '1', label: 'Y' }, { key: '2', label: 'Z' }]} set={k => setAsm(a => { a.axis = Number(k) as 0 | 1 | 2; })} /></View>
+              <View style={s.row}><Btn id="dw-asm-bom" label="Add bill of materials" go={() => { edit((_d, s2) => { if (!s2.anns.some(q => q.t === 'bom')) { const [tx, ty] = nextTablePos(s2, r, ctx); s2.anns.push({ id: aid(), t: 'bom', x: tx, y: ty }); } }); }} /><Btn id="dw-asm-balloons" label="Balloon every part" go={() => edit((_d, s2) => { const nb = autoBalloons(s2, r, ctx); s2.anns.push(...nb); setMsg(`${nb.length} balloons added`); })} /></View>
+            </>}
+          </>;
+        })()}
         {group === 'out' && <>
           <View style={s.row}>
             <Btn id="dw-pdf" label="Save as PDF" go={p.onPdf} /><Btn id="dw-print" label="Print" go={p.onPrint} />
             <Btn id="dw-svg" label="Download SVG" go={() => { void p.save(`${p.base}-${sh.name}.svg`, sheetSvg()).then(() => setMsg('Saved')); }} />
             <Btn id="dw-dxf" label="Download DXF" go={() => { void p.save(`${p.base}-${sh.name}.dxf`, toDxf(r.prims, r.page)).then(() => setMsg('DXF saved. It opens in AutoCAD, SolidWorks, FreeCAD and others.')); }} />
           </View>
+          <Text style={s.fl}>Import a DXF drawing onto this sheet</Text>
+          <View style={s.row}>{Platform.OS === 'web' ? React.createElement('input', { type: 'file', accept: '.dxf', 'data-testid': 'dxf-file', onChange: async (e: any) => { const f = e.target.files?.[0]; if (!f) return; try { const im = parseDxf(await f.text()); if (!im.prims.length) { setMsg('No lines, circles, arcs, polylines or text found in that DXF.'); return; } if (im.prims.length > 40000) { setMsg('That DXF has too many entities for the sheet (over 40000).'); return; } const w = im.box[2] - im.box[0] || 1, h = im.box[3] - im.box[1] || 1, aw = r.area[2] - r.area[0], ah = r.area[3] - r.area[1], fit = Math.min((aw * 0.6) / w, (ah * 0.6) / h), sc = Number(fit.toPrecision(2)), sk = Object.entries(im.skipped).map(([k, n]) => `${n} ${k}`).join(', '); edit((_d, s2) => { s2.anns.push({ id: aid(), t: 'dxf', x: r.area[0] + 10, y: r.area[1] + 10, s: sc, box: im.box, prims: im.prims, name: f.name }); }); setMsg(`Imported ${im.prims.length} items from ${f.name}.${sk ? ` Not drawn: ${sk}.` : ''}`); } catch { setMsg('That file could not be read as a DXF.'); } e.target.value = ''; } }) : null}</View>
           <Text style={s.k}>PDF and print include every sheet, scaled to the paper chosen below. SVG and DXF are the sheet you are looking at, in millimetres.</Text>
           <Btn label="Start the drawing again" danger go={() => { commit(d => ({ ...d, drawing: undefined })); setSel(null); setSi(0); setMsg('Drawing reset to the standard layout.'); }} />
         </>}
