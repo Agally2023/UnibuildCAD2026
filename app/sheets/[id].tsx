@@ -45,17 +45,18 @@ export default function Sheets() {
   const toggle = (k: string) => setSel(a => (a.includes(k) ? (a.length > 1 ? a.filter(x => x !== k) : a) : [...a, k]));
   const secs = useMemo(() => views.filter(x => x.v.kind === 'section').map((x, i) => ({ axis: (x.v as any).axis, pos: (x.v as any).pos, flip: (x.v as any).flip, letter: 'AB'[i] })), [views]);
   const rc = useMemo(() => rebarLabels(els, lib, stories), [els, lib, stories]);
-  const o: SheetOpts = { ...opts, secs, rc };
+  const elevs = useMemo(() => views.filter(x => x.v.kind === 'elevation' && sel.includes(x.key)).map((x, i) => ({ side: (x.v as any).side, n: i + 1 })), [views, sel]);
+  const o: SheetOpts = { ...opts, secs, elevs, rc };
   const reg = views.map((x, i) => ({ no: `A-${String(i + 1).padStart(2, '0')}`, title: x.label }));
   const date = new Date().toISOString().slice(0, 10), info = { project: name || 'Project', client, drawnBy: by, date };
-  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper); return sheetSvg(makeDrawing(els, lib, stories, v, s, o, reg), paper, s, no, info, plabel, o); };
-  const manyScale = (sc: number | null) => sc ?? fitScaleMany(els, lib, stories, picked.map(x => x.v), paper);
+  const build = (v: SheetView, no: string, sc: number | null) => { const s = sc ?? fitScale(els, lib, stories, v, paper, o); return sheetSvg(makeDrawing(els, lib, stories, v, s, o, reg), paper, s, no, info, plabel, o); };
+  const manyScale = (sc: number | null) => sc ?? fitScaleMany(els, lib, stories, picked.map(x => x.v), paper, o);
   const svg = useMemo(() => {
     if (!cur) return '';
     if (many) { const sc = manyScale(scale); return sheetSvg(compositeDrawing(els, lib, stories, picked.map(x => x.v), paper, sc, sheetTitle, o, reg), paper, sc, 'A-C1', info, plabel, o); }
     return build(cur.v, `A-${String(views.indexOf(cur) + 1).padStart(2, '0')}`, scale);
   }, [sel, paper, scale, name, client, by, sheetTitle, els, lib, stories, opts, rc]);
-  const used = !cur ? 100 : many ? manyScale(scale) : scale ?? fitScale(els, lib, stories, cur.v, paper);
+  const used = !cur ? 100 : many ? manyScale(scale) : scale ?? fitScale(els, lib, stories, cur.v, paper, o);
 
   const fname = `${(name || 'Unibuild').replace(/[^A-Za-z0-9_-]+/g, '_')}-${many ? 'composite' : sel[0].replace(':', '-')}`;
   const setSvgs = (all: boolean) => (all ? views.map((x, i) => build(x.v, `A-${String(i + 1).padStart(2, '0')}`, null)) : [svg]);
@@ -75,7 +76,7 @@ export default function Sheets() {
       <View style={s.row}>{views.map(x => <Chip key={x.key} on={sel.includes(x.key)} label={x.label} go={() => toggle(x.key)} />)}</View>
       <Text style={s.h2}>Drawing aids</Text>
       <View style={s.row}>
-        {([['north', 'North arrow'], ['scalebar', 'Scale bar'], ['tags', 'Door and window tags'], ['chains', 'Dimension chains'], ['secMarks', 'Section markers'], ['struct', 'Column and beam marks'], ['rebar', 'Reinforcement on marks'], ['hatch', 'Material hatches'], ['cloud', 'Revision cloud']] as const).map(([k, l]) => <Chip key={k} on={!!opts[k]} label={l} go={() => up({ [k]: !opts[k] } as any)} />)}
+        {([['north', 'North arrow'], ['scalebar', 'Scale bar'], ['tags', 'Door and window tags'], ['chains', 'Dimension chains'], ['secMarks', 'Section and elevation markers'], ['struct', 'Column and beam marks'], ['rebar', 'Reinforcement on marks'], ['hatch', 'Material hatches'], ['cloud', 'Revision cloud']] as const).map(([k, l]) => <Chip key={k} on={!!opts[k]} label={l} go={() => up({ [k]: !opts[k] } as any)} />)}
       </View>
       <Text style={s.k}>Tags and marks match the door, window and structural schedules. Reinforcement is a preliminary design (C30/37, Eurocode 2, office loading): check it in the Design module before use.</Text>
       <Text style={s.h2}>General notes (one per line)</Text>

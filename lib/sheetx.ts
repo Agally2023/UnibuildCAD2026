@@ -9,12 +9,15 @@ import type { Drawing } from './sheet';
 
 type Pt = [number, number];
 export type Rev = { rev: string; desc: string; date: string; by: string };
+export type ElevMark = { side: 'N' | 'S' | 'E' | 'W'; n: number };
+// plans with elevation markers get a wider margin so the markers sit clear of the dimension chains
+export const planMargin = (o?: SheetOpts) => (o?.secMarks && o.elevs?.length ? 3.7 : 2.5);
 export type SecMark = { axis: 'x' | 'y'; pos: number; flip: boolean; letter: string };
 export type SheetOpts = {
   north: boolean; scalebar: boolean; tags: boolean; chains: boolean; secMarks: boolean; struct: boolean; rebar: boolean; hatch: boolean; cloud: boolean;
-  notes: string; revs: Rev[]; secs: SecMark[]; rc?: Rc;
+  notes: string; revs: Rev[]; secs: SecMark[]; elevs: ElevMark[]; rc?: Rc;
 };
-export const defaultOpts = (): SheetOpts => ({ north: true, scalebar: true, tags: true, chains: true, secMarks: true, struct: true, rebar: false, hatch: true, cloud: false, notes: '', revs: [], secs: [] });
+export const defaultOpts = (): SheetOpts => ({ north: true, scalebar: true, tags: true, chains: true, secMarks: true, struct: true, rebar: false, hatch: true, cloud: false, notes: '', revs: [], secs: [], elevs: [] });
 export type Rc = { cols: Record<string, string>; beams: Record<string, string> };
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -113,7 +116,7 @@ export function sizeOfEl(e: El, lib: Lib[]): string {
 }
 
 export function planExtras(els: El[], lib: Lib[], stories: Story[], storyId: string, scale: number, o: SheetOpts): string {
-  const list = [...stories].sort((a, b) => a.elevation_m - b.elevation_m), first = list[0]?.id, ex = modelExtent(els), m = 2.5, k = 1000 / scale;
+  const list = [...stories].sort((a, b) => a.elevation_m - b.elevation_m), first = list[0]?.id, ex = modelExtent(els), m = planMargin(o), k = 1000 / scale;
   const X = (x: number) => (x - ex.x0 + m) * k, Y = (y: number) => (y - ex.y0 + m) * k;
   const here = els.filter(e => (e.type === 'grid' ? true : (e.story_id ?? first) === storyId)), of = (t: string) => here.filter(e => e.type === t);
   let s = '';
@@ -144,6 +147,15 @@ export function planExtras(els: El[], lib: Lib[], stories: Story[], storyId: str
     const a: Pt = sc.axis === 'y' ? [X(ex.x0) - 4, Y(sc.pos)] : [X(sc.pos), Y(ex.y0) - 4], b: Pt = sc.axis === 'y' ? [X(ex.x1) + 4, Y(sc.pos)] : [X(sc.pos), Y(ex.y1) + 4];
     s += ln(a, b, 0.4, ' stroke-dasharray="8 1.5 1.5 1.5"');
     for (const p of [a, b]) { s += `<circle cx="${f2(p[0])}" cy="${f2(p[1])}" r="3" fill="#fff" stroke="${INK}" stroke-width="0.3"/>${txt(p[0], p[1] + 1.2, sc.letter, 3.4, 'middle', ' font-weight="bold"')}`; const dl = Math.hypot(d[0], d[1]) || 1, ux = d[0] / dl, uy = d[1] / dl, q: Pt = [p[0] + ux * 11, p[1] + uy * 11]; s += ln([p[0] + ux * 3, p[1] + uy * 3], q, 0.4) + `<path d="M ${f2(q[0])} ${f2(q[1])} l ${f2(-ux * 3 - uy * 1.2)} ${f2(-uy * 3 + ux * 1.2)} l ${f2(uy * 2.4)} ${f2(-ux * 2.4)} Z" fill="${INK}"/>`; }
+  }
+  if (o.secMarks) for (const e of o.elevs ?? []) {
+    // the side named is the one you stand on, looking at the building: south is the bottom of the plan, east the right
+    const mx = (ex.x0 + ex.x1) / 2, my = (ex.y0 + ex.y1) / 2, d = 3.1;
+    const at: Pt = e.side === 'S' ? [X(mx), Y(ex.y1 + d)] : e.side === 'N' ? [X(mx), Y(ex.y0 - d)] : e.side === 'E' ? [X(ex.x1 + d), Y(my)] : [X(ex.x0 - d), Y(my)];
+    const ux = e.side === 'E' ? -1 : e.side === 'W' ? 1 : 0, uy = e.side === 'S' ? -1 : e.side === 'N' ? 1 : 0;   // points at the building
+    const base: Pt = [at[0] + ux * 3.6, at[1] + uy * 3.6], tip: Pt = [at[0] + ux * 8, at[1] + uy * 8];
+    s += `<circle cx="${f2(at[0])}" cy="${f2(at[1])}" r="3.6" fill="#fff" stroke="${INK}" stroke-width="0.35"/>${txt(at[0], at[1] + 1.3, String(e.n), 3.6, 'middle', ' font-weight="bold"')}`;
+    s += `<path d="M ${f2(tip[0])} ${f2(tip[1])} L ${f2(base[0] - uy * 2.6)} ${f2(base[1] + ux * 2.6)} L ${f2(base[0] + uy * 2.6)} ${f2(base[1] - ux * 2.6)} Z" fill="${INK}"/>`;
   }
   return s;
 }
