@@ -177,7 +177,12 @@ export default function Parts() {
     if (tab !== 'tpl') return;
     const todo = [...TEMPLATES.map(x => ({ key: x.key, group: x.group as string, make: x.make })), { key: 'bracket', group: 'mechanical', make: sampleBracket }].filter(x => (ws === 'mech' ? x.group === 'mechanical' : x.group !== 'mechanical') && !THUMBS.has(x.key) && !IMGS.has(x.key));
     let dead = false;
-    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { const d = todo[i].make(); let u = ''; if (d.vspec && Platform.OS === 'web') { const pv = evalParams(d.params).values; u = paintVehicleURL(buildVehicle(d.vspec, pv, paintFor(d.name)), VIEWS.iso.q, 130, 76, 2, 4); } if (!u) { const rb = rebuild(d); if (Platform.OS === 'web') { const lk = finishLook(d.density, d.finish); u = paintMeshURL(rb.mesh, VIEWS.iso.q, 130, 76, lk.color, lk.metal); } if (!u) THUMBS.set(todo[i].key, wirePath(rb.mesh, VIEWS.iso.q, 130, 76, 6)); } if (u) IMGS.set(todo[i].key, u); } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
+    // previews are kept between visits, so the heavy boolean rebuilds run once per template, not on every open
+    const LS = (() => { try { return Platform.OS === 'web' ? (globalThis as any).localStorage as Storage : null; } catch { return null; } })();
+    const ck = (k: string) => `ucad:thumb2:${k}`;
+    for (let j = todo.length - 1; j >= 0; j--) { try { const c = LS?.getItem(ck(todo[j].key)); if (c) { if (c[0] === 'I') IMGS.set(todo[j].key, c.slice(1)); else THUMBS.set(todo[j].key, c.slice(1)); todo.splice(j, 1); } } catch { /* storage unavailable */ } }
+    const save = (k: string, v: string) => { try { LS?.setItem(ck(k), v); } catch { /* quota: fine */ } };
+    const next = (i: number) => { if (dead || i >= todo.length) return; setTimeout(() => { if (dead) return; try { const d = todo[i].make(); let u = ''; if (d.vspec && Platform.OS === 'web') { const pv = evalParams(d.params).values; u = paintVehicleURL(buildVehicle(d.vspec, pv, paintFor(d.name)), VIEWS.iso.q, 130, 76, 2, 4); } if (!u) { const rb = rebuild(d); if (Platform.OS === 'web') { const lk = finishLook(d.density, d.finish); u = paintMeshURL(rb.mesh, VIEWS.iso.q, 130, 76, lk.color, lk.metal); } if (!u) { const wp = wirePath(rb.mesh, VIEWS.iso.q, 130, 76, 6); THUMBS.set(todo[i].key, wp); if (wp) save(todo[i].key, 'W' + wp); } } if (u) { IMGS.set(todo[i].key, u); save(todo[i].key, 'I' + u); } } catch { THUMBS.set(todo[i].key, ''); } setThumbTick(n => n + 1); next(i + 1); }, 30); };
     next(0); return () => { dead = true; };
   }, [tab, ws]);
   const edges = useMemo(() => featureEdges(R.mesh, 30), [R.mesh]);
