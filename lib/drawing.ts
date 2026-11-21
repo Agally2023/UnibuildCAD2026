@@ -89,36 +89,53 @@ export function edgePieces(m: Mesh): Piece[] {
   const nv = m.v.length / 3; if (!nv) return [];
   let lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], m.v[i * 3 + k]); hi[k] = Math.max(hi[k], m.v[i * 3 + k]); }
-  const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1, cell = diag / 40, tol = diag * 2e-6, rk = (x: number) => Math.round(x / (diag * 1e-6));
-  const uid = new Map<string, number>(), pts: V3[] = [], gridv = new Map<string, number[]>(), vid = new Array<number>(nv);
-  const gk = (x: number, y: number, z: number) => `${Math.floor((x - lo[0]) / cell)},${Math.floor((y - lo[1]) / cell)},${Math.floor((z - lo[2]) / cell)}`;
+  const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1, N = Math.max(40, Math.min(250, Math.round(Math.sqrt(nv / 10)))), cell = diag / N, tol = diag * 2e-6, rk = (x: number) => Math.round(x / (diag * 1e-6));
+  const uid = new Map<string, number>(), pts: V3[] = [], gridv = new Map<number, number[]>(), vid = new Array<number>(nv);
+  const NC = N + 2, ci = (x: number, k: number) => Math.min(NC - 1, Math.max(0, Math.floor((x - lo[k]) / cell))), gk = (x: number, y: number, z: number) => (ci(x, 0) * NC + ci(y, 1)) * NC + ci(z, 2);
   for (let i = 0; i < nv; i++) {
     const x = m.v[i * 3], y = m.v[i * 3 + 1], z = m.v[i * 3 + 2], key = `${rk(x)},${rk(y)},${rk(z)}`; let id = uid.get(key);
-    if (id === undefined) { id = pts.length; uid.set(key, id); pts.push([x, y, z]); const g = gk(x, y, z); (gridv.get(g) ?? gridv.set(g, []).get(g)!).push(id); }
+    if (id === undefined) { id = pts.length; uid.set(key, id); pts.push([x, y, z]); const g = gk(x, y, z); let l = gridv.get(g); if (!l) { l = []; gridv.set(g, l); } l.push(id); }
     vid[i] = id;
   }
+  const mark = new Int32Array(pts.length); let stamp = 0;
+  // every grid cell the segment passes through (Amanatides and Woo), so that vertices lying on the edge are found without sampling
   const near = (a: V3, b: V3): number[] => {
-    const L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), steps = Math.max(2, Math.ceil(L / (cell / 4))), seen = new Set<number>(), out: number[] = [];
-    for (let s = 0; s <= steps; s++) { const t = s / steps, g = gridv.get(gk(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)); if (g) for (const id of g) if (!seen.has(id)) { seen.add(id); out.push(id); } }
+    stamp++; const out: number[] = [];
+    let ix = ci(a[0], 0), iy = ci(a[1], 1), iz = ci(a[2], 2); const ex = ci(b[0], 0), ey = ci(b[1], 1), ez = ci(b[2], 2);
+    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
+    const nx = (i: number, d: number, k: number) => (d === 0 ? Infinity : (lo[k] + (d > 0 ? i + 1 : i) * cell - a[k]) / d);
+    let tx = nx(ix, dx, 0), ty = nx(iy, dy, 1), tz = nx(iz, dz, 2); const ddx = dx === 0 ? Infinity : cell / Math.abs(dx), ddy = dy === 0 ? Infinity : cell / Math.abs(dy), ddz = dz === 0 ? Infinity : cell / Math.abs(dz);
+    for (let guard = 0; guard < 4 * NC + 8; guard++) {
+      const g = gridv.get((ix * NC + iy) * NC + iz); if (g) for (const id of g) if (mark[id] !== stamp) { mark[id] = stamp; out.push(id); }
+      if (ix === ex && iy === ey && iz === ez) break;
+      if (tx <= ty && tx <= tz) { if (ix === ex) { tx = Infinity; if (ty === Infinity && tz === Infinity) break; continue; } ix += sx; tx += ddx; }
+      else if (ty <= tz) { if (iy === ey) { ty = Infinity; if (tx === Infinity && tz === Infinity) break; continue; } iy += sy; ty += ddy; }
+      else { if (iz === ez) { tz = Infinity; if (tx === Infinity && ty === Infinity) break; continue; } iz += sz; tz += ddz; }
+    }
     return out;
   };
-  const map = new Map<string, Piece>();
+  const map = new Map<number, Piece>(), splits = new Map<number, { from: number; ids: number[] }>(), NP = pts.length + 1;
   for (let i = 0; i < m.f.length; i += 3) {
     const ids = [vid[m.f[i]], vid[m.f[i + 1]], vid[m.f[i + 2]]], A = pts[ids[0]], B = pts[ids[1]], C = pts[ids[2]];
     const n = cross([B[0] - A[0], B[1] - A[1], B[2] - A[2]], [C[0] - A[0], C[1] - A[1], C[2] - A[2]]), l = Math.hypot(...n); if (l < 1e-12) continue;
     const nn: V3 = [n[0] / l, n[1] / l, n[2] / l];
     for (let e = 0; e < 3; e++) {
       const ia = ids[e], ib = ids[(e + 1) % 3]; if (ia === ib) continue;
-      const a = pts[ia], b = pts[ib], d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = dot(d, d), on: { t: number; id: number }[] = [{ t: 0, id: ia }, { t: 1, id: ib }];
-      for (const id of near(a, b)) {
-        if (id === ia || id === ib) continue;
-        const p = pts[id], t = dot([p[0] - a[0], p[1] - a[1], p[2] - a[2]], d) / L2; if (t <= 1e-9 || t >= 1 - 1e-9) continue;
-        const dx = a[0] + d[0] * t - p[0], dy = a[1] + d[1] * t - p[1], dz = a[2] + d[2] * t - p[2]; if (Math.hypot(dx, dy, dz) < tol * 50) on.push({ t, id });
+      const ek = ia < ib ? ia * NP + ib : ib * NP + ia, hit = splits.get(ek);
+      let chain: number[];
+      if (hit) chain = hit.from === ia ? hit.ids : [...hit.ids].reverse();   // the other face already cut this edge
+      else {
+        const a = pts[ia], b = pts[ib], d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L2 = dot(d, d), on: { t: number; id: number }[] = [{ t: 0, id: ia }, { t: 1, id: ib }];
+        for (const id of near(a, b)) {
+          if (id === ia || id === ib) continue;
+          const p = pts[id], t = dot([p[0] - a[0], p[1] - a[1], p[2] - a[2]], d) / L2; if (t <= 1e-9 || t >= 1 - 1e-9) continue;
+          const dx = a[0] + d[0] * t - p[0], dy = a[1] + d[1] * t - p[1], dz = a[2] + d[2] * t - p[2]; if (Math.hypot(dx, dy, dz) < tol * 50) on.push({ t, id });
+        }
+        on.sort((p, q) => p.t - q.t); chain = on.map(q => q.id); splits.set(ek, { from: ia, ids: chain });
       }
-      on.sort((p, q) => p.t - q.t);
-      for (let k = 0; k + 1 < on.length; k++) {
-        const u = on[k].id, w = on[k + 1].id; if (u === w) continue;
-        const key = u < w ? `${u}|${w}` : `${w}|${u}`, pc = map.get(key) ?? { seg: [...pts[u], ...pts[w]], ns: [] }; pc.ns.push(nn); map.set(key, pc);
+      for (let k = 0; k + 1 < chain.length; k++) {
+        const u = chain[k], w = chain[k + 1]; if (u === w) continue;
+        const key = u < w ? u * NP + w : w * NP + u, pc = map.get(key) ?? { seg: [...pts[u], ...pts[w]], ns: [] }; pc.ns.push(nn); map.set(key, pc);
       }
     }
   }
