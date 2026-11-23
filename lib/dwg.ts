@@ -1,5 +1,6 @@
 // The drawing engine. renderDrawing() turns a drawing document and a part into primitives on a sheet (mm): views with hidden lines, sections,
 // details, auxiliary and broken views, dimensions, symbols, tables, border and title block. Output formats (SVG, DXF) are in dwgOut.ts.
+import { geoPrims } from './dwgSketch';
 import { placeDxf } from './dxfIn';
 import { uid } from './sketch';
 import type { PartDoc } from './parts';
@@ -432,6 +433,7 @@ export function renderDrawing(dd: DrawingDoc, sheetIndex: number, ctx: Ctx): Ren
       case 'thread': { const C = P(an.c), r = an.r * (vw?.s ?? 1), nr = an.nom * (vw?.s ?? 1), at = P(an.at), dl = Math.hypot(at[0] - C[0], at[1] - C[1]) || 1, ux = (at[0] - C[0]) / dl, uy = (at[1] - C[1]) / dl, edge: Pt = [C[0] + ux * nr, C[1] + uy * nr];
         out.push({ k: 'a', c: C, r: nr, a0: 0, a1: 270, w: 0.18, layer: 'cen' }); void r;   // cosmetic thread: three quarters of the major (or minor) circle
         line(out, edge, at, 'dim', 0.3); arrowhead(out, edge, -ux, -uy, dd.arrow, 'dim', ts * 0.8); const right = at[0] >= C[0]; line(out, at, [at[0] + (right ? 1 : -1) * (an.text.length * ts * 0.6 + 2), at[1]], 'dim', 0.25); text(out, [at[0] + (right ? 1 : -1) * 1, at[1] - 0.8], an.text, ts, 'dim', right ? 'start' : 'end'); break; }
+      case 'geo': { for (const q of geoPrims(an)) out.push(q); break; }
       case 'dxf': { for (const q of placeDxf(an.prims, an.box, an.x, an.y, an.s)) out.push(q); break; }
       case 'symbol': { const rows = SYMBOL_ROWS[an.name]; if (rows) table(out, an.x, an.y, rows.rows, 2.8, true, rows.title); break; }
       case 'htable': { if (!vw) break; const cs = circlesInView(vw.id, circles).filter(q => q.c.full).sort((a, b) => a.c.cx - b.c.cx || a.c.cy - b.c.cy), st = an.style ?? 'xy', rows: string[][] = [st === 'group' ? ['TAGS', 'QTY', 'DIA'] : st === 'polar' ? ['TAG', 'R', 'ANGLE', 'DIA'] : ['TAG', 'X', 'Y', 'DIA']];

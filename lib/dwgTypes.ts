@@ -77,6 +77,7 @@ export type Ann =
   | (Base & { t: 'rev'; x: number; y: number; rows: { rev: string; desc: string; date: string; by: string }[] })
   | (Base & { t: 'table'; x: number; y: number; title: string; rows: string[][] })
   | (Base & { t: 'cloud'; x: number; y: number; w: number; h: number; tag: string })
+  | (Base & { t: 'geo'; g: 'pl' | 'ci' | 'ar' | 'el'; pts: [number, number][]; closed?: boolean; r?: number; a0?: number; a1?: number; rx?: number; ry?: number; rot?: number; lt?: 'cont' | 'hid' | 'cen'; w?: number; col?: string })   // free sketch geometry in sheet millimetres (pl polyline, ci circle, ar arc, el ellipse)
   | (Base & { t: 'fill'; view: string; u0: number; v0: number; u1: number; v1: number; style: HatchStyle; angle: number; gap: number });
 export type AnnType = Ann['t'];
 export type SymName = 'gentol' | 'notes' | 'finish' | 'edges';

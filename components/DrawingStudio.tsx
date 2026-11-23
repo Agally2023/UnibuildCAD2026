@@ -2,12 +2,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PrintOptions from './PrintOptions';
-import { SYMBOLS, DISPLAYS, HATCHES, GDT, WELDS, LAYERS, type Ann, type DView, type DrawingDoc, type Sheet, type Layer, type Display, type HatchStyle, type TolType } from '../lib/dwgTypes';
+import { type Prim, SYMBOLS, DISPLAYS, HATCHES, GDT, WELDS, LAYERS, type Ann, type DView, type DrawingDoc, type Sheet, type Layer, type Display, type HatchStyle, type TolType } from '../lib/dwgTypes';
 import { SCALES, renderDrawing, scaleText, newDrawing, arrangeStandard, blankDoc, camOf, type Ctx, type Rendered, type ViewInfo } from '../lib/dwg';
 import { VIEW_NAMES, dot, type NamedView, type Pt } from '../lib/dwgGeom';
 import { toSvg, toDxf } from '../lib/dwgOut';
 import { addAux, addDetail, addModelView, addSection, aid, autoBalloons, autoDims, circle3, cloneDoc, cutChoices, holeText, meshBox, nextTablePos, threadText } from '../lib/dwgEdit';
 import { uid } from '../lib/sketch';
+import { POINTS_NEEDED, arrayPolar, arrayRect, chamferCorner, chamferLines, distTo, explode, filletCorner, filletLines, geoPrims, gridPt, joinAll, mirrorM, moveM, nearestVertex, offset as offsetGeo, orthoPt, parseCoord, pl, rotateM, scaleM, shapeOf, snapsOf, transform, bboxOf, type Body, type Geo, type Mat, type SketchTool } from '../lib/dwgSketch';
 import { parseDxf } from '../lib/dxfIn';
 import { arrangeInRow, defaultAsm, type Asm } from '../lib/assembly';
 import { pageMm } from '../lib/paper';
@@ -36,6 +37,27 @@ const NOTE_TOOLS: Tool[] = [
 ];
 const ALL_TOOLS = [...VIEW_TOOLS, ...DIM_TOOLS, ...NOTE_TOOLS];
 const r1 = (x: number) => Math.round(x * 100) / 100;
+const primsSvg = (ps: Prim[], col: string, w = 1.3): string => ps.map(q => {
+  const st = `fill="none" stroke="${col}" stroke-width="${w}" vector-effect="non-scaling-stroke" stroke-linecap="round"`;
+  if (q.k === 'l') return `<line x1="${q.a[0]}" y1="${q.a[1]}" x2="${q.b[0]}" y2="${q.b[1]}" ${st}/>`;
+  if (q.k === 'c') return `<circle cx="${q.c[0]}" cy="${q.c[1]}" r="${q.r}" ${st}/>`;
+  if (q.k === 'p') return `<${q.closed ? 'polygon' : 'polyline'} points="${q.pts.map(z => z.join(',')).join(' ')}" ${st}/>`;
+  if (q.k === 'a') { const a0 = (q.a0 * Math.PI) / 180, a1 = (q.a1 * Math.PI) / 180; return `<path d="M${q.c[0] + q.r * Math.cos(a0)} ${q.c[1] + q.r * Math.sin(a0)} A${q.r} ${q.r} 0 ${(((q.a1 - q.a0) % 360) + 360) % 360 > 180 ? 1 : 0} 1 ${q.c[0] + q.r * Math.cos(a1)} ${q.c[1] + q.r * Math.sin(a1)}" ${st}/>`; }
+  return '';
+}).join('');
+const DRAW_TOOLS: [string, string, string][] = [
+  ['line', 'Line', 'Tap the start, then the end. Type x,y or @dx,dy or @length<angle in the command line for exact points.'], ['pline', 'Polyline', 'Tap each corner. Tap the last point twice, press Enter, or use Finish to end it.'],
+  ['rect', 'Rectangle', 'Tap two opposite corners.'], ['poly', 'Polygon', 'Tap the centre, then a point for the size. Set the number of sides below.'],
+  ['circle', 'Circle', 'Tap the centre, then a point on the circle. Or type the radius.'], ['c2p', 'Circle 2P', 'Tap the two ends of a diameter.'], ['c3p', 'Circle 3P', 'Tap three points on the circle.'],
+  ['arc3', 'Arc 3P', 'Tap the start, a point on the arc, then the end.'], ['arcc', 'Arc C-S-E', 'Tap the centre, the start, then the end (counter-clockwise).'], ['ellipse', 'Ellipse', 'Tap the centre, the end of one axis, then a point for the other half-axis.'],
+];
+const MOD_TOOLS: [string, string, string][] = [
+  ['move', 'Move', 'Pick the object, tap the base point, then where it goes.'], ['copy', 'Copy', 'Pick the object, tap the base point, then each place for a copy. Esc to stop.'], ['rotate', 'Rotate', 'Pick the object, tap the centre, then point in the new direction (or type the angle).'],
+  ['mirror', 'Mirror', 'Pick the object, then tap the two ends of the mirror line.'], ['scale', 'Scale', 'Pick the object, set the factor below, then tap the base point.'], ['offset', 'Offset', 'Set the distance below, tap the object, then tap the side.'],
+  ['fillet', 'Fillet', 'Set the radius below. Tap near a corner of a polyline, or tap two separate lines. Radius 0 makes a sharp corner.'], ['chamfer', 'Chamfer', 'Set the distance below. Tap near a corner, or tap two separate lines.'],
+  ['arrayr', 'Array', 'Pick the objects, set rows, columns and spacing, then press Make array.'], ['arrayp', 'Polar array', 'Pick the objects, set the count and angle below, then tap the centre.'],
+];
+const ALIAS: Record<string, string> = { L: 'sk:line', LINE: 'sk:line', PL: 'sk:pline', PLINE: 'sk:pline', REC: 'sk:rect', RECT: 'sk:rect', POL: 'sk:poly', POLYGON: 'sk:poly', C: 'sk:circle', CIRCLE: 'sk:circle', C2P: 'sk:c2p', C3P: 'sk:c3p', A: 'sk:arc3', ARC: 'sk:arc3', ARCC: 'sk:arcc', EL: 'sk:ellipse', ELLIPSE: 'sk:ellipse', M: 'md:move', MOVE: 'md:move', CO: 'md:copy', COPY: 'md:copy', RO: 'md:rotate', ROTATE: 'md:rotate', MI: 'md:mirror', MIRROR: 'md:mirror', SC: 'md:scale', SCALE: 'md:scale', O: 'md:offset', OFFSET: 'md:offset', F: 'md:fillet', FILLET: 'md:fillet', CHA: 'md:chamfer', CHAMFER: 'md:chamfer', AR: 'md:arrayr', ARRAY: 'md:arrayr', ARP: 'md:arrayp', SELECT: 'select', ESC: 'select' };
 const TEMPLATES = (): { name: string; props: Partial<Record<string, string>>; std?: 'iso' | 'ansi'; arrow?: any }[] => {
   let mine: any[] = []; try { mine = JSON.parse(localStorage.getItem('dwg-tb-templates') ?? '[]'); } catch { /* none */ }
   return [{ name: 'ISO 2768-m', props: { tolerance: 'GENERAL TOLERANCES ISO 2768-m   |   BREAK SHARP EDGES 0.3 MAX' }, std: 'iso', arrow: 'filled' }, { name: 'ANSI Y14.5', props: { tolerance: 'UNLESS OTHERWISE SPECIFIED: DIMENSIONS ARE IN MILLIMETRES   |   .X ±0.5   .XX ±0.25' }, std: 'ansi', arrow: 'filled' }, { name: 'Sheet metal', props: { tolerance: 'GENERAL TOLERANCES ISO 2768-m   |   BEND RADIUS = MATERIAL THICKNESS   |   DEBURR ALL EDGES', finish: 'AS SUPPLIED' }, std: 'iso' }, ...mine];
@@ -44,10 +66,15 @@ const nm = (t: string) => { const v = parseFloat(t.replace(',', '.')); return is
 
 export default function DrawingStudio(p: Props) {
   const { doc, mesh, values, commit, setMsg } = p;
-  const [si, setSi] = useState(0), [group, setGroup] = useState<'view' | 'ann' | 'sheet' | 'asm' | 'out'>('view'), [tool, setTool] = useState('select'), [sel, setSel] = useState<string | null>(null);
-  const [pend, setPend] = useState<{ view: string; pts: Pt[]; circ?: { cx: number; cy: number; r: number } } | null>(null), [over, setOver] = useState<DrawingDoc | null>(null), [zoom, setZoom] = useState(1);
+  const [si, setSi] = useState(0), [group, setGroup] = useState<'view' | 'ann' | 'sketch' | 'sheet' | 'asm' | 'out'>('view'), [tool, setTool] = useState('select'), [sel, setSel] = useState<string | null>(null);
+  const [pend, setPend] = useState<{ view: string; pts: Pt[]; circ?: { cx: number; cy: number; r: number }; ids?: string[] } | null>(null), [over, setOver] = useState<DrawingDoc | null>(null), [zoom, setZoom] = useState(1);
   const [txt, setTxt] = useState('NOTE'), [secKind, setSecKind] = useState<'full' | 'half' | 'offset'>('full'), [secDir, setSecDir] = useState<'h' | 'v'>('h'), [round, setRound] = useState(true), [gdtSym, setGdtSym] = useState<string>('pos'), [weldT, setWeldT] = useState<string>('fillet');
   const [hover, setHover] = useState<Pt | null>(null);
+  const [vp, setVp] = useState({ z: 1, x: 0, y: 0 }), [full, setFull] = useState(Platform.OS === 'web'), [ribOpen, setRibOpen] = useState(true), [propsOpen, setPropsOpen] = useState(true);
+  const [sk, setSk] = useState({ sides: 6, inscribed: true, filletR: 5, chamD: 3, offD: 5, rows: 2, cols: 3, dx: 20, dy: 20, polN: 6, polFill: 360, turn: true, rotA: 90, scK: 2, keep: true, lt: 'cont' as 'cont' | 'hid' | 'cen', w: 0.5, ortho: false, grid: false, gridG: 5, osnap: true });
+  const [many, setMany] = useState<string[]>([]), [cmd, setCmd] = useState('');
+  const vpRef = useRef<any>(null), coordRef = useRef<any>(null), fitted = useRef(true), ptrs = useRef(new Map<number, { x: number; y: number }>()), gest = useRef<any>(null), tap = useRef<any>(null), cur = useRef<Pt | null>(null);
+  const BASE = 4;   // screen pixels per millimetre at zoom 1
   const wrap = useRef<any>(null), drag = useRef<null | { id: string; kind: 'view' | 'ann'; x0: number; y0: number; moved: boolean; start: DrawingDoc }>(null);
   const ctx: Ctx = useMemo(() => ({ doc, mesh, values, material: p.matName, mass: p.mass, bom: p.bom, date: new Date().toISOString().slice(0, 10), color: p.look.color, shine: p.look.metal, images: !over }), [doc, mesh, values, p.matName, p.mass, p.look, p.bom, !!over]);
   const stored = doc.drawing;
@@ -60,19 +87,13 @@ export default function DrawingStudio(p: Props) {
   const selView = sh.views.find(v => v.id === sel), selAnn = sh.anns.find(a => a.id === sel);
   const tdef = ALL_TOOLS.find(t => t.key === tool);
   useEffect(() => { setPend(null); }, [tool, sIdx]);
-  const svg = useMemo(() => {
-    const k = 0.5; let ov = '';
-    const box = (b: number[], col: string) => `<rect x="${b[0] - 1.5}" y="${b[1] - 1.5}" width="${b[2] - b[0] + 3}" height="${b[3] - b[1] + 3}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
-    const h = r.hits.find(q => q.id === sel); if (h) ov += box(h.box, '#1565c0');
-    if (pend) for (const q of pend.pts) { const v = r.views.find(w => w.id === pend.view); if (v) { const X = v.cx + (q[0] - v.uc) * v.s, Y = v.cy - (q[1] - v.vc) * v.s; ov += `<circle cx="${X}" cy="${Y}" r="1.4" fill="#e65100"/>`; } }
-    if (pend?.circ) { const v = r.views.find(w => w.id === pend.view); if (v) ov += `<circle cx="${v.cx + (pend.circ.cx - v.uc) * v.s}" cy="${v.cy - (pend.circ.cy - v.vc) * v.s}" r="${pend.circ.r * v.s}" fill="none" stroke="#e65100" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`; }
-    if (hover && tool !== 'select' && tool !== 'pan') ov += `<circle cx="${hover[0]}" cy="${hover[1]}" r="${k * 2.4}" fill="none" stroke="#2e7d32" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-    return toSvg(r.prims, r.page, { overlay: ov }).replace(/width="[\d.]+" height="[\d.]+"/, 'style="width:100%;height:auto;display:block"');
-  }, [r, sel, pend, hover, tool]);
+  const baseSvg = useMemo(() => toSvg(r.prims, r.page).replace(/width="[\d.]+" height="[\d.]+"/, 'style="width:100%;height:100%;display:block"'), [r]);
+  const mmpp = 1 / (BASE * vp.z);   // millimetres per screen pixel
+
 
   // ---------- pointer handling ----------
   const toMm = (e: any): Pt => { const b = wrap.current?.getBoundingClientRect?.(); if (!b) return [0, 0]; return [((e.clientX - b.left) / b.width) * r.page[0], ((e.clientY - b.top) / b.height) * r.page[1]]; };
-  const px = () => { const b = wrap.current?.getBoundingClientRect?.(); return b ? r.page[0] / b.width : 0.3; };   // mm per screen pixel
+  const px = () => mmpp;   // mm per screen pixel
   const viewAt = (X: number, Y: number): ViewInfo | undefined => { const c = r.views.filter(v => X >= v.sheetBox[0] - 8 && X <= v.sheetBox[2] + 8 && Y >= v.sheetBox[1] - 8 && Y <= v.sheetBox[3] + 8); c.sort((a, b) => (a.sheetBox[2] - a.sheetBox[0]) * (a.sheetBox[3] - a.sheetBox[1]) - (b.sheetBox[2] - b.sheetBox[0]) * (b.sheetBox[3] - b.sheetBox[1])); return c[0]; };
   const uv = (v: ViewInfo, X: number, Y: number): Pt => [v.uc + (X - v.cx) / v.s, v.vc - (Y - v.cy) / v.s];
   const snap = (X: number, Y: number, vid?: string): { v: ViewInfo; p: Pt; snapped: boolean } | null => {
@@ -82,14 +103,148 @@ export default function DrawingStudio(p: Props) {
     const v = (vid ? r.views.find(w => w.id === vid) : undefined) ?? viewAt(X, Y); return v ? { v, p: uv(v, X, Y), snapped: false } : null;
   };
   const hitAt = (X: number, Y: number): string | null => {
-    const m = Math.max(1.5, px() * 6), anns = r.hits.filter(h => h.kind === 'ann' && X >= h.box[0] - m && X <= h.box[2] + m && Y >= h.box[1] - m && Y <= h.box[3] + m).sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
+    const gh = geoAt(X, Y); if (gh) return gh;
+    const m = Math.max(1.5, px() * 6), anns = r.hits.filter(h => h.kind === 'ann' && !geoIds.has(h.id) && X >= h.box[0] - m && X <= h.box[2] + m && Y >= h.box[1] - m && Y <= h.box[3] + m).sort((a, b) => (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) - (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]));
     if (anns[0]) return anns[0].id; const v = viewAt(X, Y); return v && X >= v.sheetBox[0] && X <= v.sheetBox[2] && Y >= v.sheetBox[1] && Y <= v.sheetBox[3] ? v.id : null;
   };
   const addAnn = (a: Ann) => { edit((_d, s) => { s.anns.push(a); }); setSel(a.id); };
   const circleNear = (vid: string, q: Pt, v: ViewInfo) => { const tol = Math.max(3, px() * 10) / v.s; let best: any = null, bd = tol; for (const c of r.circles) { if (c.view !== vid) continue; const d = Math.abs(Math.hypot(q[0] - c.c.cx, q[1] - c.c.cy) - c.c.r), dc = Math.hypot(q[0] - c.c.cx, q[1] - c.c.cy); const dd2 = Math.min(d, dc < c.c.r ? dc : 1e9); if (dd2 < bd) { bd = dd2; best = c.c; } } return best as { cx: number; cy: number; r: number } | null; };
 
-  const click = (X: number, Y: number) => {
+  // ---------- sketch tools (free drawing and editing on the sheet) ----------
+  const skTool = tool.startsWith('sk:') ? (tool.slice(3) as SketchTool) : null, mdTool = tool.startsWith('md:') ? tool.slice(3) : null;
+  const geos = sh.anns.filter((a): a is Geo => a.t === 'geo'), geoIds = new Set(geos.map(g => g.id));
+  const targets = (): Geo[] => { const ids = many.length ? many : sel ? [sel] : []; return ids.map(i => geos.find(g => g.id === i)).filter(Boolean) as Geo[]; };
+  const geoAt = (X: number, Y: number): string | null => { const tol = Math.max(1.2, px() * 7); let best: string | null = null, bd = tol; for (const g of geos) { const d = distTo(g, [X, Y]); if (d < bd) { bd = d; best = g.id; } } return best; };
+  const skPt = (X: number, Y: number, prev?: Pt): { p: Pt; kind?: string } => {
+    const tol = Math.max(1.5, px() * 10);
+    if (sk.osnap) {
+      let best: Pt | null = null, bd = tol, kind = '';
+      for (const g of geos) for (const q of snapsOf(g)) { const d = Math.hypot(q.p[0] - X, q.p[1] - Y); if (d < bd) { bd = d; best = q.p; kind = q.kind; } }
+      for (const q of r.snaps) { const d = Math.hypot(q.x - X, q.y - Y); if (d < bd) { bd = d; best = [q.x, q.y]; kind = 'view'; } }
+      if (best) return { p: best, kind };
+    }
+    let q: Pt = [X, Y]; if (sk.grid) q = gridPt(q, sk.gridG); if (sk.ortho && prev) q = orthoPt(prev, q); return { p: q };
+  };
+  const styled = (b: Body, src?: Body): Body => ({ ...b, lt: src ? src.lt : sk.lt, w: src ? src.w : sk.w });
+  /** One edit: replace some shapes, add some, remove some. */
+  const change = (upd: Map<string, Body>, add: Body[], rem: string[] = []): string[] => {
+    const ids = add.map(() => aid());
+    edit((_d, s2) => { const gone = new Set(rem); s2.anns = s2.anns.filter(a => !gone.has(a.id)).map(a => (upd.has(a.id) ? ({ ...upd.get(a.id)!, id: a.id } as Ann) : a)); add.forEach((b, i) => s2.anns.push({ ...b, id: ids[i] } as Ann)); });
+    return ids;
+  };
+  const addGeo = (b: Body) => { const ids = change(new Map(), [styled(b)]); setSel(ids[0]); setMany([]); };
+  const rotDeg = (c: Pt, h: Pt) => (-Math.atan2(h[1] - c[1], h[0] - c[0]) * 180) / Math.PI;
+  const finishPline = (close = false) => { const pts = pend?.pts ?? []; if (skTool !== 'pline' || pts.length < 2) { setPend(null); return; } addGeo(pl(pts, close && pts.length > 2)); setPend(null); };
+  const ghostOf = (h: Pt): Body[] => {
+    const pts = pend?.pts ?? [];
+    if (skTool) { if (!pts.length) return []; if (skTool === 'pline') return [pl([...pts, h])]; const b = shapeOf(skTool, [...pts, h], { sides: sk.sides, inscribed: sk.inscribed }); return b ? [b] : [pl([pts[pts.length - 1], h])]; }
+    if (!mdTool) return [];
+    const T = targets();
+    if (mdTool === 'offset' && pend?.ids?.length) { const g = geos.find(q => q.id === pend.ids![0]); const o = g ? offsetGeo(g, sk.offD, h) : null; return o ? [o] : []; }
+    if (!pts.length || !T.length) return [];
+    const base = pts[0]; let m: Mat | null = null;
+    if (mdTool === 'move' || mdTool === 'copy') m = moveM(h[0] - base[0], h[1] - base[1]); else if (mdTool === 'rotate') m = rotateM(base, rotDeg(base, h)); else if (mdTool === 'mirror') m = mirrorM(base, h);
+    return m ? T.map(g => transform(g, m!)) : [];
+  };
+  const feed = (p: Pt, raw?: Pt) => {
+    const pts = pend?.pts ?? [];
+    if (skTool) {
+      if (skTool === 'pline') { const last = pts[pts.length - 1]; if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) < Math.max(0.2, mmpp * 6)) { finishPline(); return; } setPend({ view: '', pts: [...pts, p] }); return; }
+      const np = [...pts, p]; if (np.length < POINTS_NEEDED[skTool]) { setPend({ view: '', pts: np }); return; }
+      const b = shapeOf(skTool, np, { sides: sk.sides, inscribed: sk.inscribed }); setPend(null); if (!b) { setMsg('Those points do not make a shape. Try again.'); return; } addGeo(b); return;
+    }
+    if (!mdTool) return;
+    const T = targets(), upd = (f: (g: Geo) => Body) => { const m = new Map<string, Body>(); T.forEach(g => m.set(g.id, f(g))); return m; };
+    const rp = raw ?? p;
+    switch (mdTool) {
+      case 'move': case 'copy': {
+        if (!pts.length) { setPend({ view: '', pts: [p] }); return; }
+        const mx = moveM(p[0] - pts[0][0], p[1] - pts[0][1]);
+        if (mdTool === 'move') { change(upd(g => transform(g, mx)), []); setPend(null); } else change(new Map(), T.map(g => transform(g, mx))); return; }
+      case 'rotate': { if (!pts.length) { setPend({ view: '', pts: [p] }); return; } const d = rotDeg(pts[0], p); change(upd(g => transform(g, rotateM(pts[0], d))), []); setPend(null); return; }
+      case 'mirror': { if (!pts.length) { setPend({ view: '', pts: [p] }); return; } const mm = mirrorM(pts[0], p); if (sk.keep) change(new Map(), T.map(g => transform(g, mm))); else change(upd(g => transform(g, mm)), []); setPend(null); return; }
+      case 'scale': { if (!(sk.scK > 0)) { setMsg('Enter a scale factor above 0.'); return; } change(upd(g => transform(g, scaleM(p, sk.scK))), []); return; }
+      case 'arrayp': { change(new Map(), arrayPolar(T, p, sk.polN, sk.polFill, sk.turn)); return; }
+      case 'offset': {
+        if (!pend?.ids?.length) { const id = geoAt(rp[0], rp[1]); if (!id) { setMsg('Tap the object to offset.'); return; } setPend({ view: '', pts: [], ids: [id] }); setMsg('Now tap the side to offset to.'); return; }
+        const g = geos.find(q => q.id === pend.ids![0]); const o = g ? offsetGeo(g, sk.offD, rp) : null; setPend(null); if (!o) { setMsg('That distance does not fit. Try a smaller one.'); return; } change(new Map(), [styled(o, g)]); return; }
+      case 'fillet': case 'chamfer': {
+        const id = geoAt(rp[0], rp[1]); if (!id) { setMsg('Tap a corner of a polyline, or a line.'); return; }
+        const g = geos.find(q => q.id === id)!, fil = mdTool === 'fillet';
+        if (g.g === 'pl' && g.pts.length >= 3) {
+          const j = nearestVertex(g, rp);
+          if (fil) { const o = filletCorner(g, j, sk.filletR); if (!o) { setMsg('That corner cannot take this radius. Use a smaller one, or tap nearer the corner.'); return; } const ids = change(new Map(), o.map(b => styled(b, g)), [g.id]); setSel(ids[0]); setMany(ids); }
+          else { const o = chamferCorner(g, j, sk.chamD, sk.chamD); if (!o) { setMsg('That corner cannot take this distance. Use a smaller one.'); return; } change(new Map([[g.id, o]]), []); }
+          return;
+        }
+        if (g.g !== 'pl' || g.pts.length !== 2) { setMsg('Fillet and chamfer work on lines and polylines.'); return; }
+        if (!pend?.ids?.length) { setPend({ view: '', pts: [rp], ids: [id] }); setMsg('Now tap the second line.'); return; }
+        const a = geos.find(q => q.id === pend.ids![0]); if (!a || a.id === id) { setMsg('Tap a different line.'); return; }
+        const o = fil ? filletLines(a, g, pend.pts[0], rp, sk.filletR) : chamferLines(a, g, pend.pts[0], rp, sk.chamD, sk.chamD); setPend(null);
+        if (!o) { setMsg('Those two lines are parallel, or the size is too big.'); return; }
+        const ids = change(new Map(), o.map(b => styled(b, a)), [a.id, g.id]); setSel(ids[ids.length - 1]); setMany(ids); return; }
+      default: return;
+    }
+  };
+  const sketchClick = (X: number, Y: number, shift: boolean) => {
+    if (mdTool && shift) { const id = geoAt(X, Y); if (id) setMany(m => (m.includes(id) ? m.filter(q => q !== id) : [...(m.length || !sel ? m : [sel]), id])); return; }
+    const prev = pend?.pts.length ? pend.pts[pend.pts.length - 1] : undefined;
+    const { p } = skPt(X, Y, prev);
+    if (skTool) { feed(p); return; }
+    const own = mdTool === 'offset' || mdTool === 'fillet' || mdTool === 'chamfer';
+    if (!own && !targets().length) { const id = geoAt(X, Y); if (id) { setMany([id]); setSel(id); setMsg(mdTool === 'arrayr' ? 'Selected. Set the array below and press Make array.' : 'Selected. Now tap the base point.'); } else setMsg('Tap the object to change first.'); return; }
+    if (mdTool === 'arrayr') return;
+    feed(p, [X, Y]);
+  };
+  const erase = () => { const ids = many.length ? many : sel ? [sel] : []; if (!ids.length) { setMsg('Select something first.'); return; } edit((_d, s2) => { s2.anns = s2.anns.filter(a => !ids.includes(a.id)); }); setSel(null); setMany([]); };
+  const explodeSel = () => { const T = targets().filter(g => g.g === 'pl' && g.pts.length > 2); if (!T.length) { setMsg('Select a polyline with more than one segment.'); return; } change(new Map(), T.flatMap(g => explode(g).map(b => styled(b, g))), T.map(g => g.id)); setMany([]); };
+  const joinSel = () => { const T = many.length ? targets() : geos; const open = T.filter(g => g.g === 'pl' && !g.closed); if (open.length < 2) { setMsg('Select two or more lines that meet end to end (or select none to join all).'); return; } const out = joinAll(open); change(new Map(), out.map(b => styled(b, open[0])), open.map(g => g.id)); setMany([]); setMsg(`Joined into ${out.length} polyline${out.length === 1 ? '' : 's'}.`); };
+  const makeArray = () => { const T = targets(); if (!T.length) { setMsg('Select the objects to repeat first.'); return; } change(new Map(), arrayRect(T, sk.rows, sk.cols, sk.dx, sk.dy)); };
+  const pickTool = (k: string, help: string) => { setTool(tool === k ? 'select' : k); setPend(null); setMsg(help); };
+  const scalarIn = (n: number) => {
+    const pts = pend?.pts ?? [], h = cur.current;
+    if (skTool && pts.length && skTool !== 'pline' && (skTool === 'circle' || skTool === 'poly')) { feed([pts[0][0] + n, pts[0][1]]); return; }
+    if ((skTool === 'line' || skTool === 'pline') && pts.length && h) { const l = pts[pts.length - 1], d = Math.hypot(h[0] - l[0], h[1] - l[1]) || 1; feed([l[0] + ((h[0] - l[0]) / d) * n, l[1] + ((h[1] - l[1]) / d) * n]); return; }
+    if (mdTool === 'rotate' && pts.length) { change(new Map(targets().map(g => [g.id, transform(g, rotateM(pts[0], n))] as [string, Body])), []); setPend(null); return; }
+    if ((mdTool === 'move' || mdTool === 'copy') && pts.length && h) { const d = Math.hypot(h[0] - pts[0][0], h[1] - pts[0][1]) || 1; feed([pts[0][0] + ((h[0] - pts[0][0]) / d) * n, pts[0][1] + ((h[1] - pts[0][1]) / d) * n]); return; }
+    if (mdTool === 'scale') { setSk(o => ({ ...o, scK: n })); setMsg(`Scale factor ${n}. Tap the base point.`); return; }
+    if (mdTool === 'offset') { setSk(o => ({ ...o, offD: n })); setMsg(`Offset distance ${n} mm.`); return; }
+    if (mdTool === 'fillet') { setSk(o => ({ ...o, filletR: n })); setMsg(`Fillet radius ${n} mm.`); return; }
+    if (mdTool === 'chamfer') { setSk(o => ({ ...o, chamD: n })); setMsg(`Chamfer distance ${n} mm.`); return; }
+    setMsg('Nothing is waiting for a number. Pick a tool first.');
+  };
+  const runCmd = (raw: string) => {
+    const t = raw.trim(); setCmd(''); const u = t.toUpperCase();
+    if (!t) { if (skTool === 'pline') finishPline(); return; }
+    if (ALIAS[u]) { setTool(ALIAS[u]); setPend(null); const q = [...DRAW_TOOLS.map(x => ['sk:' + x[0], x[2]]), ...MOD_TOOLS.map(x => ['md:' + x[0], x[2]])].find(x => x[0] === ALIAS[u]); if (q) setMsg(q[1]); return; }
+    if (u === 'X' || u === 'EXPLODE') { explodeSel(); return; } if (u === 'J' || u === 'JOIN') { joinSel(); return; } if (u === 'E' || u === 'ERASE' || u === 'DEL') { erase(); return; }
+    if (u === 'CLOSE' || u === 'CL') { finishPline(true); return; }
+    if (u === 'ORTHO') { setSk(o => ({ ...o, ortho: !o.ortho })); return; } if (u === 'GRID' || u === 'SNAP') { setSk(o => ({ ...o, grid: !o.grid })); return; } if (u === 'OSNAP') { setSk(o => ({ ...o, osnap: !o.osnap })); return; }
+    if (u === 'Z' || u === 'ZE' || u === 'FIT' || u === 'ZOOM') { fit(); return; }
+    const pt = parseCoord(t, pend?.pts.length ? pend.pts[pend.pts.length - 1] : cur.current, r.page[1]);
+    if (pt) { if (skTool || mdTool) { cur.current = pt; if (!skTool && mdTool && !targets().length && mdTool !== 'offset' && mdTool !== 'fillet' && mdTool !== 'chamfer') { setMsg('Tap the object to change first.'); return; } feed(pt, pt); } else setMsg('Pick a draw or modify tool first.'); return; }
+    if (/^-?\d*[.,]?\d+$/.test(t)) { scalarIn(parseFloat(t.replace(',', '.'))); return; }
+    setMsg(`Unknown command "${t}". Try L, PL, REC, POL, C, ARC, EL, M, CO, RO, MI, SC, O, F, CHA, AR, X, J, E.`);
+  };
+  // viewport: fit to the screen, zoom about a point
+  const fit = () => { const el = vpRef.current; if (!el) return; const b = el.getBoundingClientRect(); if (b.width < 10 || b.height < 10) return; const z = Math.min(b.width / (r.page[0] * BASE), b.height / (r.page[1] * BASE)) * 0.97; setVp({ z, x: (b.width - r.page[0] * BASE * z) / 2, y: (b.height - r.page[1] * BASE * z) / 2 }); fitted.current = true; };
+  const zoomBy = (k: number) => { const el = vpRef.current; if (!el) return; const b = el.getBoundingClientRect(), mx = b.width / 2, my = b.height / 2; fitted.current = false; setVp(v => { const z = Math.max(0.05, Math.min(80, v.z * k)), kk = z / v.z; return { z, x: mx - (mx - v.x) * kk, y: my - (my - v.y) * kk }; }); };
+  useEffect(() => {
+    if (Platform.OS !== 'web') return; const el = vpRef.current; if (!el) return;
+    fit(); const ro = new ResizeObserver(() => { if (fitted.current) fit(); }); ro.observe(el);
+    const wheel = (e: WheelEvent) => { e.preventDefault(); const b = el.getBoundingClientRect(), mx = e.clientX - b.left, my = e.clientY - b.top, k = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0016)); fitted.current = false; setVp(v => { const z = Math.max(0.05, Math.min(80, v.z * k)), kk = z / v.z; return { z, x: mx - (mx - v.x) * kk, y: my - (my - v.y) * kk }; }); };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => { ro.disconnect(); el.removeEventListener('wheel', wheel); };
+  }, [r.page[0], r.page[1], sIdx, full]);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const key = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; if (e.key === 'Escape') { setPend(null); setTool('select'); setMany([]); } else if (e.key === 'Enter') { if (skTool === 'pline') finishPline(); } else if (e.key === 'Delete' || e.key === 'Backspace') { if (sel || many.length) { e.preventDefault(); erase(); } } else if (e.key === 'F8') { e.preventDefault(); setSk(o => ({ ...o, ortho: !o.ortho })); } };
+    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
+  });
+
+  const click = (X: number, Y: number, shift = false) => {
     if (tool === 'select' || tool === 'pan') { setSel(hitAt(X, Y)); return; }
+    if (skTool || mdTool) { sketchClick(X, Y, shift); return; }
     const t = tdef; if (!t) return;
     const free: Record<string, number> = { bom: 1, rev: 1, table: 1, htable: 1, cloud: 2, note: 1 };
     const needView = !(tool === 'bom' || tool === 'rev' || tool === 'table' || tool === 'note' || tool === 'cloud');
@@ -168,17 +323,37 @@ export default function DrawingStudio(p: Props) {
   const mkv = (_parent: string, f: (d: DrawingDoc, s: Sheet, rr: Rendered) => DView | null) => { let made: DView | null = null; edit((d, s) => { made = f(d, s, r); }); if (made) setSel((made as DView).id); };
   const mk = (_: () => null, parent?: string, cut?: any) => { if (!parent || !cut) return; mkv(parent, (d, s, rr) => addSection(d, s, ctx, rr, parent, cut)); };
 
+  const rectOf = () => vpRef.current?.getBoundingClientRect?.();
   const onDown = (e: any) => {
-    const [X, Y] = toMm(e);
+    const b = rectOf(); if (!b) return;
+    ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { vpRef.current.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+    if (ptrs.current.size === 2) { const [a, c] = [...ptrs.current.values()]; gest.current = { kind: 'pinch', d0: Math.hypot(a.x - c.x, a.y - c.y) || 1, mx: (a.x + c.x) / 2 - b.left, my: (a.y + c.y) / 2 - b.top, vp0: vp }; drag.current = null; tap.current = null; setOver(null); return; }
+    if (ptrs.current.size > 2) return;
+    const [X, Y] = toMm(e), shift = !!e.shiftKey || !!e.ctrlKey;
+    if (e.button === 1 || tool === 'pan') { gest.current = { kind: 'pan', x0: e.clientX, y0: e.clientY, vp0: vp }; return; }
     if (tool === 'select') {
-      const id = hitAt(X, Y); setSel(id);
-      if (id) { const k = sh.anns.some(a => a.id === id) ? 'ann' : 'view'; drag.current = { id, kind: k, x0: X, y0: Y, moved: false, start: cloneDoc(dd) }; try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* ignore */ } }
+      const id = hitAt(X, Y);
+      if (shift && id) { setMany(m => (m.includes(id) ? m.filter(q => q !== id) : [...(m.length || !sel ? m : [sel]), id])); setSel(id); return; }
+      if (id && many.includes(id)) setSel(id); else { setSel(id); setMany([]); }
+      if (id) { const k = sh.anns.some(a => a.id === id) ? 'ann' : 'view'; drag.current = { id, kind: k, x0: X, y0: Y, moved: false, start: cloneDoc(dd) }; }
+      else gest.current = { kind: 'pan', x0: e.clientX, y0: e.clientY, vp0: vp };
       return;
     }
-    if (tool !== 'pan') click(X, Y);
+    tap.current = { x: e.clientX, y: e.clientY, X, Y, shift, id: e.pointerId, moved: false };
   };
   const onMove = (e: any) => {
-    const [X, Y] = toMm(e); setHover(tool !== 'select' && tool !== 'pan' ? (() => { const sn = snap(X, Y, pend?.view); return sn?.snapped ? [sn.v.cx + (sn.p[0] - sn.v.uc) * sn.v.s, sn.v.cy - (sn.p[1] - sn.v.vc) * sn.v.s] as Pt : null; })() : null);
+    if (ptrs.current.has(e.pointerId)) ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gest.current;
+    if (g?.kind === 'pinch' && ptrs.current.size >= 2) { const [a, c] = [...ptrs.current.values()], b = rectOf(), d = Math.hypot(a.x - c.x, a.y - c.y) || 1, mx = (a.x + c.x) / 2 - b.left, my = (a.y + c.y) / 2 - b.top, z = Math.max(0.05, Math.min(80, (g.vp0.z * d) / g.d0)), k = z / g.vp0.z; fitted.current = false; setVp({ z, x: mx - (g.mx - g.vp0.x) * k, y: my - (g.my - g.vp0.y) * k }); return; }
+    if (g?.kind === 'pan') { fitted.current = false; setVp({ ...g.vp0, x: g.vp0.x + e.clientX - g.x0, y: g.vp0.y + e.clientY - g.y0 }); return; }
+    const t = tap.current;
+    if (t && !t.moved && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 8) { tap.current = null; gest.current = { kind: 'pan', x0: t.x, y0: t.y, vp0: vp }; return; }   // a drag with a drawing tool pans the sheet
+    const [X, Y] = toMm(e); if (coordRef.current) coordRef.current.textContent = `X ${r1(X)}   Y ${r1(r.page[1] - Y)} mm`;
+    if (tool !== 'select' && tool !== 'pan') {
+      if (skTool || mdTool) { const { p } = skPt(X, Y, pend?.pts.length ? pend.pts[pend.pts.length - 1] : undefined); cur.current = p; setHover(p); }
+      else setHover((() => { const sn = snap(X, Y, pend?.view); return sn?.snapped ? [sn.v.cx + (sn.p[0] - sn.v.uc) * sn.v.s, sn.v.cy - (sn.p[1] - sn.v.vc) * sn.v.s] as Pt : null; })());
+    }
     const dg = drag.current; if (!dg) return;
     const dx = X - dg.x0, dy = Y - dg.y0; if (!dg.moved && Math.hypot(dx, dy) < Math.max(1, px() * 4)) return; dg.moved = true;
     const nd = cloneDoc(dg.start), s2 = nd.sheets[sIdx];
@@ -187,13 +362,21 @@ export default function DrawingStudio(p: Props) {
       for (const c of s2.views) if (c.parent === v.id && c.align) { if (c.align === 'h') c.cx += dx; else c.cy += dy; }   // aligned children follow their parent
     } else {
       const a = s2.anns.find(q => q.id === dg.id)!, vi = 'view' in a && a.view ? r.views.find(w => w.id === a.view) : undefined, ku = vi ? 1 / vi.s : 1;
-      if (a.t === 'dim') a.p = [a.p[0] + dx * ku, a.p[1] - (vi ? dy * ku : -dy)];
+      if (a.t === 'geo') { const ids = many.includes(a.id) ? many : [a.id]; for (const q of s2.anns) if (q.t === 'geo' && ids.includes(q.id)) q.pts = q.pts.map(z => [z[0] + dx, z[1] + dy] as [number, number]); }
+      else if (a.t === 'dim') a.p = [a.p[0] + dx * ku, a.p[1] - (vi ? dy * ku : -dy)];
       else if ('at' in a) a.at = [a.at[0] + dx * ku, a.at[1] + (vi ? -dy * ku : dy)];
       else if ('x' in a && 'y' in a) { a.x += dx; a.y += dy; }
     }
     setOver(nd);
   };
-  const onUp = () => { const dg = drag.current; drag.current = null; if (dg?.moved && over) { save(over); } setOver(null); };
+  const onUp = (e: any) => {
+    ptrs.current.delete(e.pointerId);
+    const g = gest.current; if (g?.kind === 'pinch') { if (ptrs.current.size < 2) gest.current = null; tap.current = null; return; }
+    if (g?.kind === 'pan') { gest.current = null; return; }
+    const t = tap.current; tap.current = null; if (t && t.id === e.pointerId) click(t.X, t.Y, t.shift);
+    const dg = drag.current; drag.current = null; if (dg?.moved && over) { save(over); } setOver(null);
+  };
+  const onCancel = (e: any) => { ptrs.current.delete(e.pointerId); gest.current = null; tap.current = null; drag.current = null; setOver(null); };
 
   // ---------- panels ----------
   const Btn = ({ label, on, go, danger, id }: { label: string; on?: boolean; go: () => void; danger?: boolean; id?: string }) => <Pressable testID={id} onPress={go} style={[s.btn, on && s.btnOn, danger && s.btnDanger]}><Text style={[s.btnT, on && { color: '#fff' }, danger && { color: '#b71c1c' }]}>{label}</Text></Pressable>;
@@ -254,6 +437,7 @@ export default function DrawingStudio(p: Props) {
         <Pick label="Arrows" value={a.arrow ?? dd.arrow} opts={[{ key: 'filled', label: 'Filled' }, { key: 'open', label: 'Open' }, { key: 'dot', label: 'Dot' }, { key: 'slash', label: 'Slash' }, { key: 'none', label: 'None' }]} set={k => upAnn(x => { x.arrow = k; })} />
         <Btn label="Reference dimension ( )" on={!!a.ref} go={() => upAnn(x => { x.ref = !x.ref; })} />
       </>}
+      {a.t === 'geo' && <><Pick label="Line type" value={a.lt ?? 'cont'} opts={[{ key: 'cont', label: 'Solid' }, { key: 'hid', label: 'Hidden' }, { key: 'cen', label: 'Centre' }]} set={k => upAnn(x => { x.lt = k; })} /><Num label="Weight (mm)" value={a.w ?? 0.5} set={n => upAnn(x => { if (n && n > 0) x.w = n; })} /><Text style={s.k}>{a.g === 'pl' ? `${a.pts.length} points${a.closed ? ', closed' : ''}` : a.g === 'ci' ? `Circle, radius ${r1(a.r ?? 0)} mm` : a.g === 'ar' ? `Arc, radius ${r1(a.r ?? 0)} mm` : `Ellipse ${r1(a.rx ?? 0)} × ${r1(a.ry ?? 0)} mm`}</Text></>}
       {a.t === 'note' && <><Txt label="Text" value={a.text} set={t => upAnn(x => { x.text = t; })} w={220} multi /><Num label="Text height (mm)" value={a.size} set={n => upAnn(x => { if (n) x.size = n; })} /><Pick label="Frame" value={a.box ?? 'none'} opts={[{ key: 'none', label: 'None' }, { key: 'box', label: 'Box' }, { key: 'circle', label: 'Circle' }]} set={k => upAnn(x => { x.box = k; })} /></>}
       {a.t === 'balloon' && <><Txt label="Item number" value={a.text} set={t => upAnn(x => { x.text = t; })} w={80} /><Pick label="Shape" value={a.shape} opts={[{ key: 'circle', label: 'Circle' }, { key: 'triangle', label: 'Triangle' }, { key: 'hex', label: 'Hexagon' }, { key: 'box', label: 'Box' }]} set={k => upAnn(x => { x.shape = k; })} /></>}
       {a.t === 'finish' && <><Txt label="Roughness text" value={a.text} set={t => upAnn(x => { x.text = t; })} w={100} /><Pick label="Symbol" value={a.kind} opts={[{ key: 'machined', label: 'Machining required' }, { key: 'basic', label: 'Basic' }, { key: 'prohibited', label: 'No machining' }]} set={k => upAnn(x => { x.kind = k; })} /></>}
@@ -270,21 +454,35 @@ export default function DrawingStudio(p: Props) {
       {a.t === 'rev' && <><Text style={s.fl}>One revision per line: REV; DESCRIPTION; DATE; BY</Text><Txt label="Revisions" value={a.rows.map(q => [q.rev, q.desc, q.date, q.by].join('; ')).join('\n')} set={t => upAnn(x => { x.rows = t.split('\n').filter(Boolean).map(l => { const c = l.split(';').map(z => z.trim()); return { rev: c[0] ?? '', desc: c[1] ?? '', date: c[2] ?? '', by: c[3] ?? '' }; }); })} w={280} multi /></>}
       {a.t === 'htable' && <Pick label="Table style" value={a.style ?? 'xy'} opts={[{ key: 'xy', label: 'X and Y' }, { key: 'polar', label: 'Radius and angle' }, { key: 'group', label: 'Grouped by size' }]} set={k => upAnn(x => { x.style = k; })} />}
       {a.t === 'htable' && <Text style={s.k}>Lists the round features found in the view, with their position from the lower left corner.</Text>}
-      <Pick label="Layer" value={(a.layer ?? 'note') as Layer} opts={LAYERS.slice(3, 7).map(l => ({ key: l.key, label: l.label.split(' ')[0] }))} set={k => upAnn(x => { x.layer = k; })} />
+      {a.t !== 'geo' && <Pick label="Layer" value={(a.layer ?? 'note') as Layer} opts={LAYERS.slice(3, 7).map(l => ({ key: l.key, label: l.label.split(' ')[0] }))} set={k => upAnn(x => { x.layer = k; })} />}
       <Btn label="Delete" danger go={() => edit((_d, s2) => { s2.anns = s2.anns.filter(q => q.id !== a.id); setSel(null); })} />
     </View>;
   })();
 
+  const numIn = (label: string, k: keyof typeof sk, w = 56) => <View key={String(k)} style={s.fld}><Text style={s.fl}>{label}</Text><TextInput style={[s.inp, { width: w }]} keyboardType="numeric" value={String(sk[k])} onChangeText={t => { const v = parseFloat(t.replace(',', '.')); setSk(o => ({ ...o, [k]: isNaN(v) ? 0 : v })); }} /></View>;
+  const tgl = (label: string, on: boolean, go: () => void) => <Btn label={`${label}: ${on ? 'on' : 'off'}`} on={on} go={go} />;
   const toolBtn = (t: Tool) => <Btn key={t.key} id={`dw-${t.key}`} label={t.label} on={tool === t.key} go={() => { setTool(tool === t.key ? 'select' : t.key); setSel(null); setMsg(t.help); }} />;
   const setDoc = (f: (d: DrawingDoc) => void) => edit(d => f(d));
   const P = dd.props;
   const propRows: [keyof typeof P, string][] = [['company', 'Company'], ['title', 'Title'], ['drawnBy', 'Drawn by'], ['checkedBy', 'Checked by'], ['approvedBy', 'Approved by'], ['drawingNo', 'Drawing number'], ['revision', 'Revision'], ['partNo', 'Part number'], ['description', 'Description'], ['finish', 'Finish'], ['tolerance', 'General tolerance'], ['weight', 'Mass text (auto: calculated)']];
   const sheetSvg = () => toSvg(r.prims, r.page, { px: 3 });
+  const overlaySvg = (() => {
+    const [W, H] = r.page; let o = '';
+    const box = (b: number[], col: string) => `<rect x="${b[0] - 1.5}" y="${b[1] - 1.5}" width="${b[2] - b[0] + 3}" height="${b[3] - b[1] + 3}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
+    for (const id of new Set([...(sel ? [sel] : []), ...many])) { const h = r.hits.find(q => q.id === id); if (h) o += box(h.box, id === sel && !many.length ? '#1565c0' : '#42a5f5'); }
+    if (pend) for (const q of pend.pts) { if (!pend.view) { o += `<circle cx="${q[0]}" cy="${q[1]}" r="${mmpp * 4}" fill="#e65100"/>`; continue; } const v = r.views.find(w => w.id === pend.view); if (v) { const X = v.cx + (q[0] - v.uc) * v.s, Y = v.cy - (q[1] - v.vc) * v.s; o += `<circle cx="${X}" cy="${Y}" r="${mmpp * 4}" fill="#e65100"/>`; } }
+    if (pend?.circ) { const v = r.views.find(w => w.id === pend.view); if (v) o += `<circle cx="${v.cx + (pend.circ.cx - v.uc) * v.s}" cy="${v.cy - (pend.circ.cy - v.vc) * v.s}" r="${pend.circ.r * v.s}" fill="none" stroke="#e65100" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`; }
+    if (hover && tool !== 'select' && tool !== 'pan') {
+      o += `<circle cx="${hover[0]}" cy="${hover[1]}" r="${mmpp * 7}" fill="none" stroke="#2e7d32" stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+      if ((skTool || mdTool) && pend) { const gb = ghostOf(hover); o += primsSvg(gb.flatMap(b => geoPrims(b)), '#e65100'); if (mdTool && pend.pts.length) o += `<line x1="${pend.pts[0][0]}" y1="${pend.pts[0][1]}" x2="${hover[0]}" y2="${hover[1]}" stroke="#78909c" stroke-width="1" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`; }
+    }
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" style="width:100%;height:100%;display:block">${o}</svg>`;
+  })();
 
-  return (
-    <View style={s.wrap} testID="drawing-studio">
-      <View style={s.tabs}>{([['view', 'View layout'], ['ann', 'Annotation'], ['sheet', 'Sheet'], ['asm', 'Assembly'], ['out', 'Output']] as const).map(([k, l]) => <Pressable key={k} testID={`dw-tab-${k}`} onPress={() => setGroup(k)} style={[s.tab, group === k && s.tabOn]}><Text style={[s.tabT, group === k && { color: '#fff' }]}>{l}</Text></Pressable>)}</View>
-      <ScrollView style={[s.ribbon, { maxHeight: p.phone ? 210 : 300 }]} contentContainerStyle={{ gap: 4 }} nestedScrollEnabled>
+  const root = (
+    <View style={[s.wrap, full && Platform.OS === 'web' ? ({ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 } as any) : null]} testID="drawing-studio">
+      {ribOpen && <View style={s.tabs}>{([['view', 'View layout'], ['ann', 'Annotation'], ['sketch', 'Sketch'], ['sheet', 'Sheet'], ['asm', 'Assembly'], ['out', 'Output']] as const).map(([k, l]) => <Pressable key={k} testID={`dw-tab-${k}`} onPress={() => setGroup(k)} style={[s.tab, group === k && s.tabOn]}><Text style={[s.tabT, group === k && { color: '#fff' }]}>{l}</Text></Pressable>)}</View>}
+      {ribOpen && <ScrollView style={[s.ribbon, { maxHeight: p.phone ? 190 : 300 }]} contentContainerStyle={{ gap: 4 }} nestedScrollEnabled>
         {group === 'view' && <>
           <View style={s.row}>{VIEW_TOOLS.map(toolBtn)}</View>
           {tool === 'section' && <View style={s.row}><Pick label="Cut" value={secKind} opts={[{ key: 'full', label: 'Full' }, { key: 'half', label: 'Half' }, { key: 'offset', label: 'Offset' }]} set={setSecKind} /><Pick label="Line runs" value={secDir} opts={[{ key: 'h', label: 'Across (horizontal)' }, { key: 'v', label: 'Up and down (vertical)' }]} set={setSecDir} /></View>}
@@ -306,6 +504,21 @@ export default function DrawingStudio(p: Props) {
             <Btn id="dw-auto-balloon" label="Auto balloon" go={() => edit((_d, s2) => { const nb = autoBalloons(s2, r, ctx); s2.anns.push(...nb); setMsg(`${nb.length} balloon${nb.length === 1 ? '' : 's'} added`); })} />
             {pend && (tool === 'base' || tool === 'chain') && <Btn label="Done" go={() => setPend(null)} />}
           </View>
+        </>}
+        {group === 'sketch' && <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled><View style={[s.row, { flexWrap: 'nowrap' }]}><Text style={[s.fl, { width: 44 }]}>Draw</Text>{DRAW_TOOLS.map(([k, l, h]) => <Btn key={k} id={`dw-sk-${k}`} label={l} on={tool === `sk:${k}`} go={() => pickTool(`sk:${k}`, h)} />)}</View></ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled><View style={[s.row, { flexWrap: 'nowrap' }]}><Text style={[s.fl, { width: 44 }]}>Modify</Text>{MOD_TOOLS.map(([k, l, h]) => <Btn key={k} id={`dw-md-${k}`} label={l} on={tool === `md:${k}`} go={() => pickTool(`md:${k}`, h)} />)}<Btn id="dw-explode" label="Explode" go={explodeSel} /><Btn id="dw-join" label="Join" go={joinSel} /><Btn id="dw-erase" label="Erase" danger go={erase} /><Btn label="Select all" go={() => { setMany(geos.map(g => g.id)); setTool('select'); }} />{skTool === 'pline' && <><Btn id="dw-finish" label="Finish" on go={() => finishPline()} /><Btn label="Close shape" go={() => finishPline(true)} /></>}</View></ScrollView>
+          <View style={[s.row, { alignItems: 'flex-end', minHeight: 50 }]}>
+            {!p.phone && !(skTool === 'poly' || mdTool === 'scale' || mdTool === 'offset' || mdTool === 'fillet' || mdTool === 'chamfer' || mdTool === 'mirror' || mdTool === 'arrayr' || mdTool === 'arrayp') && <Text style={s.k}>Pick a tool. Its settings show here. Command line: L, PL, REC, POL, C, ARC, EL, M, CO, RO, MI, SC, O, F, CHA, AR, X, J, E; points 50,40 · @10,5 · @25&lt;30.</Text>}
+            {skTool === 'poly' && <>{numIn('Sides', 'sides', 46)}<Btn label={sk.inscribed ? 'Corner at the point' : 'Side at the point'} go={() => setSk(o => ({ ...o, inscribed: !o.inscribed }))} /></>}
+            {mdTool === 'scale' && numIn('Factor', 'scK')}
+            {mdTool === 'offset' && numIn('Distance (mm)', 'offD', 70)}{mdTool === 'fillet' && numIn('Radius (mm)', 'filletR', 70)}{mdTool === 'chamfer' && numIn('Distance (mm)', 'chamD', 70)}
+            {mdTool === 'mirror' && <Btn label={sk.keep ? 'Keep the original' : 'Delete the original'} go={() => setSk(o => ({ ...o, keep: !o.keep }))} />}
+            {mdTool === 'arrayr' && <>{numIn('Rows', 'rows', 46)}{numIn('Columns', 'cols', 46)}{numIn('Row gap (mm)', 'dy', 64)}{numIn('Column gap (mm)', 'dx', 64)}<Btn id="dw-array" label="Make array" go={makeArray} /></>}
+            {mdTool === 'arrayp' && <>{numIn('Items', 'polN', 46)}{numIn('Fill angle (°)', 'polFill', 64)}<Btn label={sk.turn ? 'Turn the copies' : 'Keep them upright'} go={() => setSk(o => ({ ...o, turn: !o.turn }))} /></>}
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled><View style={[s.row, { flexWrap: 'nowrap', alignItems: 'flex-end' }]}><Text style={[s.fl, { width: 44 }]}>Settings</Text>{tgl('Ortho', sk.ortho, () => setSk(o => ({ ...o, ortho: !o.ortho })))}{tgl('Grid snap', sk.grid, () => setSk(o => ({ ...o, grid: !o.grid })))}{tgl('Object snap', sk.osnap, () => setSk(o => ({ ...o, osnap: !o.osnap })))}{numIn('Grid mm', 'gridG', 46)}
+            {(['cont', 'hid', 'cen'] as const).map(k => <Btn key={k} label={k === 'cont' ? 'Solid' : k === 'hid' ? 'Hidden' : 'Centre'} on={sk.lt === k} go={() => setSk(o => ({ ...o, lt: k }))} />)}{numIn('Weight mm', 'w', 52)}</View></ScrollView>
         </>}
         {group === 'sheet' && <>
           <View style={s.row}>{dd.sheets.map((q, i) => <Btn key={q.id} id={`dw-sheet-${i}`} label={q.name} on={i === sIdx} go={() => { setSi(i); setSel(null); }} />)}<Btn id="dw-add-sheet" label="+ Sheet" go={() => edit((d, _s) => { const n = d.sheets.length + 1, ns: Sheet = { id: uid('sh'), name: `Sheet${n}`, size: cloneDoc(d.sheets[sIdx].size), scale: d.sheets[sIdx].scale, views: [], anns: [] }; d.sheets.push(ns); setSi(d.sheets.length - 1); })} />{dd.sheets.length > 1 && <Btn label="Delete sheet" danger go={() => edit(d => { d.sheets.splice(sIdx, 1); setSi(0); setSel(null); })} />}</View>
@@ -350,21 +563,31 @@ export default function DrawingStudio(p: Props) {
           <Text style={s.k}>PDF and print include every sheet, scaled to the paper chosen below. SVG and DXF are the sheet you are looking at, in millimetres.</Text>
           <Btn label="Start the drawing again" danger go={() => { commit(d => ({ ...d, drawing: undefined })); setSel(null); setSi(0); setMsg('Drawing reset to the standard layout.'); }} />
         </>}
-      </ScrollView>
+      </ScrollView>}
       <View style={s.bar}>
         <Btn id="dw-select" label="Select" on={tool === 'select'} go={() => { setTool('select'); setPend(null); }} /><Btn id="dw-pan" label="Hand" on={tool === 'pan'} go={() => setTool(tool === 'pan' ? 'select' : 'pan')} />
-        <Btn label="−" go={() => setZoom(z => Math.max(1, z / 1.4))} /><Text style={s.fl}>{Math.round(zoom * 100)}%</Text><Btn label="+" go={() => setZoom(z => Math.min(5, z * 1.4))} />
-        <Text style={[s.k, { flex: 1 }]} numberOfLines={2}>{tdef ? tdef.help : sel ? 'Drag to move. Edit it below.' : 'Tap a view or a dimension to select it. Drag to move.'}{pend ? `  (${pend.pts.length} point${pend.pts.length === 1 ? '' : 's'} picked)` : ''}</Text>
+        <Btn id="dw-fit" label="Fit" go={fit} /><Btn id="dw-full" label={full ? '✕ Close' : 'Full screen'} on={full} go={() => setFull(f => !f)} />
+        <Btn id="dw-tools" label={ribOpen ? 'Hide tools' : 'Show tools'} go={() => setRibOpen(o => !o)} />
+        <Text style={s.fl}>{Math.round(vp.z * 100)}%</Text>
+        <Text style={[s.k, { flex: 1, minWidth: 140 }]} numberOfLines={2}>{skTool || mdTool ? (DRAW_TOOLS.concat(MOD_TOOLS).find(x => x[0] === (skTool ?? mdTool))?.[2] ?? '') : tdef ? tdef.help : sel ? 'Drag to move. Edit it below.' : 'Tap a view or a dimension to select it. Drag to move. Drag empty space to pan; pinch or scroll to zoom.'}{pend ? `  (${pend.pts.length} point${pend.pts.length === 1 ? '' : 's'} picked)` : ''}</Text>
+        <Text ref={coordRef} style={[s.k, { minWidth: 120 }]}> </Text>
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 6 }}>
-        <ScrollView horizontal nestedScrollEnabled contentContainerStyle={{ width: `${zoom * 100}%` as any }} scrollEnabled={zoom > 1 && tool === 'pan'} showsHorizontalScrollIndicator={zoom > 1}>
-          {Platform.OS === 'web' ? React.createElement('div', { ref: wrap, 'data-testid': 'drawing-sheet', onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp, onPointerLeave: () => setHover(null), style: { width: '100%', background: '#fff', borderRadius: 4, lineHeight: 0, touchAction: tool === 'pan' ? 'auto' : 'none', userSelect: 'none', cursor: tool === 'select' ? 'default' : tool === 'pan' ? 'grab' : 'crosshair', border: '1px solid #cfdcd4' }, dangerouslySetInnerHTML: { __html: svg } }) : <Text style={s.k}>The drawing editor is in the web version.</Text>}
-        </ScrollView>
-        {ViewProps}{AnnProps}
-        {!selView && !selAnn && <Text style={[s.k, { marginTop: 6 }]}>{sh.views.length} views and {sh.anns.length} annotations on {sh.name}. Pick a tool above, or select something to change it.</Text>}
-      </ScrollView>
+      {group === 'sketch' && <View style={s.cmd}><Text style={s.k}>Command</Text><TextInput testID="dw-cmd" value={cmd} onChangeText={setCmd} onSubmitEditing={() => runCmd(cmd)} placeholder="L, C, M … or 50,40 or @10,5 or a number" autoCapitalize="none" autoCorrect={false} style={[s.inp, { flex: 1 }]} /><Btn id="dw-cmd-go" label="Enter" go={() => runCmd(cmd)} /></View>}
+      <View style={{ flex: 1, minHeight: full ? 180 : 420 }}>
+        {Platform.OS === 'web' ? React.createElement('div', { ref: vpRef, 'data-testid': 'drawing-viewport', onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onCancel, onPointerLeave: () => setHover(null), style: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden', background: '#c4cec8', touchAction: 'none', userSelect: 'none', cursor: tool === 'select' ? 'default' : tool === 'pan' ? 'grab' : 'crosshair' } },
+          React.createElement('div', { ref: wrap, 'data-testid': 'drawing-sheet', style: { position: 'absolute', left: 0, top: 0, width: r.page[0] * BASE, height: r.page[1] * BASE, transformOrigin: '0 0', transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.z})`, background: '#fff', boxShadow: '0 1px 8px rgba(0,0,0,0.35)', lineHeight: 0 } },
+            React.createElement('div', { style: { width: '100%', height: '100%' }, dangerouslySetInnerHTML: { __html: baseSvg } }),
+            React.createElement('div', { style: { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }, dangerouslySetInnerHTML: { __html: overlaySvg } }))) : <Text style={s.k}>The drawing editor is in the web version.</Text>}
+        <View pointerEvents="box-none" style={{ position: 'absolute', left: 8, top: 8, gap: 6, zIndex: 6 }}>
+          <Pressable testID="dw-zin" onPress={() => zoomBy(1.4)} style={s.fab}><Text style={s.fabT}>+</Text></Pressable><Pressable testID="dw-zout" onPress={() => zoomBy(1 / 1.4)} style={s.fab}><Text style={s.fabT}>−</Text></Pressable>
+          {(selView || selAnn) && <Pressable testID="dw-props" onPress={() => setPropsOpen(o => !o)} style={s.fab}><Text style={s.fabT}>{propsOpen ? '▾' : '▴'}</Text></Pressable>}
+        </View>
+        {(selView || selAnn) && propsOpen && !skTool && !mdTool && <ScrollView style={[{ position: 'absolute', backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#9db5a5', zIndex: 5 }, p.phone ? { left: 6, right: 6, bottom: 6, maxHeight: 210 } : { right: 8, top: 8, width: 320, maxHeight: '94%' as any }]} contentContainerStyle={{ padding: 6 }} nestedScrollEnabled>{ViewProps}{AnnProps}</ScrollView>}
+      </View>
     </View>
   );
+  // full screen is drawn straight onto the page, outside the app's own scrolling and animated containers
+  return full && Platform.OS === 'web' && typeof document !== 'undefined' ? (require('react-dom') as { createPortal: (n: React.ReactNode, c: Element) => React.ReactElement }).createPortal(root, document.body) : root;
 }
 
 const s = StyleSheet.create({
@@ -373,5 +596,6 @@ const s = StyleSheet.create({
   btn: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 5, backgroundColor: '#fff', borderWidth: 1, borderColor: '#cfdcd4' }, btnOn: { backgroundColor: '#2e7d32', borderColor: '#2e7d32' }, btnDanger: { borderColor: '#e0a0a0' }, btnT: { fontSize: 12, color: '#1f3a2f' },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 4, flexWrap: 'wrap' }, k: { fontSize: 12, color: '#52645a' }, fl: { fontSize: 11, color: '#52645a', fontWeight: '600', marginTop: 2 },
   panel: { marginTop: 8, padding: 8, backgroundColor: '#fff', borderRadius: 6, borderWidth: 1, borderColor: '#cfdcd4', gap: 6 }, h: { fontSize: 14, fontWeight: '700', color: '#1f3a2f' }, fld: { gap: 2 },
+  fab: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#ffffffee', borderWidth: 1, borderColor: '#9db5a5', alignItems: 'center', justifyContent: 'center' }, fabT: { fontSize: 20, color: '#1f3a2f', fontWeight: '700' }, cmd: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6, paddingVertical: 4, backgroundColor: '#e3ede6' },
   inp: { borderWidth: 1, borderColor: '#cfdcd4', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 4, fontSize: 13, backgroundColor: '#fff', color: '#14181d' },
 });
