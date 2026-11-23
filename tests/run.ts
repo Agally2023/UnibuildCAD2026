@@ -1227,5 +1227,39 @@ ok('mep: no plant gives a clear message', planMep({ els: [mel('o', 'fixture', { 
   ok('construction: schedule sheets read NTS', sheetSvg(door, 'A3', 100, 'A-09', { project: 'T' }, 'A3', o).includes('>NTS<'));
   ok('construction: revision cloud is a closed path', cloudPath(0, 0, 40, 30).endsWith('Z" fill="none" stroke="#c62828" stroke-width="0.5"/>'));
 }
+
+{
+  const SK = require('../lib/dwgSketch');
+  const near = (a: number, b: number, e = 1e-3) => Math.abs(a - b) < e;
+  const sq = SK.pl(SK.rectPts([0, 0], [40, 20]), true);
+  ok('sketch: rectangle is a closed 4-point polyline', sq.pts.length === 4 && sq.closed === true);
+  const hex = SK.polygonPts([0, 0], [10, 0], 6, true); ok('sketch: inscribed hexagon has radius 10 corners', hex.length === 6 && hex.every((q: number[]) => near(Math.hypot(q[0], q[1]), 10)));
+  const hc = SK.polygonPts([0, 0], [10, 0], 6, false); ok('sketch: circumscribed hexagon has its side middle at the pick', near(Math.hypot(hc[0][0], hc[0][1]), 10 / Math.cos(Math.PI / 6)) && near((hc[0][0] + hc[1][0]) / 2, 10) );
+  const c3 = SK.shapeOf('c3p', [[10, 0], [0, 10], [-10, 0]], { sides: 6, inscribed: true }); ok('sketch: circle through three points', c3 && near(c3.r, 10) && near(c3.pts[0][0], 0) && near(c3.pts[0][1], 0));
+  const a3 = SK.arc3([10, 0], [0, -10], [-10, 0]); ok('sketch: three-point arc passes through its middle point and ends', a3 && near(SK.distTo(a3, [0, -10]), 0) && near(SK.distTo(a3, [10, 0]), 0) && near(SK.distTo(a3, [-10, 0]), 0) && near(SK.distTo(a3, [0, 10]), Math.SQRT2 * 10));
+  const rt = SK.transform(SK.pl([[10, 0], [20, 0]]), SK.rotateM([0, 0], 90)); ok('sketch: rotate 90 deg counter-clockwise on screen sends +x to up', near(rt.pts[0][0], 0) && near(rt.pts[0][1], -10));
+  const mi = SK.transform(SK.pl([[5, 5], [8, 9]]), SK.mirrorM([0, 0], [10, 0])); ok('sketch: mirror about a level line flips y', near(mi.pts[0][1], -5) && near(mi.pts[1][0], 8));
+  const sc = SK.transform(SK.circle([10, 10], 4), SK.scaleM([0, 0], 2)); ok('sketch: scale doubles centre and radius', near(sc.r, 8) && near(sc.pts[0][0], 20));
+  const am = SK.transform(SK.arc([0, 0], 10, 0, 90), SK.mirrorM([0, 0], [0, 1])); ok('sketch: mirrored arc still runs a0 to a1 increasing and keeps its ends', near(SK.arcOnPts(am, 1)[0][0], 0) && near(SK.arcOnPts(am, 1)[0][1], 10) && am.a1 > am.a0);
+  const off = SK.offset(SK.circle([0, 0], 10), 3, [0, 0]); ok('sketch: offset circle toward centre', off && near(off.r, 7));
+  const ol = SK.offset(SK.pl([[0, 0], [10, 0]]), 4, [5, 9]); ok('sketch: offset line goes to the picked side', ol && near(ol.pts[0][1], 4) && near(ol.pts[1][1], 4));
+  const oo = SK.offset(sq, 2, [20, 10]); ok('sketch: offset rectangle inward shrinks by the distance', oo && near(oo.pts[0][0], 2) && near(oo.pts[2][0], 38) && near(oo.pts[2][1], 18));
+  const fc = SK.filletCorner(SK.pl([[0, 0], [20, 0], [20, 20]]), 1, 5); ok('sketch: fillet makes two lines and an arc of the right radius', fc && fc.length === 3 && fc[1].g === 'ar' && near(fc[1].r, 5) && near(fc[0].pts[1][0], 15) && near(fc[2].pts[0][1], 5));
+  ok('sketch: fillet that is too big is refused', SK.filletCorner(SK.pl([[0, 0], [20, 0], [20, 4]]), 1, 5) === null);
+  const fcl = SK.filletCorner(sq, 2, 5); ok('sketch: closed shape fillet leaves an open outline plus the arc', fcl && fcl.length === 2 && fcl[0].closed === false && fcl[0].pts.length === 5 && fcl[1].g === 'ar');
+  const ch = SK.chamferCorner(SK.pl([[0, 0], [20, 0], [20, 20]]), 1, 4, 4); ok('sketch: chamfer replaces the corner by two points', ch && ch.pts.length === 4 && near(ch.pts[1][0], 16) && near(ch.pts[2][1], 4));
+  const fl = SK.filletLines(SK.pl([[0, 0], [10, 0]]), SK.pl([[20, 5], [20, 20]]), [2, 0], [20, 18], 0); ok('sketch: radius 0 joins two lines at their meeting point', fl && fl.length === 1 && fl[0].pts.length === 3 && near(fl[0].pts[1][0], 20) && near(fl[0].pts[1][1], 0));
+  ok('sketch: explode gives one line per edge', SK.explode(sq).length === 4);
+  ok('sketch: join puts end-to-end lines into one closed outline', (() => { const j = SK.joinAll(SK.explode(sq)); return j.length === 1 && j[0].closed === true && j[0].pts.length === 4; })());
+  const ar = SK.arrayRect([SK.circle([5, 5], 2)], 2, 3, 10, 8); ok('sketch: rectangular array 2x3 makes five copies', ar.length === 5 && near(ar[ar.length - 1].pts[0][0], 25) && near(ar[ar.length - 1].pts[0][1], 13));
+  const ap = SK.arrayPolar([SK.circle([10, 0], 1)], [0, 0], 4, 360, true); ok('sketch: polar array of four is spaced 90 degrees', ap.length === 3 && ap.every((q: any) => near(Math.hypot(q.pts[0][0], q.pts[0][1]), 10)) && ap.some((q: any) => near(q.pts[0][0], -10)));
+  ok('sketch: typed absolute coordinates count from the bottom left', (() => { const q = SK.parseCoord('50,40', null, 210); return q && near(q[0], 50) && near(q[1], 170); })());
+  ok('sketch: typed relative and polar coordinates', (() => { const a = SK.parseCoord('@10,5', [100, 100], 210), b = SK.parseCoord('@10<90', [100, 100], 210); return a && near(a[0], 110) && near(a[1], 95) && b && near(b[0], 100) && near(b[1], 90); })() && SK.parseCoord('abc', null, 210) === null);
+  ok('sketch: ortho keeps the longer direction', (() => { const q = SK.orthoPt([0, 0], [10, 3]); return q[0] === 10 && q[1] === 0; })());
+  ok('sketch: distTo a line is the perpendicular distance', near(SK.distTo(SK.pl([[0, 0], [10, 0]]), [5, 3]), 3));
+  ok('sketch: dashed shapes draw as separate dashes on the hidden layer', (() => { const q = SK.geoPrims({ ...SK.pl([[0, 0], [10, 0]]), lt: 'hid' }); return q.length === 1 && q[0].layer === 'hid' && !!q[0].dash; })());
+  ok('sketch: an arc draws as one arc primitive', SK.geoPrims(SK.arc([0, 0], 5, 0, 90))[0].k === 'a');
+  const spans = SK.shapeOf('ellipse', [[0, 0], [10, 0], [0, 4]], { sides: 6, inscribed: true }); ok('sketch: ellipse from centre, axis end and a point on the other axis', spans && near(spans.rx, 10) && near(spans.ry, 4));
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
